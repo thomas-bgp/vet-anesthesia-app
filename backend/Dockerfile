@@ -1,18 +1,14 @@
-FROM node:20-alpine
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y python3 make g++ wget --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install build dependencies for better-sqlite3
-RUN apk add --no-cache python3 make g++
-
-# Copy package files first for better layer caching
 COPY package.json ./
 RUN npm install --omit=dev
 
-# Copy application source
 COPY . .
 
-# Create data directory for SQLite database
 RUN mkdir -p /data
 
 EXPOSE 3001
