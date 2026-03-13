@@ -66,11 +66,11 @@ export default function Register() {
         name: form.name,
         email: form.email,
         password: form.password,
-        referralCode: form.referralCode.trim(),
+        referral_code: form.referralCode.trim(),
       })
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.message || 'Erro ao cadastrar. Tente novamente.')
+      setError(err.response?.data?.error || err.response?.data?.message || 'Erro ao cadastrar. Tente novamente.')
     } finally {
       setLoading(false)
     }

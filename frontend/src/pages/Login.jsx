@@ -25,7 +25,7 @@ export default function Login() {
       await login(form.email, form.password)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.message || 'Credenciais inválidas. Tente novamente.')
+      setError(err.response?.data?.error || err.response?.data?.message || 'Credenciais inválidas. Tente novamente.')
     } finally {
       setLoading(false)
     }
