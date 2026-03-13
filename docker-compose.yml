@@ -12,7 +12,7 @@ services:
       - JWT_SECRET=vet-anesthesia-super-secret-key-change-in-production
       - DB_PATH=/data/vetanesthesia.db
       - PORT=3001
-      - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:5173,http://localhost:3000,http://hsfw4sd2mfqovgrs76bx3b1m.187.77.238.125.sslip.io
+      - CORS_ORIGINS=*
     volumes:
       - db-data:/data
     restart: unless-stopped
