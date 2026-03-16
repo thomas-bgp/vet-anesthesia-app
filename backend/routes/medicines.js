@@ -25,11 +25,12 @@ router.get('/', authenticateToken, (req, res) => {
       params.push(searchParam, searchParam, searchParam);
     }
 
-    if (low_stock === 'true') {
+    // Handle generic 'filter' param from frontend
+    if (low_stock === 'true' || req.query.filter === 'low_stock') {
       whereClause += ` AND m.current_stock <= m.min_stock`;
     }
 
-    if (expiring_soon === 'true') {
+    if (expiring_soon === 'true' || req.query.filter === 'expiring') {
       whereClause += ` AND m.expiry_date <= date('now', '+30 days') AND m.expiry_date >= date('now')`;
     }
 
@@ -182,6 +183,7 @@ router.post('/', authenticateToken, (req, res) => {
       name,
       active_principle,
       concentration,
+      bottle_volume,
       unit,
       current_stock = 0,
       min_stock = 0,
@@ -208,15 +210,16 @@ router.post('/', authenticateToken, (req, res) => {
     const result = db
       .prepare(`
         INSERT INTO medicines
-          (user_id, name, active_principle, concentration, unit, current_stock, min_stock,
+          (user_id, name, active_principle, concentration, bottle_volume, unit, current_stock, min_stock,
            cost_per_unit, supplier, batch_number, expiry_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         req.user.id,
         name,
         active_principle || null,
         concentration || null,
+        bottle_volume || null,
         unit,
         parseFloat(current_stock),
         parseFloat(min_stock),
@@ -272,6 +275,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       name = existing.name,
       active_principle = existing.active_principle,
       concentration = existing.concentration,
+      bottle_volume = existing.bottle_volume,
       unit = existing.unit,
       min_stock = existing.min_stock,
       cost_per_unit = existing.cost_per_unit,
@@ -289,6 +293,7 @@ router.put('/:id', authenticateToken, (req, res) => {
         name = ?,
         active_principle = ?,
         concentration = ?,
+        bottle_volume = ?,
         unit = ?,
         min_stock = ?,
         cost_per_unit = ?,
@@ -301,6 +306,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       name,
       active_principle || null,
       concentration || null,
+      bottle_volume || null,
       unit,
       parseFloat(min_stock),
       parseFloat(cost_per_unit),

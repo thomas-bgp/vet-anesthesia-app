@@ -16,6 +16,7 @@ const navItems = [
   { to: '/surgeries', label: 'Cirurgias', icon: Activity },
   { to: '/medicines', label: 'Medicamentos', icon: Syringe },
   { to: '/stock', label: 'Estoque', icon: Package },
+  { to: '/price-table', label: 'Tabela de Preços', icon: BarChart3 },
   { to: '/referrals', label: 'Indicações', icon: Users },
   { to: '/reports', label: 'Relatórios', icon: BarChart3 },
 ]

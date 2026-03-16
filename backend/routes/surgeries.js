@@ -11,6 +11,7 @@ router.get('/', authenticateToken, (req, res) => {
       start_date,
       end_date,
       species,
+      clinic,
       search,
       page = 1,
       limit = 20,
@@ -18,7 +19,6 @@ router.get('/', authenticateToken, (req, res) => {
 
     const db = getDb();
 
-    // Build WHERE conditions separately so we can reuse for COUNT and SELECT
     let whereClause = 'WHERE s.user_id = ?';
     const params = [req.user.id];
 
@@ -28,18 +28,23 @@ router.get('/', authenticateToken, (req, res) => {
     }
 
     if (start_date) {
-      whereClause += ` AND date(s.created_at) >= date(?)`;
+      whereClause += ` AND date(COALESCE(s.start_time, s.created_at)) >= date(?)`;
       params.push(start_date);
     }
 
     if (end_date) {
-      whereClause += ` AND date(s.created_at) <= date(?)`;
+      whereClause += ` AND date(COALESCE(s.start_time, s.created_at)) <= date(?)`;
       params.push(end_date);
     }
 
     if (species) {
-      whereClause += ` AND s.patient_species LIKE ?`;
-      params.push(`%${species}%`);
+      whereClause += ` AND s.patient_species = ?`;
+      params.push(species);
+    }
+
+    if (clinic) {
+      whereClause += ` AND s.clinic_name LIKE ?`;
+      params.push(`%${clinic}%`);
     }
 
     if (search) {
@@ -48,12 +53,10 @@ router.get('/', authenticateToken, (req, res) => {
       params.push(sp, sp, sp, sp);
     }
 
-    // Count query - simple, no subqueries
     const countResult = db
       .prepare(`SELECT COUNT(*) as total FROM surgeries s ${whereClause}`)
       .get(...params);
 
-    // Main query with subqueries for enriched data
     const selectQuery = `
       SELECT
         s.*,
@@ -61,14 +64,13 @@ router.get('/', authenticateToken, (req, res) => {
           SELECT COUNT(*) FROM surgery_medicines sm WHERE sm.surgery_id = s.id
         ) as medicine_count,
         (
-          SELECT COALESCE(SUM(m.cost_per_unit * sm.dose), 0)
-          FROM surgery_medicines sm
-          JOIN medicines m ON sm.medicine_id = m.id
-          WHERE sm.surgery_id = s.id
+          SELECT COALESCE(SUM(sm2.unit_cost * sm2.quantity), 0)
+          FROM stock_movements sm2
+          WHERE sm2.surgery_id = s.id AND sm2.type = 'usage'
         ) as medicines_cost
       FROM surgeries s
       ${whereClause}
-      ORDER BY s.created_at DESC
+      ORDER BY COALESCE(s.start_time, s.created_at) DESC
       LIMIT ? OFFSET ?
     `;
 
@@ -90,16 +92,16 @@ router.get('/', authenticateToken, (req, res) => {
   }
 });
 
-// GET /api/surgeries/:id/details - full surgery details with medicines
-router.get('/:id/details', authenticateToken, (req, res) => {
+// GET /api/surgeries/:id - single surgery (alias for details)
+router.get('/:id', authenticateToken, (req, res, next) => {
+  // Skip if it matches a named sub-route
+  if (['details'].includes(req.params.id)) return next();
+
   try {
     const db = getDb();
 
     const surgery = db
-      .prepare(`
-        SELECT s.* FROM surgeries s
-        WHERE s.id = ? AND s.user_id = ?
-      `)
+      .prepare(`SELECT s.* FROM surgeries s WHERE s.id = ? AND s.user_id = ?`)
       .get(req.params.id, req.user.id);
 
     if (!surgery) {
@@ -123,11 +125,20 @@ router.get('/:id/details', authenticateToken, (req, res) => {
       `)
       .all(req.params.id);
 
+    const vitals = db
+      .prepare(`
+        SELECT * FROM monitoring_vitals
+        WHERE surgery_id = ?
+        ORDER BY recorded_at ASC
+      `)
+      .all(req.params.id);
+
     const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
 
     res.json({
       surgery,
       medicines,
+      vitals,
       summary: {
         medicine_count: medicines.length,
         total_medicine_cost: totalMedicineCost,
@@ -141,6 +152,164 @@ router.get('/:id/details', authenticateToken, (req, res) => {
   }
 });
 
+// GET /api/surgeries/:id/details - full surgery details with medicines
+router.get('/:id/details', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+
+    const surgery = db
+      .prepare(`SELECT s.* FROM surgeries s WHERE s.id = ? AND s.user_id = ?`)
+      .get(req.params.id, req.user.id);
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    const medicines = db
+      .prepare(`
+        SELECT
+          sm.*,
+          m.name as medicine_name,
+          m.active_principle,
+          m.concentration,
+          m.unit as medicine_unit,
+          m.cost_per_unit,
+          (m.cost_per_unit * sm.dose) as total_cost
+        FROM surgery_medicines sm
+        JOIN medicines m ON sm.medicine_id = m.id
+        WHERE sm.surgery_id = ?
+        ORDER BY sm.administered_at ASC
+      `)
+      .all(req.params.id);
+
+    const vitals = db
+      .prepare(`
+        SELECT * FROM monitoring_vitals
+        WHERE surgery_id = ?
+        ORDER BY recorded_at ASC
+      `)
+      .all(req.params.id);
+
+    const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
+
+    res.json({
+      surgery,
+      medicines,
+      vitals,
+      summary: {
+        medicine_count: medicines.length,
+        total_medicine_cost: totalMedicineCost,
+        revenue: surgery.revenue,
+        margin: surgery.revenue - totalMedicineCost,
+      },
+    });
+  } catch (err) {
+    console.error('Surgery details error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/surgeries/:id/medicines - list medicines for a surgery
+router.get('/:id/medicines', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+
+    const surgery = db
+      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
+      .get(req.params.id, req.user.id);
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    const medicines = db
+      .prepare(`
+        SELECT
+          sm.*,
+          m.name as medicine_name,
+          m.active_principle,
+          m.concentration,
+          m.unit as medicine_unit,
+          m.cost_per_unit,
+          (m.cost_per_unit * sm.dose) as total_cost
+        FROM surgery_medicines sm
+        JOIN medicines m ON sm.medicine_id = m.id
+        WHERE sm.surgery_id = ?
+        ORDER BY sm.administered_at ASC
+      `)
+      .all(req.params.id);
+
+    res.json({ medicines });
+  } catch (err) {
+    console.error('Surgery medicines error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/surgeries/:id/vitals - add vital signs record
+router.post('/:id/vitals', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+
+    const surgery = db
+      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
+      .get(id, req.user.id);
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    const {
+      recorded_at,
+      fc, fr, spo2, etco2, pam, pas, pad, temperature, notes,
+    } = req.body;
+
+    const result = db
+      .prepare(`
+        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        id,
+        recorded_at || new Date().toISOString(),
+        fc || null, fr || null, spo2 || null, etco2 || null,
+        pam || null, pas || null, pad || null, temperature || null,
+        notes || null
+      );
+
+    const vital = db.prepare('SELECT * FROM monitoring_vitals WHERE id = ?').get(result.lastInsertRowid);
+
+    res.status(201).json({ message: 'Vital signs recorded', vital });
+  } catch (err) {
+    console.error('Add vitals error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/surgeries/:id/vitals/:vitalId
+router.delete('/:id/vitals/:vitalId', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+
+    const surgery = db
+      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
+      .get(req.params.id, req.user.id);
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    db.prepare('DELETE FROM monitoring_vitals WHERE id = ? AND surgery_id = ?')
+      .run(req.params.vitalId, req.params.id);
+
+    res.json({ message: 'Vital signs record deleted' });
+  } catch (err) {
+    console.error('Delete vitals error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/surgeries - create surgery
 router.post('/', authenticateToken, (req, res) => {
   try {
@@ -150,11 +319,17 @@ router.post('/', authenticateToken, (req, res) => {
       patient_breed,
       patient_weight,
       patient_age,
+      patient_sex,
       owner_name,
       owner_phone,
       procedure_name,
       asa_classification,
+      fasting_solid_hours,
+      fasting_liquid_hours,
       start_time,
+      pre_anesthesia,
+      induction,
+      maintenance,
       anesthesia_protocol,
       clinic_name,
       surgeon_name,
@@ -179,9 +354,11 @@ router.post('/', authenticateToken, (req, res) => {
       .prepare(`
         INSERT INTO surgeries
           (user_id, patient_name, patient_species, patient_breed, patient_weight, patient_age,
-           owner_name, owner_phone, procedure_name, asa_classification, start_time,
-           anesthesia_protocol, clinic_name, surgeon_name, revenue, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           patient_sex, owner_name, owner_phone, procedure_name, asa_classification,
+           fasting_solid_hours, fasting_liquid_hours, start_time,
+           pre_anesthesia, induction, maintenance, anesthesia_protocol,
+           clinic_name, surgeon_name, revenue, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         req.user.id,
@@ -190,11 +367,17 @@ router.post('/', authenticateToken, (req, res) => {
         patient_breed || null,
         patient_weight ? parseFloat(patient_weight) : null,
         patient_age || null,
+        patient_sex || null,
         owner_name || null,
         owner_phone || null,
         procedure_name,
         asa_classification || null,
+        fasting_solid_hours ? parseFloat(fasting_solid_hours) : null,
+        fasting_liquid_hours ? parseFloat(fasting_liquid_hours) : null,
         start_time || null,
+        pre_anesthesia || null,
+        induction || null,
+        maintenance || null,
         anesthesia_protocol || null,
         clinic_name || null,
         surgeon_name || null,
@@ -240,10 +423,16 @@ router.put('/:id', authenticateToken, (req, res) => {
       patient_breed = existing.patient_breed,
       patient_weight = existing.patient_weight,
       patient_age = existing.patient_age,
+      patient_sex = existing.patient_sex,
       owner_name = existing.owner_name,
       owner_phone = existing.owner_phone,
       procedure_name = existing.procedure_name,
       asa_classification = existing.asa_classification,
+      fasting_solid_hours = existing.fasting_solid_hours,
+      fasting_liquid_hours = existing.fasting_liquid_hours,
+      pre_anesthesia = existing.pre_anesthesia,
+      induction = existing.induction,
+      maintenance = existing.maintenance,
       anesthesia_protocol = existing.anesthesia_protocol,
       monitoring_notes = existing.monitoring_notes,
       complications = existing.complications,
@@ -252,6 +441,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       surgeon_name = existing.surgeon_name,
       revenue = existing.revenue,
       status = existing.status,
+      start_time = existing.start_time,
     } = req.body;
 
     db.prepare(`
@@ -261,10 +451,17 @@ router.put('/:id', authenticateToken, (req, res) => {
         patient_breed = ?,
         patient_weight = ?,
         patient_age = ?,
+        patient_sex = ?,
         owner_name = ?,
         owner_phone = ?,
         procedure_name = ?,
         asa_classification = ?,
+        fasting_solid_hours = ?,
+        fasting_liquid_hours = ?,
+        start_time = ?,
+        pre_anesthesia = ?,
+        induction = ?,
+        maintenance = ?,
         anesthesia_protocol = ?,
         monitoring_notes = ?,
         complications = ?,
@@ -281,10 +478,17 @@ router.put('/:id', authenticateToken, (req, res) => {
       patient_breed || null,
       patient_weight ? parseFloat(patient_weight) : null,
       patient_age || null,
+      patient_sex || null,
       owner_name || null,
       owner_phone || null,
       procedure_name,
       asa_classification || null,
+      fasting_solid_hours ? parseFloat(fasting_solid_hours) : null,
+      fasting_liquid_hours ? parseFloat(fasting_liquid_hours) : null,
+      start_time || null,
+      pre_anesthesia || null,
+      induction || null,
+      maintenance || null,
       anesthesia_protocol || null,
       monitoring_notes || null,
       complications || null,
@@ -368,7 +572,6 @@ router.put('/:id/end', authenticateToken, (req, res) => {
     const endTime = req.body.end_time || new Date().toISOString().replace('T', ' ').substring(0, 19);
     const { outcome = 'success', monitoring_notes, complications } = req.body;
 
-    // Calculate duration in minutes
     let durationMinutes = null;
     if (surgery.start_time) {
       const start = new Date(surgery.start_time);
@@ -409,6 +612,7 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       medicine_id,
       dose,
       dose_unit,
+      dose_mg_kg,
       administered_at,
       route,
       notes,
@@ -426,7 +630,6 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
 
     const db = getDb();
 
-    // Verify surgery belongs to user
     const surgery = db
       .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
       .get(id, req.user.id);
@@ -443,7 +646,6 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot add medicines to a completed surgery' });
     }
 
-    // Verify medicine belongs to user
     const medicine = db
       .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
       .get(medicine_id, req.user.id);
@@ -455,15 +657,13 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
     const adminTime = administered_at || new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const addMedicine = db.transaction(() => {
-      // Insert surgery medicine record
       const smResult = db
         .prepare(`
-          INSERT INTO surgery_medicines (surgery_id, medicine_id, dose, dose_unit, administered_at, route, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO surgery_medicines (surgery_id, medicine_id, dose, dose_unit, dose_mg_kg, administered_at, route, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        .run(id, medicine_id, doseNum, dose_unit, adminTime, route || null, notes || null);
+        .run(id, medicine_id, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null);
 
-      // Decrement stock and register movement if requested
       if (decrement_stock) {
         if (medicine.current_stock < doseNum) {
           throw new Error(`INSUFFICIENT_STOCK:${medicine.current_stock}:${doseNum}`);
@@ -523,6 +723,57 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
     }
   } catch (err) {
     console.error('Add surgery medicine error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/surgeries/:id/medicines/:medId - remove medicine from surgery
+router.delete('/:id/medicines/:medId', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { id, medId } = req.params;
+
+    const surgery = db
+      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
+      .get(id, req.user.id);
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    const sm = db
+      .prepare('SELECT * FROM surgery_medicines WHERE id = ? AND surgery_id = ?')
+      .get(medId, id);
+
+    if (!sm) {
+      return res.status(404).json({ error: 'Surgery medicine record not found' });
+    }
+
+    const removeMedicine = db.transaction(() => {
+      // Restore stock if there was a usage movement for this
+      const movement = db
+        .prepare(`
+          SELECT * FROM stock_movements
+          WHERE surgery_id = ? AND medicine_id = ? AND type = 'usage'
+          ORDER BY created_at DESC LIMIT 1
+        `)
+        .get(id, sm.medicine_id);
+
+      if (movement) {
+        db.prepare('UPDATE medicines SET current_stock = current_stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(movement.quantity, sm.medicine_id);
+
+        db.prepare('DELETE FROM stock_movements WHERE id = ?').run(movement.id);
+      }
+
+      db.prepare('DELETE FROM surgery_medicines WHERE id = ?').run(medId);
+    });
+
+    removeMedicine();
+
+    res.json({ message: 'Medicine removed from surgery' });
+  } catch (err) {
+    console.error('Remove surgery medicine error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

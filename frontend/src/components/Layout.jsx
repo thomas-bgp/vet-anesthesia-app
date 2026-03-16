@@ -15,7 +15,7 @@ export default function Layout() {
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100"
+            className="p-2.5 rounded-md text-slate-500 hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <Menu size={22} />
           </button>

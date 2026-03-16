@@ -12,6 +12,7 @@ import SurgeryDetail from './pages/SurgeryDetail'
 import Stock from './pages/Stock'
 import Referrals from './pages/Referrals'
 import Reports from './pages/Reports'
+import PriceTable from './pages/PriceTable'
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/surgeries/:id" element={<SurgeryDetail />} />
               <Route path="/surgeries/:id/edit" element={<SurgeryForm />} />
               <Route path="/stock" element={<Stock />} />
+              <Route path="/price-table" element={<PriceTable />} />
               <Route path="/referrals" element={<Referrals />} />
               <Route path="/reports" element={<Reports />} />
             </Route>

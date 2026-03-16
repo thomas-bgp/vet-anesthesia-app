@@ -3,8 +3,123 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
+// GET /api/stock/purchases - list all purchases
+router.get('/purchases', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { start_date, end_date, page = 1, limit = 50 } = req.query;
+
+    let whereClause = "WHERE sm.user_id = ? AND sm.type = 'purchase'";
+    const params = [req.user.id];
+
+    if (start_date) {
+      whereClause += ' AND date(sm.created_at) >= date(?)';
+      params.push(start_date);
+    }
+    if (end_date) {
+      whereClause += ' AND date(sm.created_at) <= date(?)';
+      params.push(end_date);
+    }
+
+    const purchases = db
+      .prepare(`
+        SELECT
+          sm.*,
+          m.name as medicine_name,
+          m.active_principle,
+          m.unit as medicine_unit
+        FROM stock_movements sm
+        JOIN medicines m ON sm.medicine_id = m.id
+        ${whereClause}
+        ORDER BY sm.created_at DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+
+    const total = db
+      .prepare(`SELECT COUNT(*) as total FROM stock_movements sm ${whereClause}`)
+      .get(...params);
+
+    res.json({
+      purchases,
+      pagination: {
+        total: total?.total || purchases.length,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil((total?.total || purchases.length) / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error('List purchases error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/stock/movements - list all movements
+router.get('/movements', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { type, start_date, end_date, page = 1, limit = 50 } = req.query;
+
+    let whereClause = 'WHERE sm.user_id = ?';
+    const params = [req.user.id];
+
+    if (type && ['purchase', 'usage', 'adjustment', 'expired'].includes(type)) {
+      whereClause += ' AND sm.type = ?';
+      params.push(type);
+    }
+    if (start_date) {
+      whereClause += ' AND date(sm.created_at) >= date(?)';
+      params.push(start_date);
+    }
+    if (end_date) {
+      whereClause += ' AND date(sm.created_at) <= date(?)';
+      params.push(end_date);
+    }
+
+    const movements = db
+      .prepare(`
+        SELECT
+          sm.*,
+          m.name as medicine_name,
+          m.active_principle,
+          m.unit as medicine_unit,
+          s.patient_name,
+          s.procedure_name
+        FROM stock_movements sm
+        JOIN medicines m ON sm.medicine_id = m.id
+        LEFT JOIN surgeries s ON sm.surgery_id = s.id
+        ${whereClause}
+        ORDER BY sm.created_at DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+
+    const total = db
+      .prepare(`SELECT COUNT(*) as total FROM stock_movements sm ${whereClause}`)
+      .get(...params);
+
+    res.json({
+      movements,
+      pagination: {
+        total: total?.total || movements.length,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil((total?.total || movements.length) / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error('List movements error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/stock/purchase - register a purchase (increments stock)
-router.post('/purchase', authenticateToken, (req, res) => {
+// Also accept POST /api/stock/purchases for frontend compatibility
+router.post('/purchase', authenticateToken, handlePurchase);
+router.post('/purchases', authenticateToken, handlePurchase);
+
+function handlePurchase(req, res) {
   try {
     const {
       medicine_id,
@@ -27,7 +142,6 @@ router.post('/purchase', authenticateToken, (req, res) => {
 
     const db = getDb();
 
-    // Verify medicine belongs to user
     const medicine = db
       .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
       .get(medicine_id, req.user.id);
@@ -40,15 +154,13 @@ router.post('/purchase', authenticateToken, (req, res) => {
     const totalCost = qty * unitCost;
 
     const purchase = db.transaction(() => {
-      // Insert movement
       const movResult = db
         .prepare(`
-          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, notes)
-          VALUES (?, ?, 'purchase', ?, ?, ?, ?)
+          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, supplier, notes)
+          VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?)
         `)
-        .run(medicine_id, req.user.id, qty, unitCost, totalCost, notes || null);
+        .run(medicine_id, req.user.id, qty, unitCost, totalCost, supplier || null, notes || null);
 
-      // Update stock and optionally cost_per_unit, batch, expiry
       let updateQuery = `
         UPDATE medicines SET
           current_stock = current_stock + ?,
@@ -94,7 +206,7 @@ router.post('/purchase', authenticateToken, (req, res) => {
     console.error('Purchase error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
 
 // POST /api/stock/usage - register usage (decrements stock)
 router.post('/usage', authenticateToken, (req, res) => {
@@ -117,7 +229,6 @@ router.post('/usage', authenticateToken, (req, res) => {
 
     const db = getDb();
 
-    // Verify medicine belongs to user
     const medicine = db
       .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
       .get(medicine_id, req.user.id);
@@ -134,7 +245,6 @@ router.post('/usage', authenticateToken, (req, res) => {
       });
     }
 
-    // Verify surgery belongs to user if provided
     if (surgery_id) {
       const surgery = db
         .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
@@ -189,7 +299,6 @@ router.get('/history/:medicineId', authenticateToken, (req, res) => {
 
     const db = getDb();
 
-    // Verify medicine belongs to user
     const medicine = db
       .prepare('SELECT id, name, unit FROM medicines WHERE id = ? AND user_id = ?')
       .get(medicineId, req.user.id);
@@ -222,7 +331,6 @@ router.get('/history/:medicineId', authenticateToken, (req, res) => {
       ORDER BY sm.created_at DESC LIMIT ? OFFSET ?
     `).all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
 
-    // Summary stats
     const summary = db
       .prepare(`
         SELECT

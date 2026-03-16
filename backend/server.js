@@ -16,6 +16,8 @@ const medicinesRoutes = require('./routes/medicines');
 const stockRoutes = require('./routes/stock');
 const surgeriesRoutes = require('./routes/surgeries');
 const dashboardRoutes = require('./routes/dashboard');
+const reportsRoutes = require('./routes/reports');
+const priceTableRoutes = require('./routes/pricetable');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,7 +44,7 @@ app.use(
       }
       callback(new Error(`CORS: Origin ${origin} not allowed`));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   })
@@ -97,6 +99,8 @@ app.use('/api/medicines', medicinesRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/surgeries', surgeriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/price-table', priceTableRoutes);
 
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {

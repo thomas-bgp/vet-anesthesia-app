@@ -30,8 +30,8 @@ export default function Surgeries() {
       if (search) params.search = search
       if (statusFilter !== 'all') params.status = statusFilter
       if (speciesFilter !== 'all') params.species = speciesFilter
-      if (dateFrom) params.date_from = dateFrom
-      if (dateTo) params.date_to = dateTo
+      if (dateFrom) params.start_date = dateFrom
+      if (dateTo) params.end_date = dateTo
       const res = await api.get('/surgeries', { params })
       setSurgeries(res.data?.surgeries || res.data || [])
     } catch {
@@ -55,6 +55,9 @@ export default function Surgeries() {
 
   const fmt = (v) =>
     v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : '-'
+
+  const fmtDate = (v) =>
+    v ? new Date(v).toLocaleDateString('pt-BR') : '-'
 
   return (
     <div className="space-y-6">
@@ -105,7 +108,7 @@ export default function Surgeries() {
 
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
 
-      {/* Table */}
+      {/* Content */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
           <div className="py-16"><LoadingSpinner size="lg" className="mx-auto" /></div>
@@ -116,63 +119,131 @@ export default function Surgeries() {
             <p className="text-slate-400 text-sm mt-1">Registre o primeiro procedimento</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Data</th>
-                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Paciente</th>
-                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Espécie</th>
-                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Procedimento</th>
-                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Duração</th>
-                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
-                  <th className="text-center px-4 py-3 font-semibold text-slate-600">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {surgeries.map((s) => {
-                  const st = STATUS_MAP[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-600' }
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => navigate(`/surgeries/${s.id}`)}>
-                      <td className="px-4 py-3 text-slate-600">
-                        {s.date ? new Date(s.date).toLocaleDateString('pt-BR') : '-'}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{s.patient_name}</td>
-                      <td className="px-4 py-3 text-slate-600">{s.species}</td>
-                      <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{s.procedure}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">
-                        {s.duration_minutes ? `${s.duration_minutes} min` : '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>{st.label}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700">{fmt(s.revenue)}</td>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => navigate(`/surgeries/${s.id}`)}
-                            className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition" title="Ver detalhes">
-                            <Eye size={15} />
-                          </button>
-                          <button onClick={() => navigate(`/surgeries/${s.id}/edit`)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Editar">
-                            <Edit2 size={15} />
-                          </button>
-                          <button onClick={() => setDeleting(s)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Excluir">
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Mobile cards */}
+            <div className="block sm:hidden space-y-3 p-4">
+              {surgeries.map((s) => {
+                const st = STATUS_MAP[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-600' }
+                return (
+                  <div
+                    key={s.id}
+                    className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 cursor-pointer active:bg-slate-50 transition"
+                    onClick={() => navigate(`/surgeries/${s.id}`)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-slate-800">{s.patient_name}</p>
+                        <p className="text-sm text-slate-600">{s.procedure_name || '-'}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${st.cls}`}>
+                        {st.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-slate-500">
+                      <span>{s.patient_species || '-'}</span>
+                      {s.patient_breed && <span className="text-slate-400">· {s.patient_breed}</span>}
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">{fmtDate(s.start_time)}</span>
+                      <span className="font-medium text-slate-700">{fmt(s.revenue)}</span>
+                    </div>
+                    <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => navigate(`/surgeries/${s.id}`)}
+                        className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] text-sm text-teal-600 border border-teal-200 hover:bg-teal-50 rounded-lg transition"
+                      >
+                        <Eye size={15} />
+                        Ver
+                      </button>
+                      <button
+                        onClick={() => navigate(`/surgeries/${s.id}/edit`)}
+                        className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] text-sm text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg transition"
+                      >
+                        <Edit2 size={15} />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => setDeleting(s)}
+                        className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] text-sm text-red-600 border border-red-200 hover:bg-red-50 rounded-lg transition"
+                      >
+                        <Trash2 size={15} />
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Data</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Paciente</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Espécie</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Clínica</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Procedimento</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-600">Duração</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
+                    <th className="text-center px-4 py-3 font-semibold text-slate-600">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {surgeries.map((s) => {
+                    const st = STATUS_MAP[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-600' }
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => navigate(`/surgeries/${s.id}`)}>
+                        <td className="px-4 py-3 text-slate-600">{fmtDate(s.start_time)}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{s.patient_name}</td>
+                        <td className="px-4 py-3 text-slate-600">{s.patient_species || '-'}</td>
+                        <td className="px-4 py-3 text-slate-600">{s.clinic_name || '-'}</td>
+                        <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{s.procedure_name || '-'}</td>
+                        <td className="px-4 py-3 text-right text-slate-600">
+                          {s.duration_minutes ? `${s.duration_minutes} min` : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>{st.label}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-slate-700">{fmt(s.revenue)}</td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => navigate(`/surgeries/${s.id}`)}
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                              title="Ver detalhes"
+                            >
+                              <Eye size={15} />
+                            </button>
+                            <button
+                              onClick={() => navigate(`/surgeries/${s.id}/edit`)}
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                              title="Editar"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              onClick={() => setDeleting(s)}
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Excluir"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
+      {/* Delete confirmation modal */}
       {deleting && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">

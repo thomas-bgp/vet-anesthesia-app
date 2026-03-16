@@ -31,7 +31,7 @@ export default function Referrals() {
     setCreating(true)
     try {
       await api.post('/referrals', {
-        expiry_days: Number(form.expiry_days),
+        expires_in_days: Number(form.expiry_days),
         max_uses: Number(form.max_uses),
       })
       setShowForm(false)

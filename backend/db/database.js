@@ -30,6 +30,7 @@ function initializeSchema() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'veterinario',
+      profit_margin_percent REAL DEFAULT 30,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       is_active INTEGER DEFAULT 1
     );
@@ -51,6 +52,7 @@ function initializeSchema() {
       name TEXT NOT NULL,
       active_principle TEXT,
       concentration TEXT,
+      bottle_volume TEXT,
       unit TEXT NOT NULL,
       current_stock REAL DEFAULT 0,
       min_stock REAL DEFAULT 0,
@@ -71,13 +73,19 @@ function initializeSchema() {
       patient_breed TEXT,
       patient_weight REAL,
       patient_age TEXT,
+      patient_sex TEXT,
       owner_name TEXT,
       owner_phone TEXT,
       procedure_name TEXT NOT NULL,
       asa_classification TEXT,
+      fasting_solid_hours REAL,
+      fasting_liquid_hours REAL,
       start_time DATETIME,
       end_time DATETIME,
       duration_minutes INTEGER,
+      pre_anesthesia TEXT,
+      induction TEXT,
+      maintenance TEXT,
       anesthesia_protocol TEXT,
       monitoring_notes TEXT,
       complications TEXT,
@@ -90,6 +98,21 @@ function initializeSchema() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS monitoring_vitals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      surgery_id INTEGER REFERENCES surgeries(id),
+      recorded_at DATETIME NOT NULL,
+      fc INTEGER,
+      fr INTEGER,
+      spo2 REAL,
+      etco2 REAL,
+      pam REAL,
+      pas REAL,
+      pad REAL,
+      temperature REAL,
+      notes TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS stock_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       medicine_id INTEGER REFERENCES medicines(id),
@@ -99,6 +122,7 @@ function initializeSchema() {
       unit_cost REAL,
       total_cost REAL,
       surgery_id INTEGER REFERENCES surgeries(id),
+      supplier TEXT,
       notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -109,11 +133,65 @@ function initializeSchema() {
       medicine_id INTEGER REFERENCES medicines(id),
       dose REAL NOT NULL,
       dose_unit TEXT NOT NULL,
+      dose_mg_kg REAL,
       administered_at DATETIME,
       route TEXT,
       notes TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS price_table (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      procedure_name TEXT NOT NULL,
+      price_without_drugs REAL DEFAULT 0,
+      price_with_drugs REAL DEFAULT 0,
+      notes TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // Add columns if they don't exist (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(surgeries)").all().map(c => c.name);
+  if (!cols.includes('patient_sex')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN patient_sex TEXT'); } catch {}
+  }
+  if (!cols.includes('fasting_solid_hours')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN fasting_solid_hours REAL'); } catch {}
+  }
+  if (!cols.includes('fasting_liquid_hours')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN fasting_liquid_hours REAL'); } catch {}
+  }
+  if (!cols.includes('pre_anesthesia')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN pre_anesthesia TEXT'); } catch {}
+  }
+  if (!cols.includes('induction')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN induction TEXT'); } catch {}
+  }
+  if (!cols.includes('maintenance')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN maintenance TEXT'); } catch {}
+  }
+
+  const medCols = db.prepare("PRAGMA table_info(medicines)").all().map(c => c.name);
+  if (!medCols.includes('bottle_volume')) {
+    try { db.exec('ALTER TABLE medicines ADD COLUMN bottle_volume TEXT'); } catch {}
+  }
+
+  const smCols = db.prepare("PRAGMA table_info(surgery_medicines)").all().map(c => c.name);
+  if (!smCols.includes('dose_mg_kg')) {
+    try { db.exec('ALTER TABLE surgery_medicines ADD COLUMN dose_mg_kg REAL'); } catch {}
+  }
+
+  const mvCols = db.prepare("PRAGMA table_info(stock_movements)").all().map(c => c.name);
+  if (!mvCols.includes('supplier')) {
+    try { db.exec('ALTER TABLE stock_movements ADD COLUMN supplier TEXT'); } catch {}
+  }
+
+  const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols.includes('profit_margin_percent')) {
+    try { db.exec('ALTER TABLE users ADD COLUMN profit_margin_percent REAL DEFAULT 30'); } catch {}
+  }
 }
 
 function closeDb() {
