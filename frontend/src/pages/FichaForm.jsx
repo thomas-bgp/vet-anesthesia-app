@@ -142,12 +142,17 @@ export default function FichaForm() {
   const [allMedicines, setAllMedicines] = useState([])
 
   // Drug lists per phase
-  const [drugs, setDrugs] = useState({ mpa: [], inducao: [], manutencao: [] })
+  const [drugs, setDrugs] = useState({ mpa: [], inducao: [], manutencao: [], transoperatorio: [] })
+
+  // Vitals (transoperative monitoring)
+  const [vitals, setVitals] = useState([])
+  const [newVital, setNewVital] = useState({})
 
   // Section open/close state
   const [sections, setSections] = useState({
     paciente: true, anamnese: false, exame: false, exames_comp: false,
-    protocolo: true, vias_aereas: false, bloqueios: false, observacoes: false,
+    protocolo: true, vias_aereas: false, bloqueios: false,
+    transoperatorio: false, observacoes: false,
   })
 
   const toggle = (key) => setSections(s => ({ ...s, [key]: !s[key] }))
@@ -188,12 +193,15 @@ export default function FichaForm() {
         if (f.anesthesia_end) f.anesthesia_end = f.anesthesia_end.slice(0, 16)
         setForm(f)
 
+        // Load existing vitals
+        setVitals((res.data.vitals || []).map(v => ({ ...v, fromServer: true })))
+
         // Load existing medicines grouped by phase
         const meds = res.data.medicines || []
-        const grouped = { mpa: [], inducao: [], manutencao: [] }
+        const grouped = { mpa: [], inducao: [], manutencao: [], transoperatorio: [] }
         meds.forEach(m => {
           const phase = m.phase || 'mpa'
-          const key = grouped[phase] ? phase : 'mpa'
+          const key = grouped[phase] !== undefined ? phase : 'mpa'
           grouped[key].push({
             id: m.id,
             medicine_id: String(m.medicine_id),
@@ -210,6 +218,16 @@ export default function FichaForm() {
       .catch(() => setError('Erro ao carregar ficha.'))
       .finally(() => setLoading(false))
   }, [id, isEdit])
+
+  const addVital = () => {
+    if (!Object.values(newVital).some(v => v)) return
+    setVitals(v => [...v, { ...newVital, id: Date.now(), recorded_at: new Date().toISOString() }])
+    setNewVital({})
+  }
+
+  const removeVital = (idx) => {
+    setVitals(v => v.filter((_, i) => i !== idx))
+  }
 
   const addDrug = (phase) => {
     setDrugs(d => ({
@@ -258,11 +276,28 @@ export default function FichaForm() {
         surgeryId = res.data.surgery.id
       }
 
+      // Save vitals - for new entries (no existing id from server)
+      for (const vital of vitals) {
+        if (vital.fromServer) continue
+        await api.post(`/surgeries/${surgeryId}/vitals`, {
+          recorded_at: vital.recorded_at,
+          fc: vital.fc || null, fr: vital.fr || null,
+          spo2: vital.spo2 || null, etco2: vital.etco2 || null,
+          pas: vital.pas || null, pam: vital.pam || null, pad: vital.pad || null,
+          temperature: vital.temperature || null,
+          fluid_ml_kg_h: vital.fluid_ml_kg_h || null,
+          anesthetic: vital.anesthetic || null,
+          o2_l_min: vital.o2_l_min || null,
+          notes: vital.notes || null,
+        })
+      }
+
       // Save drugs - for new surgeries or new drugs in edit mode
       const allDrugs = [
         ...drugs.mpa.map(d => ({ ...d, phase: 'mpa' })),
         ...drugs.inducao.map(d => ({ ...d, phase: 'inducao' })),
         ...drugs.manutencao.map(d => ({ ...d, phase: 'manutencao' })),
+        ...(drugs.transoperatorio || []).map(d => ({ ...d, phase: 'transoperatorio' })),
       ]
 
       for (const drug of allDrugs) {
@@ -491,7 +526,7 @@ export default function FichaForm() {
 
         {/* === PROTOCOLO ANESTÉSICO (MPA / INDUÇÃO / MANUTENÇÃO) === */}
         <Section title="Protocolo Anestésico" open={sections.protocolo} onToggle={() => toggle('protocolo')}
-          badge={drugs.mpa.length + drugs.inducao.length + drugs.manutencao.length || null}>
+          badge={drugs.mpa.length + drugs.inducao.length + drugs.manutencao.length + (drugs.transoperatorio || []).length || null}>
           {/* MPA */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -596,6 +631,153 @@ export default function FichaForm() {
                 <input name="block_dose_volume" value={form.block_dose_volume} onChange={handle} className={inp} />
               </Field>
             </div>
+          </div>
+        </Section>
+
+        {/* === TRANSOPERATÓRIO (Página 2 da ficha) === */}
+        <Section title="Transoperatório" open={sections.transoperatorio} onToggle={() => toggle('transoperatorio')}
+          badge={vitals.length || null}>
+          {/* Tempos */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <Field label="Início anestesia">
+              <input type="datetime-local" name="anesthesia_start" value={form.anesthesia_start} onChange={handle} className={inp} />
+            </Field>
+            <Field label="Início procedimento">
+              <input type="datetime-local" name="procedure_start" value={form.procedure_start} onChange={handle} className={inp} />
+            </Field>
+          </div>
+
+          {/* Monitoração - tabela de sinais vitais */}
+          <div className="space-y-2 mb-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase">Monitoração</p>
+
+            {/* Quick-add vitals */}
+            <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  ['FC', 'fc', 'bpm'], ['FR', 'fr', 'mpm'], ['SpO2', 'spo2', '%'],
+                  ['ETCO2', 'etco2', '%'], ['PAS', 'pas', 'mmHg'], ['PAM', 'pam', 'mmHg'],
+                  ['PAD', 'pad', 'mmHg'], ['T°C', 'temperature', '°C'], ['Fluido', 'fluid_ml_kg_h', 'ml/kg/h'],
+                ].map(([label, key, unit]) => (
+                  <div key={key}>
+                    <label className="block text-[10px] font-medium text-slate-500 mb-0.5">{label}</label>
+                    <input
+                      type="number" inputMode="decimal" step="any"
+                      value={newVital[key] || ''}
+                      onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))}
+                      placeholder={unit}
+                      className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Anestésico</label>
+                  <input
+                    type="text"
+                    value={newVital.anesthetic || ''}
+                    onChange={e => setNewVital(v => ({ ...v, anesthetic: e.target.value }))}
+                    placeholder="ISO 1.5%"
+                    className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">O₂</label>
+                  <input
+                    type="number" inputMode="decimal" step="any"
+                    value={newVital.o2_l_min || ''}
+                    onChange={e => setNewVital(v => ({ ...v, o2_l_min: e.target.value }))}
+                    placeholder="L/min"
+                    className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                  />
+                </div>
+              </div>
+              <button type="button" onClick={addVital}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[40px]">
+                <Plus size={14} /> Registrar momento
+              </button>
+            </div>
+
+            {/* Registered vitals list */}
+            {vitals.length > 0 && (
+              <div className="overflow-x-auto -mx-4 px-4">
+                <table className="text-[11px] min-w-[600px] w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-1.5 font-semibold text-slate-500">Hora</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">FC</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">FR</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">SpO2</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">ETCO2</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">PAS</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">PAM</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">PAD</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">T°C</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">Fluido</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">Anest.</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">O₂</th>
+                      <th className="w-6"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vitals.map((v, i) => (
+                      <tr key={v.id || i} className="border-b border-slate-50">
+                        <td className="py-1.5 font-mono text-slate-600">
+                          {v.recorded_at ? new Date(v.recorded_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </td>
+                        <td className="py-1.5 text-center text-slate-700">{v.fc || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.fr || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.spo2 || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.etco2 || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.pas || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.pam || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.pad || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.temperature || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.fluid_ml_kg_h || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.anesthetic || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.o2_l_min || '-'}</td>
+                        <td>
+                          {!v.fromServer && (
+                            <button type="button" onClick={() => removeVital(i)} className="p-1 text-slate-400 active:text-red-500">
+                              <X size={12} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Fármacos administrados no transoperatório */}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Trans-operatório</p>
+              <button type="button" onClick={() => {
+                setDrugs(d => ({
+                  ...d,
+                  transoperatorio: [...(d.transoperatorio || []), { medicine_id: '', dose: '', dose_unit: 'mL', route: '', time: '', drug_source: 'proprio' }]
+                }))
+              }} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2">
+                <Plus size={14} /> Adicionar
+              </button>
+            </div>
+            {(drugs.transoperatorio || []).map((med, i) => (
+              <DrugRow key={i} med={med} allMedicines={allMedicines}
+                onChange={(m) => setDrugs(d => ({ ...d, transoperatorio: d.transoperatorio.map((item, idx) => idx === i ? m : item) }))}
+                onRemove={() => setDrugs(d => ({ ...d, transoperatorio: d.transoperatorio.filter((_, idx) => idx !== i) }))} />
+            ))}
+          </div>
+
+          {/* Tempos finais */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Final procedimento">
+              <input type="datetime-local" name="procedure_end" value={form.procedure_end} onChange={handle} className={inp} />
+            </Field>
+            <Field label="Final anestesia">
+              <input type="datetime-local" name="anesthesia_end" value={form.anesthesia_end} onChange={handle} className={inp} />
+            </Field>
           </div>
         </Section>
 
