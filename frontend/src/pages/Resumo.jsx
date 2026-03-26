@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../api/axios'
-import { ClipboardList, Package, AlertTriangle, TrendingUp } from 'lucide-react'
+import { ClipboardList, Package, AlertTriangle, TrendingUp, DollarSign, ShoppingCart } from 'lucide-react'
 
 export default function Resumo() {
   const [data, setData] = useState(null)
@@ -88,6 +89,34 @@ export default function Resumo() {
           </div>
         </div>
       )}
+
+      {/* Quick links to financial sections */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link
+          to="/financeiro"
+          className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3 hover:border-teal-400 hover:shadow-sm transition"
+        >
+          <div className="bg-teal-50 p-2 rounded-lg">
+            <DollarSign size={18} className="text-teal-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-700">Financeiro</p>
+            <p className="text-xs text-slate-400">Receitas e despesas</p>
+          </div>
+        </Link>
+        <Link
+          to="/compras"
+          className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3 hover:border-teal-400 hover:shadow-sm transition"
+        >
+          <div className="bg-teal-50 p-2 rounded-lg">
+            <ShoppingCart size={18} className="text-teal-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-700">Compras</p>
+            <p className="text-xs text-slate-400">Registrar compras</p>
+          </div>
+        </Link>
+      </div>
     </div>
   )
 }

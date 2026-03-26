@@ -347,6 +347,7 @@ router.post('/', authenticateToken, (req, res) => {
       'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
       'block_type', 'block_drug', 'block_dose_volume',
       'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
+      'extubation_time',
       'post_operative',
     ];
 
@@ -401,6 +402,7 @@ router.put('/:id', authenticateToken, (req, res) => {
     if (existing.status === 'cancelled') {
       return res.status(400).json({ error: 'Cannot update a cancelled surgery' });
     }
+    // completed surgeries CAN be edited (re-opened / corrected)
 
     const b = req.body;
 
@@ -422,6 +424,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
       'block_type', 'block_drug', 'block_dose_volume',
       'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
+      'extubation_time',
       'post_operative',
     ];
 

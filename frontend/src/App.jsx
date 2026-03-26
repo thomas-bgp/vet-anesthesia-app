@@ -10,6 +10,8 @@ import FichaDetail from './pages/FichaDetail'
 import Estoque from './pages/Estoque'
 import Resumo from './pages/Resumo'
 import Perfil from './pages/Perfil'
+import Compras from './pages/Compras'
+import Financeiro from './pages/Financeiro'
 
 export default function App() {
   return (
@@ -28,7 +30,9 @@ export default function App() {
               <Route path="/fichas/:id" element={<FichaDetail />} />
               <Route path="/fichas/:id/edit" element={<FichaForm />} />
               <Route path="/estoque" element={<Estoque />} />
+              <Route path="/compras" element={<Compras />} />
               <Route path="/resumo" element={<Resumo />} />
+              <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/perfil" element={<Perfil />} />
             </Route>
           </Route>

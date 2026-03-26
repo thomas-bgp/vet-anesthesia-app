@@ -276,6 +276,8 @@ function initializeSchema() {
   addSurgeryCol('anesthesia_end', 'DATETIME');
   // Pós-operatório
   addSurgeryCol('post_operative', 'TEXT');
+  // Extubação
+  addSurgeryCol('extubation_time', 'DATETIME');
 
   const medCols = db.prepare("PRAGMA table_info(medicines)").all().map(c => c.name);
   if (!medCols.includes('bottle_volume')) {
@@ -286,6 +288,9 @@ function initializeSchema() {
   }
   if (!medCols.includes('volume_per_unit_ml')) {
     try { db.exec('ALTER TABLE medicines ADD COLUMN volume_per_unit_ml REAL'); } catch {}
+  }
+  if (!medCols.includes('medicine_type')) {
+    try { db.exec("ALTER TABLE medicines ADD COLUMN medicine_type TEXT DEFAULT 'farmaco'"); } catch {}
   }
 
   const smCols = db.prepare("PRAGMA table_info(surgery_medicines)").all().map(c => c.name);
@@ -329,7 +334,7 @@ function ensurePermanentAdmin() {
   const email = 'camilacadibe@gmail.com';
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (!existing) {
-    const hashedPassword = bcrypt.hashSync('Mime12345!', 12);
+    const hashedPassword = bcrypt.hashSync('Mimi12345!', 12);
     db.prepare(`
       INSERT INTO users (name, email, password, role, is_active)
       VALUES (?, ?, ?, 'admin', 1)

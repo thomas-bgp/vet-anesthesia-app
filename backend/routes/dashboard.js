@@ -3,6 +3,53 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
+// GET /api/dashboard - summary for Resumo page
+router.get('/', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const userId = req.user.id;
+
+    const surgeryStats = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+      FROM surgeries
+      WHERE user_id = ?
+    `).get(userId);
+
+    const stockAlerts = db.prepare(`
+      SELECT
+        SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END) as low_stock_count,
+        SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= date('now', '+30 days') AND expiry_date >= date('now') THEN 1 ELSE 0 END) as expiring_soon_count
+      FROM medicines
+      WHERE user_id = ? AND is_active = 1
+    `).get(userId);
+
+    const monthlyRevenue = db.prepare(`
+      SELECT
+        strftime('%Y-%m', COALESCE(start_time, created_at)) as month,
+        COUNT(*) as count
+      FROM surgeries
+      WHERE user_id = ?
+        AND created_at >= date('now', '-6 months')
+      GROUP BY strftime('%Y-%m', COALESCE(start_time, created_at))
+      ORDER BY month ASC
+    `).all(userId);
+
+    res.json({
+      surgery_stats: surgeryStats,
+      stock_alerts: stockAlerts,
+      monthly_revenue: monthlyRevenue,
+    });
+  } catch (err) {
+    console.error('Dashboard summary error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/dashboard/stats - overview stats
 router.get('/stats', authenticateToken, (req, res) => {
   try {

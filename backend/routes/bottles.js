@@ -8,7 +8,7 @@ router.get('/', authenticateToken, (req, res) => {
   try {
     const db = getDb();
     const userId = req.user.id;
-    const { status, medicine_id } = req.query;
+    const { status, medicine_id, medicine_type } = req.query;
 
     // Auto-mark expired bottles
     db.prepare(`
@@ -18,7 +18,8 @@ router.get('/', authenticateToken, (req, res) => {
     `).run(userId);
 
     let sql = `
-      SELECT mb.*, m.name as medicine_name, m.active_principle, m.concentration
+      SELECT mb.*, m.name as medicine_name, m.active_principle, m.concentration,
+             COALESCE(m.medicine_type, 'farmaco') as medicine_type
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
       WHERE mb.user_id = ?
@@ -33,6 +34,11 @@ router.get('/', authenticateToken, (req, res) => {
     if (medicine_id) {
       sql += ' AND mb.medicine_id = ?';
       params.push(medicine_id);
+    }
+
+    if (medicine_type && medicine_type !== 'todos') {
+      sql += " AND COALESCE(m.medicine_type, 'farmaco') = ?";
+      params.push(medicine_type);
     }
 
     sql += `

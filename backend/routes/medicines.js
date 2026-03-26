@@ -184,6 +184,7 @@ router.post('/', authenticateToken, (req, res) => {
       active_principle,
       concentration,
       bottle_volume,
+      volume_ml,
       unit,
       current_stock = 0,
       min_stock = 0,
@@ -191,9 +192,15 @@ router.post('/', authenticateToken, (req, res) => {
       supplier,
       batch_number,
       expiry_date,
+      units_per_box = 1,
+      medicine_type = 'farmaco',
     } = req.body;
 
-    if (!name || !unit) {
+    // unit is optional when creating via Compras (volume_ml path)
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    if (!unit && !volume_ml) {
       return res.status(400).json({ error: 'Name and unit are required' });
     }
 
@@ -207,26 +214,32 @@ router.post('/', authenticateToken, (req, res) => {
 
     const db = getDb();
 
+    const effectiveBottleVolume = bottle_volume || (volume_ml ? String(volume_ml) : null);
+    const effectiveUnit = unit || 'unidade';
+
     const result = db
       .prepare(`
         INSERT INTO medicines
           (user_id, name, active_principle, concentration, bottle_volume, unit, current_stock, min_stock,
-           cost_per_unit, supplier, batch_number, expiry_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         req.user.id,
         name,
         active_principle || null,
         concentration || null,
-        bottle_volume || null,
-        unit,
+        effectiveBottleVolume,
+        effectiveUnit,
         parseFloat(current_stock),
         parseFloat(min_stock),
         parseFloat(cost_per_unit),
         supplier || null,
         batch_number || null,
-        expiry_date || null
+        expiry_date || null,
+        parseInt(units_per_box) || 1,
+        volume_ml ? parseFloat(volume_ml) : null,
+        medicine_type || 'farmaco'
       );
 
     // Register initial stock as purchase if > 0

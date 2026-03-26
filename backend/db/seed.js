@@ -17,7 +17,10 @@ async function seed() {
     VALUES (?, ?, ?, ?)
   `);
 
+  const camilaPassword = await bcrypt.hash('Mimi12345!', 12);
+
   const adminResult = insertUser.run('Admin Sistema', 'admin@vetanesthesia.com', adminPassword, 'admin');
+  insertUser.run('Camila Cadibe', 'camilacadibe@gmail.com', camilaPassword, 'admin');
   const vetResult = insertUser.run('Dr. Carlos Silva', 'carlos@vetanesthesia.com', vetPassword, 'veterinario');
   const vet2Result = insertUser.run('Dra. Ana Lima', 'ana@vetanesthesia.com', vetPassword, 'veterinario');
 

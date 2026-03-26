@@ -1,24 +1,27 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Syringe,
   PawPrint,
   Package,
-  Users,
   BarChart3,
   LogOut,
-  Activity,
+  ShoppingCart,
+  Stethoscope,
+  DollarSign,
+  Pill,
+  UserPlus,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/surgeries', label: 'Cirurgias', icon: Activity },
-  { to: '/medicines', label: 'Medicamentos', icon: Syringe },
-  { to: '/stock', label: 'Estoque', icon: Package },
-  { to: '/price-table', label: 'Tabela de Preços', icon: BarChart3 },
-  { to: '/referrals', label: 'Indicações', icon: Users },
-  { to: '/reports', label: 'Relatórios', icon: BarChart3 },
+  { to: '/dashboard', label: 'Início', icon: LayoutDashboard },
+  { to: '/estoque', label: 'Estoque', icon: Package },
+  { to: '/compras', label: 'Compras', icon: ShoppingCart },
+  { to: '/surgeries', label: 'Cirurgias', icon: Stethoscope },
+  { to: '/financeiro', label: 'Financeiro', icon: DollarSign },
+  { to: '/medicines', label: 'Medicamentos', icon: Pill },
+  { to: '/price-table', label: 'Tabela Preços', icon: BarChart3 },
+  { to: '/referrals', label: 'Indicações', icon: UserPlus },
 ]
 
 export default function Sidebar({ open, onClose }) {

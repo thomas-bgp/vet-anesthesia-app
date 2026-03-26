@@ -1,346 +1,393 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from 'recharts'
-import { Activity, DollarSign, Package, AlertTriangle } from 'lucide-react'
+  FlaskConical,
+  DollarSign,
+  Package,
+  TrendingDown,
+  ShoppingCart,
+  Syringe,
+  Stethoscope,
+  AlertTriangle,
+  Clock,
+  Droplets,
+} from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import StatCard from '../components/StatCard'
+import QuickActionButton from '../components/QuickActionButton'
+import OpenBottleModal from '../components/OpenBottleModal'
+import UseBottleModal from '../components/UseBottleModal'
 import LoadingSpinner from '../components/LoadingSpinner'
 import api from '../api/axios'
 
-const PIE_COLORS = ['#0F766E', '#0891b2', '#7c3aed', '#db2777', '#d97706', '#16a34a']
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
+  if (diff < 60) return 'agora mesmo'
+  if (diff < 3600) return `${Math.floor(diff / 60)}min atras`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h atras`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d atras`
+  return new Date(dateStr).toLocaleDateString('pt-BR')
+}
 
-const activityTypeLabel = (type) => ({
-  surgery: 'Cirurgia',
-  stock_in: 'Entrada de estoque',
-  stock_out: 'Saída de estoque',
-  alert: 'Alerta',
-  payment: 'Pagamento',
-}[type] || type)
+function daysUntil(dateStr) {
+  if (!dateStr) return null
+  return Math.ceil((new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24))
+}
 
-const activityTypeColor = (type) => ({
-  surgery: 'bg-teal-100 text-teal-700',
-  stock_in: 'bg-green-100 text-green-700',
-  stock_out: 'bg-red-100 text-red-700',
-  alert: 'bg-amber-100 text-amber-700',
-  payment: 'bg-blue-100 text-blue-700',
-}[type] || 'bg-slate-100 text-slate-600')
+function expiryColor(days) {
+  if (days === null) return 'text-slate-400'
+  if (days <= 2) return 'text-red-600'
+  if (days <= 7) return 'text-amber-500'
+  return 'text-green-600'
+}
+
+function expiryBg(days) {
+  if (days === null) return 'bg-slate-100'
+  if (days <= 2) return 'bg-red-100'
+  if (days <= 7) return 'bg-amber-100'
+  return 'bg-green-100'
+}
+
+const fmt = (v) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+
+const activityIcon = (type) => {
+  if (type === 'usage' || type === 'stock_out') return Syringe
+  if (type === 'purchase' || type === 'stock_in') return ShoppingCart
+  if (type === 'surgery') return Stethoscope
+  return Clock
+}
+
+const activityColor = (type) => {
+  if (type === 'usage' || type === 'stock_out') return 'bg-green-100 text-green-600'
+  if (type === 'purchase' || type === 'stock_in') return 'bg-teal-100 text-teal-600'
+  if (type === 'surgery') return 'bg-purple-100 text-purple-600'
+  return 'bg-slate-100 text-slate-600'
+}
 
 export default function Dashboard() {
-  const [stats, setStats] = useState(null)
-  const [surgeriesByMonth, setSurgeriesByMonth] = useState([])
-  const [revenueByMonth, setRevenueByMonth] = useState([])
-  const [alerts, setAlerts] = useState([])
-  const [recent, setRecent] = useState([])
-  const [speciesDistribution, setSpeciesDistribution] = useState([])
-  const [topMedicines, setTopMedicines] = useState([])
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState({})
 
-  useEffect(() => {
-    const load = async () => {
-      const [statsRes, surgeriesRes, stockAlertsRes, recentRes, speciesRes, medicinesRes] =
-        await Promise.allSettled([
-          api.get('/dashboard/stats'),
-          api.get('/dashboard/surgeries-by-month'),
-          api.get('/dashboard/stock-alerts'),
-          api.get('/dashboard/recent-activity'),
-          api.get('/dashboard/species-distribution'),
-          api.get('/dashboard/top-medicines'),
-        ])
+  // Data
+  const [bottleStats, setBottleStats] = useState(null)
+  const [receivablesSummary, setReceivablesSummary] = useState(null)
+  const [expensesSummary, setExpensesSummary] = useState(null)
+  const [openedBottles, setOpenedBottles] = useState([])
+  const [expiringBottles, setExpiringBottles] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
 
-      const errs = {}
+  // Modals
+  const [openBottleModal, setOpenBottleModal] = useState(false)
+  const [useBottleModal, setUseBottleModal] = useState(false)
 
-      if (statsRes.status === 'fulfilled') {
-        setStats(statsRes.value.data?.stats ?? statsRes.value.data ?? null)
-      } else {
-        errs.stats = true
-      }
+  const loadData = useCallback(async () => {
+    const [statsRes, receivablesRes, expensesRes, openedRes, expiringRes, recentRes] =
+      await Promise.allSettled([
+        api.get('/bottles/stats'),
+        api.get('/receivables/summary'),
+        api.get('/expenses/summary'),
+        api.get('/bottles', { params: { status: 'opened' } }),
+        api.get('/bottles/expiring-soon'),
+        api.get('/dashboard/recent-activity'),
+      ])
 
-      if (surgeriesRes.status === 'fulfilled') {
-        const raw = surgeriesRes.value.data?.data || []
-        setSurgeriesByMonth(raw)
-        // Revenue lives inside the same endpoint response when present, otherwise stay empty
-        // until the dedicated revenue endpoint resolves below
-      } else {
-        errs.surgeries = true
-      }
+    const errs = {}
 
-      // Revenue is embedded in surgeries-by-month response as well
-      // but we read it separately via the same array if it has a `revenue` field,
-      // or fall back to an empty array until a dedicated endpoint is available.
-      setRevenueByMonth(
-        surgeriesRes.status === 'fulfilled'
-          ? (surgeriesRes.value.data?.data || []).filter((d) => d.revenue !== undefined)
-          : []
-      )
-
-      if (stockAlertsRes.status === 'fulfilled') {
-        const d = stockAlertsRes.value.data || {}
-        const low = (d.low_stock || []).map((i) => ({ ...i, _alertType: 'low_stock' }))
-        const expiring = (d.expiring || []).map((i) => ({ ...i, _alertType: 'expiring' }))
-        setAlerts([...low, ...expiring])
-      } else {
-        errs.alerts = true
-      }
-
-      if (recentRes.status === 'fulfilled') {
-        setRecent(recentRes.value.data?.activities || [])
-      } else {
-        errs.recent = true
-      }
-
-      if (speciesRes.status === 'fulfilled') {
-        setSpeciesDistribution(speciesRes.value.data?.data || [])
-      } else {
-        errs.species = true
-      }
-
-      if (medicinesRes.status === 'fulfilled') {
-        setTopMedicines(medicinesRes.value.data?.data || [])
-      } else {
-        errs.medicines = true
-      }
-
-      setErrors(errs)
-      setLoading(false)
+    if (statsRes.status === 'fulfilled') {
+      setBottleStats(statsRes.value.data?.stats ?? statsRes.value.data ?? null)
+    } else {
+      errs.stats = true
     }
 
-    load()
+    if (receivablesRes.status === 'fulfilled') {
+      setReceivablesSummary(receivablesRes.value.data?.summary ?? receivablesRes.value.data ?? null)
+    } else {
+      errs.receivables = true
+    }
+
+    if (expensesRes.status === 'fulfilled') {
+      setExpensesSummary(expensesRes.value.data?.summary ?? expensesRes.value.data ?? null)
+    } else {
+      errs.expenses = true
+    }
+
+    if (openedRes.status === 'fulfilled') {
+      const list = openedRes.value.data?.bottles || openedRes.value.data?.data || openedRes.value.data || []
+      setOpenedBottles(Array.isArray(list) ? list : [])
+    } else {
+      errs.opened = true
+    }
+
+    if (expiringRes.status === 'fulfilled') {
+      const list = expiringRes.value.data?.bottles || expiringRes.value.data?.data || expiringRes.value.data || []
+      setExpiringBottles(Array.isArray(list) ? list : [])
+    } else {
+      errs.expiring = true
+    }
+
+    if (recentRes.status === 'fulfilled') {
+      setRecentActivity(recentRes.value.data?.activities || recentRes.value.data?.data || [])
+    } else {
+      errs.recent = true
+    }
+
+    setErrors(errs)
+    setLoading(false)
   }, [])
 
-  const fmt = (v) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
-  const fmtDate = (iso) => {
-    if (!iso) return ''
-    return new Date(iso).toLocaleDateString('pt-BR')
+  const handleRefresh = () => {
+    setLoading(true)
+    loadData()
   }
 
-  if (loading)
+  // Derived values
+  const openedCount = bottleStats?.opened_count ?? openedBottles.length
+  const pendingReceivables = receivablesSummary?.pending_total ?? 0
+  const overdueReceivables = receivablesSummary?.overdue_total ?? 0
+  const stockValue = bottleStats?.total_stock_value ?? 0
+  const monthlyExpenses = expensesSummary?.monthly_total ?? expensesSummary?.total ?? 0
+
+  // Alerts
+  const expiringCount = expiringBottles.length
+  const hasExpiring = expiringCount > 0
+  const hasOverdue = overdueReceivables > 0
+  const hasAlerts = hasExpiring || hasOverdue
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingSpinner size="lg" />
       </div>
     )
+  }
 
-  // Derive stat values from the nested backend shape
-  const surgeriesThisMonth = stats?.surgeries?.this_month ?? 0
-  const revenueThisMonth = stats?.revenue?.this_month ?? 0
-  const stockValue = stats?.stock?.total_stock_value ?? 0
-  const lowStockCount = stats?.stock?.low_stock_count ?? 0
-  const surgeryTrend = stats?.surgeries?.month_change_percent ?? null
-  const revenueTrend = stats?.revenue?.month_change_percent ?? null
+  const firstName = user?.name?.split(' ')[0] || 'Doutor(a)'
 
   return (
     <div className="space-y-6">
+      {/* A) Greeting + Stats */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Visão geral do mês atual</p>
+        <h1 className="text-2xl font-bold text-slate-800">
+          Ola, {firstName}! <span aria-hidden="true">&#128075;</span>
+        </h1>
+        <p className="text-slate-500 text-sm mt-0.5">
+          Aqui esta o resumo do seu dia
+        </p>
       </div>
 
-      {/* Partial-load warning banner */}
+      {/* Partial-load warning */}
       {Object.keys(errors).length > 0 && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
-          Alguns dados não puderam ser carregados. O dashboard pode estar incompleto.
+          Alguns dados nao puderam ser carregados. O dashboard pode estar incompleto.
         </div>
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
-          title="Cirurgias este mês"
-          value={surgeriesThisMonth}
-          subtitle="procedimentos realizados"
-          icon={Activity}
+          title="Frascos Abertos"
+          value={openedCount}
+          subtitle="em uso atualmente"
+          icon={FlaskConical}
           color="teal"
-          trend={surgeryTrend}
         />
         <StatCard
-          title="Receita este mês"
-          value={fmt(revenueThisMonth)}
-          subtitle="honorários recebidos"
+          title="A Receber"
+          value={fmt(pendingReceivables)}
+          subtitle="pagamentos pendentes"
           icon={DollarSign}
           color="green"
-          trend={revenueTrend}
         />
         <StatCard
-          title="Valor em estoque"
+          title="Estoque Total"
           value={fmt(stockValue)}
-          subtitle="medicamentos disponíveis"
+          subtitle="valor em medicamentos"
           icon={Package}
           color="blue"
         />
         <StatCard
-          title="Alertas de estoque"
-          value={lowStockCount}
-          subtitle="itens abaixo do mínimo"
-          icon={AlertTriangle}
-          color={lowStockCount > 0 ? 'red' : 'teal'}
+          title="Gastos do Mes"
+          value={fmt(monthlyExpenses)}
+          subtitle="despesas + compras"
+          icon={TrendingDown}
+          color="amber"
         />
       </div>
 
-      {/* Charts row 1 — Surgeries & Revenue */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Cirurgias por Mês</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={surgeriesByMonth}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="total"
-                stroke="#0F766E"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                name="Cirurgias"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Receita por Mês (R$)</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={revenueByMonth}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `R$${v}`} />
-              <Tooltip formatter={(v) => fmt(v)} />
-              <Bar dataKey="revenue" fill="#0891b2" radius={[4, 4, 0, 0]} name="Receita" />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* B) Quick Actions */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          Acoes Rapidas
+        </h2>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <QuickActionButton
+            icon={ShoppingCart}
+            label="Registrar Compra"
+            color="teal"
+            onClick={() => navigate('/compras')}
+          />
+          <QuickActionButton
+            icon={FlaskConical}
+            label="Abrir Frasco"
+            color="blue"
+            onClick={() => setOpenBottleModal(true)}
+          />
+          <QuickActionButton
+            icon={Syringe}
+            label="Registrar Uso"
+            color="green"
+            onClick={() => setUseBottleModal(true)}
+          />
+          <QuickActionButton
+            icon={Stethoscope}
+            label="Nova Cirurgia"
+            color="purple"
+            onClick={() => navigate('/surgeries/new')}
+          />
         </div>
       </div>
 
-      {/* Charts row 2 — Species & Top Medicines */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Distribuição por Espécie</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={speciesDistribution}
-                cx="50%"
-                cy="50%"
-                outerRadius={75}
-                dataKey="total"
-                nameKey="species"
-              >
-                {speciesDistribution.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value, name) => [value, name]}
-              />
-              <Legend
-                iconType="circle"
-                iconSize={10}
-                formatter={(value) => (
-                  <span className="text-xs text-slate-600">{value}</span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Medicamentos Mais Usados</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart layout="vertical" data={topMedicines}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis type="number" tick={{ fontSize: 12 }} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} />
-              <Tooltip />
-              <Bar dataKey="usage_count" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Usos" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Tables row — Stock Alerts & Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Stock Alerts */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-            <AlertTriangle size={16} className="text-amber-500" />
-            Alertas de Estoque
-          </h3>
-          {alerts.length === 0 ? (
-            <p className="text-slate-400 text-sm text-center py-6">Nenhum alerta de estoque.</p>
-          ) : (
-            <div className="space-y-2">
-              {alerts.map((item, idx) => (
-                <div
-                  key={item.id ?? idx}
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">{item.name}</p>
-                    <p className="text-xs text-slate-400">
-                      {item._alertType === 'low_stock' ? 'Estoque baixo' : 'Vencimento próximo'}
-                    </p>
-                  </div>
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      item._alertType === 'low_stock'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}
-                  >
-                    {item._alertType === 'low_stock'
-                      ? `${item.current_stock ?? item.quantity ?? 0} un.`
-                      : `Vence ${fmtDate(item.expiry_date)}`}
-                  </span>
-                </div>
-              ))}
-            </div>
+      {/* C) Alerts */}
+      {hasAlerts && (
+        <div className="space-y-3">
+          {hasExpiring && (
+            <button
+              onClick={() => navigate('/stock')}
+              className="w-full text-left p-4 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors flex items-center gap-3"
+            >
+              <div className="bg-red-100 p-2 rounded-lg">
+                <AlertTriangle size={20} className="text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-red-800">
+                  <span aria-hidden="true">&#9888;&#65039;</span> {expiringCount} frasco(s) vencem em breve!
+                </p>
+                <p className="text-xs text-red-600 mt-0.5">Clique para ver detalhes</p>
+              </div>
+            </button>
+          )}
+          {hasOverdue && (
+            <button
+              onClick={() => navigate('/receivables')}
+              className="w-full text-left p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors flex items-center gap-3"
+            >
+              <div className="bg-amber-100 p-2 rounded-lg">
+                <DollarSign size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  <span aria-hidden="true">&#128176;</span> {fmt(overdueReceivables)} em pagamentos atrasados
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">Clique para ver detalhes</p>
+              </div>
+            </button>
           )}
         </div>
+      )}
 
+      {/* D) Two-column: Recent Activity + Opened Bottles */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Activity */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Atividade Recente</h3>
-          {recent.length === 0 ? (
-            <p className="text-slate-400 text-sm text-center py-6">Nenhuma atividade recente.</p>
+          <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+            <Clock size={16} className="text-slate-400" />
+            Atividade Recente
+          </h3>
+          {recentActivity.length === 0 ? (
+            <p className="text-slate-400 text-sm text-center py-8">Nenhuma atividade recente.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentActivity.slice(0, 5).map((activity, idx) => {
+                const IconComp = activityIcon(activity.type)
+                return (
+                  <div key={activity.id ?? idx} className="flex items-start gap-3">
+                    <div className={`p-1.5 rounded-lg shrink-0 ${activityColor(activity.type)}`}>
+                      <IconComp size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-700 truncate">{activity.description}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {timeAgo(activity.created_at)}
+                        {activity.amount != null && ` \u00b7 ${fmt(activity.amount)}`}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Opened Bottles */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+            <Droplets size={16} className="text-teal-500" />
+            Frascos Abertos
+          </h3>
+          {openedBottles.length === 0 ? (
+            <p className="text-slate-400 text-sm text-center py-8">Nenhum frasco aberto.</p>
           ) : (
             <div className="space-y-2">
-              {recent.map((activity, idx) => (
-                <div
-                  key={activity.id ?? idx}
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
+              {openedBottles.slice(0, 6).map((bottle) => {
+                const name = bottle.medicine_name || bottle.medicine?.name || 'Desconhecido'
+                const remaining = bottle.remaining_ml ?? bottle.volume_ml ?? 0
+                const days = daysUntil(bottle.expires_at || bottle.expiry_date)
+                return (
+                  <div
+                    key={bottle.id}
+                    className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 truncate">{name}</p>
+                      <p className="text-xs text-slate-400">{remaining}ml restantes</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded-full ${expiryBg(days)} ${expiryColor(days)}`}
+                      >
+                        {days !== null
+                          ? days <= 0
+                            ? 'Vencido'
+                            : `${days}d`
+                          : '-'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+              {openedBottles.length > 6 && (
+                <button
+                  onClick={() => navigate('/stock')}
+                  className="text-xs text-teal-600 hover:text-teal-700 font-medium mt-1"
                 >
-                  <div className="flex-1 min-w-0 pr-3">
-                    <p className="text-sm font-medium text-slate-700 truncate">
-                      {activity.description}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {fmtDate(activity.created_at)}
-                      {activity.extra ? ` · ${activity.extra}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${activityTypeColor(
-                        activity.type
-                      )}`}
-                    >
-                      {activityTypeLabel(activity.type)}
-                    </span>
-                    {activity.amount != null && (
-                      <p className="text-xs text-slate-500">{fmt(activity.amount)}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
+                  Ver todos ({openedBottles.length})
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      <OpenBottleModal
+        isOpen={openBottleModal}
+        onClose={() => setOpenBottleModal(false)}
+        onBottleOpened={handleRefresh}
+      />
+      <UseBottleModal
+        isOpen={useBottleModal}
+        onClose={() => setUseBottleModal(false)}
+        onUsageRecorded={handleRefresh}
+      />
     </div>
   )
 }

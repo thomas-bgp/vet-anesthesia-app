@@ -17,6 +17,12 @@ const TABS = [
   { key: '', label: 'Todos' },
 ]
 
+const TYPE_TABS = [
+  { key: 'todos', label: 'Todos' },
+  { key: 'farmaco', label: 'Fármacos' },
+  { key: 'descartavel', label: 'Descartáveis' },
+]
+
 function daysSince(dateStr) {
   if (!dateStr) return null
   const diff = (new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24)
@@ -55,6 +61,7 @@ export default function Estoque() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('open')
+  const [typeFilter, setTypeFilter] = useState('todos')
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState(null)
   const [useBottleId, setUseBottleId] = useState(null)
@@ -66,6 +73,7 @@ export default function Estoque() {
     try {
       const params = {}
       if (tab) params.status = tab
+      if (typeFilter && typeFilter !== 'todos') params.medicine_type = typeFilter
       const res = await api.get('/bottles', { params })
       setBottles(res.data?.bottles || res.data || [])
     } catch {
@@ -73,7 +81,7 @@ export default function Estoque() {
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [tab, typeFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -155,7 +163,25 @@ export default function Estoque() {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+        {/* Type filter */}
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl self-start">
+          {TYPE_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTypeFilter(t.key)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition min-h-[34px] ${
+                typeFilter === t.key
+                  ? 'bg-white shadow text-teal-700'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
           {TABS.map((t) => (
             <button
@@ -179,6 +205,7 @@ export default function Estoque() {
             placeholder="Buscar por nome do medicamento..."
             className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
+        </div>
         </div>
       </div>
 

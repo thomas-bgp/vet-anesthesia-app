@@ -5,6 +5,58 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* ===== PRINT STYLES ===== */
+@media print {
+  /* Hide everything that should not appear on paper */
+  nav,
+  .bottom-nav,
+  [data-no-print],
+  .no-print {
+    display: none !important;
+  }
+
+  /* Reset page chrome */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+
+  /* Remove sticky positioning so header prints normally */
+  .sticky {
+    position: static !important;
+  }
+
+  /* Cards: flat borders, no shadows */
+  .bg-white, [class*="rounded-xl"], [class*="rounded-lg"] {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    break-inside: avoid;
+  }
+
+  /* Vitals table: keep readable */
+  table {
+    width: 100% !important;
+    min-width: unset !important;
+    font-size: 9pt;
+  }
+
+  /* Remove overflow hidden from vitals table wrapper */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Emergency modal must never print */
+  .emergency-modal-overlay {
+    display: none !important;
+  }
+
+  /* Page margins */
+  @page {
+    margin: 1.5cm;
+  }
+}
+
 /* Smooth scrolling */
 html {
   -webkit-overflow-scrolling: touch;

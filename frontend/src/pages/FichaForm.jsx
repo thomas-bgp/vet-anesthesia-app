@@ -37,6 +37,7 @@ const EMPTY = {
   airway_type: '', tube_number: '', breathing_mode: '', breathing_system: '', peep: false,
   block_type: '', block_drug: '', block_dose_volume: '',
   anesthesia_start: '', procedure_start: '', procedure_end: '', anesthesia_end: '',
+  extubation_time: '',
   post_operative: '', monitoring_notes: '', status: 'scheduled',
 }
 
@@ -84,6 +85,15 @@ function DrugRow({ med, allMedicines, onChange, onRemove }) {
             <option value="">Selecione fármaco...</option>
             {allMedicines.map(m => <option key={m.id} value={m.id}>{m.name} {m.concentration || ''}</option>)}
           </select>
+          {!med.medicine_id && (
+            <input
+              type="text"
+              value={med.custom_name || ''}
+              onChange={e => onChange({ ...med, custom_name: e.target.value })}
+              placeholder="Ou digite o nome do fármaco"
+              className={`${inp} mt-2`}
+            />
+          )}
         </div>
         <div>
           <input type="number" step="0.01" inputMode="decimal" placeholder="Dose"
@@ -144,15 +154,21 @@ export default function FichaForm() {
   // Drug lists per phase
   const [drugs, setDrugs] = useState({ mpa: [], inducao: [], manutencao: [], transoperatorio: [] })
 
+  // Blocks (multiple)
+  const [blocks, setBlocks] = useState([])
+
   // Vitals (transoperative monitoring)
   const [vitals, setVitals] = useState([])
   const [newVital, setNewVital] = useState({})
+
+  // Intercorrências (intraoperative events)
+  const [complications, setComplications] = useState([])
 
   // Section open/close state
   const [sections, setSections] = useState({
     paciente: true, anamnese: false, exame: false, exames_comp: false,
     protocolo: true, vias_aereas: false, bloqueios: false,
-    transoperatorio: false, observacoes: false,
+    transoperatorio: false, pos_operatorio: false, observacoes: false,
   })
 
   const toggle = (key) => setSections(s => ({ ...s, [key]: !s[key] }))
@@ -191,7 +207,31 @@ export default function FichaForm() {
         if (f.procedure_start) f.procedure_start = f.procedure_start.slice(0, 16)
         if (f.procedure_end) f.procedure_end = f.procedure_end.slice(0, 16)
         if (f.anesthesia_end) f.anesthesia_end = f.anesthesia_end.slice(0, 16)
+        if (f.extubation_time) f.extubation_time = f.extubation_time.slice(0, 16)
         setForm(f)
+
+        // Load existing blocks from block_type JSON
+        if (f.block_type) {
+          try {
+            const parsed = JSON.parse(f.block_type)
+            if (Array.isArray(parsed)) setBlocks(parsed)
+          } catch {
+            // Legacy single block stored as plain text — migrate to array
+            if (f.block_type) {
+              setBlocks([{ type: f.block_type, other_type: '', drug: f.block_drug || '', dose_volume: f.block_dose_volume || '' }])
+            }
+          }
+        }
+
+        // Load existing complications
+        if (s.complications) {
+          try {
+            const parsed = JSON.parse(s.complications)
+            setComplications(Array.isArray(parsed) ? parsed : [{ time: '', text: s.complications }])
+          } catch {
+            setComplications([{ time: '', text: s.complications }])
+          }
+        }
 
         // Load existing vitals
         setVitals((res.data.vitals || []).map(v => ({ ...v, fromServer: true })))
@@ -219,9 +259,18 @@ export default function FichaForm() {
       .finally(() => setLoading(false))
   }, [id, isEdit])
 
+  const currentTimeHHMM = () => {
+    const now = new Date()
+    return now.toTimeString().slice(0, 5)
+  }
+
   const addVital = () => {
-    if (!Object.values(newVital).some(v => v)) return
-    setVitals(v => [...v, { ...newVital, id: Date.now(), recorded_at: new Date().toISOString() }])
+    const { vital_time, ...vitalData } = newVital
+    if (!Object.values(vitalData).some(v => v)) return
+    const today = new Date().toISOString().slice(0, 10)
+    const timeStr = vital_time || currentTimeHHMM()
+    const recorded_at = `${today}T${timeStr}:00`
+    setVitals(v => [...v, { ...vitalData, id: Date.now(), recorded_at }])
     setNewVital({})
   }
 
@@ -266,6 +315,12 @@ export default function FichaForm() {
         pre_fr: form.pre_fr !== '' ? Number(form.pre_fr) : null,
         pre_temperature: form.pre_temperature !== '' ? Number(form.pre_temperature) : null,
         pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
+        block_type: blocks.length > 0 ? JSON.stringify(blocks) : '',
+        block_drug: '',
+        block_dose_volume: '',
+        complications: complications.filter(c => c.text.trim()).length > 0
+          ? JSON.stringify(complications.filter(c => c.text.trim()))
+          : null,
       }
 
       let surgeryId = id
@@ -301,12 +356,17 @@ export default function FichaForm() {
       ]
 
       for (const drug of allDrugs) {
-        if (drug.existing || !drug.medicine_id || !drug.dose) continue
+        if (drug.existing) continue
+        const hasMed = drug.medicine_id
+        const hasCustom = !drug.medicine_id && drug.custom_name
+        if (!hasMed && !hasCustom) continue
+        if (!drug.dose) continue
         const adminAt = drug.time
           ? `${form.start_time?.slice(0, 10) || new Date().toISOString().slice(0, 10)}T${drug.time}`
           : null
         await api.post(`/surgeries/${surgeryId}/medicines`, {
-          medicine_id: Number(drug.medicine_id),
+          medicine_id: hasMed ? Number(drug.medicine_id) : null,
+          custom_name: hasCustom ? drug.custom_name : null,
           dose: Number(drug.dose),
           dose_unit: drug.dose_unit,
           route: drug.route || null,
@@ -431,7 +491,7 @@ export default function FichaForm() {
                 <input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" />
               </Field>
               <Field label="Medicações prévias">
-                <input name="prior_medications" value={form.prior_medications} onChange={handle} className={inp} />
+                <textarea name="prior_medications" value={form.prior_medications} onChange={handle} rows={2} className={`${inp} resize-none`} />
               </Field>
             </div>
             <Field label="Observações" span2>
@@ -510,16 +570,16 @@ export default function FichaForm() {
           </div>
           <div className="grid grid-cols-2 gap-3 pt-1">
             <Field label="Raio-X">
-              <input name="exam_raiox" value={form.exam_raiox} onChange={handle} className={inp} />
+              <textarea name="exam_raiox" value={form.exam_raiox} onChange={handle} rows={2} className={`${inp} resize-none`} />
             </Field>
             <Field label="Ultrassom">
-              <input name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} className={inp} />
+              <textarea name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} rows={2} className={`${inp} resize-none`} />
             </Field>
             <Field label="Eco/ECG" span2>
-              <input name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} className={inp} />
+              <textarea name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} rows={2} className={`${inp} resize-none`} />
             </Field>
             <Field label="Outros exames" span2>
-              <input name="exam_outros" value={form.exam_outros} onChange={handle} className={inp} />
+              <textarea name="exam_outros" value={form.exam_outros} onChange={handle} rows={2} className={`${inp} resize-none`} />
             </Field>
           </div>
         </Section>
@@ -609,28 +669,72 @@ export default function FichaForm() {
         </Section>
 
         {/* === BLOQUEIOS === */}
-        <Section title="Bloqueios" open={sections.bloqueios} onToggle={() => toggle('bloqueios')}>
+        <Section title="Bloqueios" open={sections.bloqueios} onToggle={() => toggle('bloqueios')}
+          badge={blocks.length || null}>
           <div className="space-y-3">
-            <Field label="Tipo">
-              <div className="flex gap-1 flex-wrap">
-                {BLOCK_TYPES.map(t => (
-                  <button key={t} type="button"
-                    onClick={() => setForm(f => ({ ...f, block_type: t }))}
-                    className={`px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] transition ${
-                      form.block_type === t ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'
-                    }`}
-                  >{t}</button>
-                ))}
+            {blocks.map((blk, i) => (
+              <div key={i} className="bg-slate-50 rounded-lg p-3 space-y-2 relative">
+                <button type="button"
+                  onClick={() => setBlocks(b => b.filter((_, idx) => idx !== i))}
+                  className="absolute top-2 right-2 p-1 text-slate-400 active:text-red-500">
+                  <X size={16} />
+                </button>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Tipo</label>
+                  <div className="flex gap-1 flex-wrap">
+                    {BLOCK_TYPES.map(t => (
+                      <button key={t} type="button"
+                        onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, type: t } : item))}
+                        className={`px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] transition ${
+                          blk.type === t ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'
+                        }`}
+                      >{t}</button>
+                    ))}
+                  </div>
+                </div>
+                {blk.type === 'Outro' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Descrever tipo</label>
+                    <input
+                      type="text"
+                      value={blk.other_type || ''}
+                      onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, other_type: e.target.value } : item))}
+                      className={inp}
+                      placeholder="Ex: TAP block, RUMM..."
+                    />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Fármaco</label>
+                    <input
+                      type="text"
+                      value={blk.drug || ''}
+                      onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drug: e.target.value } : item))}
+                      className={inp}
+                      placeholder="Bupivacaína"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Dose/volume</label>
+                    <input
+                      type="text"
+                      value={blk.dose_volume || ''}
+                      onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, dose_volume: e.target.value } : item))}
+                      className={inp}
+                      placeholder="0.3 ml/kg"
+                    />
+                  </div>
+                </div>
               </div>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Fármaco">
-                <input name="block_drug" value={form.block_drug} onChange={handle} className={inp} />
-              </Field>
-              <Field label="Dose/volume">
-                <input name="block_dose_volume" value={form.block_dose_volume} onChange={handle} className={inp} />
-              </Field>
-            </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setBlocks(b => [...b, { type: '', other_type: '', drug: '', dose_volume: '' }])}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-teal-400 text-teal-600 text-xs font-medium rounded-lg active:bg-teal-50 min-h-[44px]"
+            >
+              <Plus size={14} /> Adicionar bloqueio
+            </button>
           </div>
         </Section>
 
@@ -655,9 +759,9 @@ export default function FichaForm() {
             <div className="bg-slate-50 rounded-lg p-3 space-y-2">
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  ['FC', 'fc', 'bpm'], ['FR', 'fr', 'mpm'], ['SpO2', 'spo2', '%'],
-                  ['ETCO2', 'etco2', '%'], ['PAS', 'pas', 'mmHg'], ['PAM', 'pam', 'mmHg'],
-                  ['PAD', 'pad', 'mmHg'], ['T°C', 'temperature', '°C'], ['Fluido', 'fluid_ml_kg_h', 'ml/kg/h'],
+                  ['FC', 'fc', 'bpm'], ['PAS', 'pas', 'mmHg'], ['PAM', 'pam', 'mmHg'],
+                  ['PAD', 'pad', 'mmHg'], ['SpO2', 'spo2', '%'], ['FR', 'fr', 'mpm'],
+                  ['ETCO2', 'etco2', '%'], ['T°C', 'temperature', '°C'], ['Fluido', 'fluid_ml_kg_h', 'ml/kg/h'],
                 ].map(([label, key, unit]) => (
                   <div key={key}>
                     <label className="block text-[10px] font-medium text-slate-500 mb-0.5">{label}</label>
@@ -671,16 +775,6 @@ export default function FichaForm() {
                   </div>
                 ))}
                 <div>
-                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Anestésico</label>
-                  <input
-                    type="text"
-                    value={newVital.anesthetic || ''}
-                    onChange={e => setNewVital(v => ({ ...v, anesthetic: e.target.value }))}
-                    placeholder="ISO 1.5%"
-                    className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
-                  />
-                </div>
-                <div>
                   <label className="block text-[10px] font-medium text-slate-500 mb-0.5">O₂</label>
                   <input
                     type="number" inputMode="decimal" step="any"
@@ -690,6 +784,35 @@ export default function FichaForm() {
                     className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
                   />
                 </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Anestésico</label>
+                  <input
+                    type="text"
+                    value={newVital.anesthetic || ''}
+                    onChange={e => setNewVital(v => ({ ...v, anesthetic: e.target.value }))}
+                    placeholder="ISO 1.5%"
+                    className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Notas/Outros</label>
+                  <input
+                    type="text"
+                    value={newVital.notes || ''}
+                    onChange={e => setNewVital(v => ({ ...v, notes: e.target.value }))}
+                    placeholder="Parâmetros adicionais ou observações..."
+                    className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <label className="text-[10px] font-medium text-slate-500 whitespace-nowrap">Horário</label>
+                <input
+                  type="time"
+                  value={newVital.vital_time !== undefined ? newVital.vital_time : currentTimeHHMM()}
+                  onChange={e => setNewVital(v => ({ ...v, vital_time: e.target.value }))}
+                  className="px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px] flex-1"
+                />
               </div>
               <button type="button" onClick={addVital}
                 className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[40px]">
@@ -700,21 +823,22 @@ export default function FichaForm() {
             {/* Registered vitals list */}
             {vitals.length > 0 && (
               <div className="overflow-x-auto -mx-4 px-4">
-                <table className="text-[11px] min-w-[600px] w-full">
+                <table className="text-[11px] min-w-[760px] w-full">
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="text-left py-1.5 font-semibold text-slate-500">Hora</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">FC</th>
-                      <th className="text-center py-1.5 font-semibold text-slate-500">FR</th>
-                      <th className="text-center py-1.5 font-semibold text-slate-500">SpO2</th>
-                      <th className="text-center py-1.5 font-semibold text-slate-500">ETCO2</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">PAS</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">PAM</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">PAD</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">SpO2</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">FR</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">ETCO2</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">T°C</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">Fluido</th>
-                      <th className="text-center py-1.5 font-semibold text-slate-500">Anest.</th>
                       <th className="text-center py-1.5 font-semibold text-slate-500">O₂</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">Anest.</th>
+                      <th className="text-center py-1.5 font-semibold text-slate-500">Notas</th>
                       <th className="w-6"></th>
                     </tr>
                   </thead>
@@ -725,16 +849,17 @@ export default function FichaForm() {
                           {v.recorded_at ? new Date(v.recorded_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}
                         </td>
                         <td className="py-1.5 text-center text-slate-700">{v.fc || '-'}</td>
-                        <td className="py-1.5 text-center text-slate-700">{v.fr || '-'}</td>
-                        <td className="py-1.5 text-center text-slate-700">{v.spo2 || '-'}</td>
-                        <td className="py-1.5 text-center text-slate-700">{v.etco2 || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.pas || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.pam || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.pad || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.spo2 || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.fr || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.etco2 || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.temperature || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.fluid_ml_kg_h || '-'}</td>
-                        <td className="py-1.5 text-center text-slate-700">{v.anesthetic || '-'}</td>
                         <td className="py-1.5 text-center text-slate-700">{v.o2_l_min || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700">{v.anesthetic || '-'}</td>
+                        <td className="py-1.5 text-center text-slate-700 max-w-[80px] truncate">{v.notes || '-'}</td>
                         <td>
                           {!v.fromServer && (
                             <button type="button" onClick={() => removeVital(i)} className="p-1 text-slate-400 active:text-red-500">
@@ -748,6 +873,47 @@ export default function FichaForm() {
                 </table>
               </div>
             )}
+          </div>
+
+          {/* Intercorrências */}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Intercorrências</p>
+              <button
+                type="button"
+                onClick={() => setComplications(c => [...c, { time: currentTimeHHMM(), text: '' }])}
+                className="flex items-center gap-1 text-xs text-orange-600 font-medium min-h-[36px] px-2"
+              >
+                <Plus size={14} /> Adicionar
+              </button>
+            </div>
+            {complications.length === 0 && (
+              <p className="text-xs text-slate-400 italic py-1">Nenhuma intercorrência registrada.</p>
+            )}
+            {complications.map((entry, i) => (
+              <div key={i} className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-lg p-2">
+                <input
+                  type="time"
+                  value={entry.time}
+                  onChange={e => setComplications(c => c.map((item, idx) => idx === i ? { ...item, time: e.target.value } : item))}
+                  className="px-2 py-1.5 border border-orange-200 rounded text-sm min-h-[40px] w-[100px] shrink-0 bg-white"
+                />
+                <input
+                  type="text"
+                  value={entry.text}
+                  onChange={e => setComplications(c => c.map((item, idx) => idx === i ? { ...item, text: e.target.value } : item))}
+                  placeholder="Ex: Bradicardia, administrado atropina..."
+                  className="flex-1 px-2 py-1.5 border border-orange-200 rounded text-sm min-h-[40px] bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => setComplications(c => c.filter((_, idx) => idx !== i))}
+                  className="p-1.5 text-orange-400 active:text-red-600 min-h-[40px] min-w-[36px] flex items-center justify-center"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
           </div>
 
           {/* Fármacos administrados no transoperatório */}
@@ -778,19 +944,24 @@ export default function FichaForm() {
             <Field label="Final anestesia">
               <input type="datetime-local" name="anesthesia_end" value={form.anesthesia_end} onChange={handle} className={inp} />
             </Field>
+            <Field label="Hora de extubação">
+              <input type="datetime-local" name="extubation_time" value={form.extubation_time} onChange={handle} className={inp} />
+            </Field>
           </div>
         </Section>
 
-        {/* === OBSERVAÇÕES / PÓS-OP === */}
+        {/* === PÓS-OPERATÓRIO === */}
+        <Section title="Pós-operatório" open={sections.pos_operatorio} onToggle={() => toggle('pos_operatorio')}>
+          <Field label="Pós-operatório">
+            <textarea name="post_operative" value={form.post_operative} onChange={handle} rows={4} className={`${inp} resize-none`} />
+          </Field>
+        </Section>
+
+        {/* === OBSERVAÇÕES === */}
         <Section title="Observações" open={sections.observacoes} onToggle={() => toggle('observacoes')}>
-          <div className="space-y-3">
-            <Field label="Pós-operatório">
-              <textarea name="post_operative" value={form.post_operative} onChange={handle} rows={3} className={`${inp} resize-none`} />
-            </Field>
-            <Field label="Observações gerais">
-              <textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={3} className={`${inp} resize-none`} />
-            </Field>
-          </div>
+          <Field label="Observações gerais">
+            <textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={4} className={`${inp} resize-none`} />
+          </Field>
         </Section>
 
         {/* Bottom save button */}
