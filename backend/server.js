@@ -18,6 +18,9 @@ const surgeriesRoutes = require('./routes/surgeries');
 const dashboardRoutes = require('./routes/dashboard');
 const reportsRoutes = require('./routes/reports');
 const priceTableRoutes = require('./routes/pricetable');
+const bottlesRoutes = require('./routes/bottles');
+const receivablesRoutes = require('./routes/receivables');
+const expensesRoutes = require('./routes/expenses');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -101,6 +104,9 @@ app.use('/api/surgeries', surgeriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/price-table', priceTableRoutes);
+app.use('/api/bottles', bottlesRoutes);
+app.use('/api/receivables', receivablesRoutes);
+app.use('/api/expenses', expensesRoutes);
 
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {

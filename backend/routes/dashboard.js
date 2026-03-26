@@ -64,6 +64,36 @@ router.get('/stats', authenticateToken, (req, res) => {
       `)
       .get(userId);
 
+    // Bottles expiring soon (opened, expiring within 2 days)
+    const bottlesExpiring = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM medicine_bottles
+      WHERE user_id = ? AND status = 'opened'
+        AND expires_at <= datetime('now', '+2 days')
+        AND expires_at >= datetime('now')
+    `).get(userId);
+
+    // Opened bottles count
+    const openedBottles = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM medicine_bottles
+      WHERE user_id = ? AND status = 'opened'
+    `).get(userId);
+
+    // Pending receivables total
+    const pendingReceivables = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM receivables
+      WHERE user_id = ? AND status = 'pending'
+    `).get(userId);
+
+    // Monthly expenses total (current month)
+    const monthlyExpenses = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses
+      WHERE user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+    `).get(userId);
+
     // Calculate month-over-month changes
     const revenueChange = lastMonthStats.revenue_last_month > 0
       ? ((thisMonthStats.revenue_this_month - lastMonthStats.revenue_last_month) / lastMonthStats.revenue_last_month) * 100
@@ -88,6 +118,10 @@ router.get('/stats', authenticateToken, (req, res) => {
         month_change_percent: revenueChange ? Math.round(revenueChange * 10) / 10 : null,
       },
       stock: stockStats,
+      bottles_expiring_soon: bottlesExpiring.count || 0,
+      opened_bottles_count: openedBottles.count || 0,
+      pending_receivables: pendingReceivables.total || 0,
+      monthly_expenses: monthlyExpenses.total || 0,
     });
   } catch (err) {
     console.error('Dashboard stats error:', err);
