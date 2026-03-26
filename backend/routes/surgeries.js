@@ -117,7 +117,7 @@ router.get('/:id', authenticateToken, (req, res, next) => {
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
-          (m.cost_per_unit * sm.dose) as total_cost
+          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
         FROM surgery_medicines sm
         JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
@@ -174,7 +174,7 @@ router.get('/:id/details', authenticateToken, (req, res) => {
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
-          (m.cost_per_unit * sm.dose) as total_cost
+          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
         FROM surgery_medicines sm
         JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
@@ -231,7 +231,7 @@ router.get('/:id/medicines', authenticateToken, (req, res) => {
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
-          (m.cost_per_unit * sm.dose) as total_cost
+          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
         FROM surgery_medicines sm
         JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
@@ -263,19 +263,20 @@ router.post('/:id/vitals', authenticateToken, (req, res) => {
     const {
       recorded_at,
       fc, fr, spo2, etco2, pam, pas, pad, temperature, notes,
+      fluid_ml_kg_h, anesthetic, o2_l_min,
     } = req.body;
 
     const result = db
       .prepare(`
-        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes, fluid_ml_kg_h, anesthetic, o2_l_min)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
         recorded_at || new Date().toISOString(),
         fc || null, fr || null, spo2 || null, etco2 || null,
         pam || null, pas || null, pad || null, temperature || null,
-        notes || null
+        notes || null, fluid_ml_kg_h || null, anesthetic || null, o2_l_min || null
       );
 
     const vital = db.prepare('SELECT * FROM monitoring_vitals WHERE id = ?').get(result.lastInsertRowid);
@@ -313,36 +314,15 @@ router.delete('/:id/vitals/:vitalId', authenticateToken, (req, res) => {
 // POST /api/surgeries - create surgery
 router.post('/', authenticateToken, (req, res) => {
   try {
-    const {
-      patient_name,
-      patient_species,
-      patient_breed,
-      patient_weight,
-      patient_age,
-      patient_sex,
-      owner_name,
-      owner_phone,
-      procedure_name,
-      asa_classification,
-      fasting_solid_hours,
-      fasting_liquid_hours,
-      start_time,
-      pre_anesthesia,
-      induction,
-      maintenance,
-      anesthesia_protocol,
-      clinic_name,
-      surgeon_name,
-      revenue = 0,
-      status = 'scheduled',
-    } = req.body;
+    const b = req.body;
 
-    if (!patient_name || !patient_species || !procedure_name) {
+    if (!b.patient_name || !b.patient_species || !b.procedure_name) {
       return res.status(400).json({
         error: 'patient_name, patient_species and procedure_name are required',
       });
     }
 
+    const status = b.status || 'scheduled';
     const validStatuses = ['scheduled', 'in_progress', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
@@ -350,40 +330,45 @@ router.post('/', authenticateToken, (req, res) => {
 
     const db = getDb();
 
+    const fields = [
+      'user_id', 'patient_name', 'patient_species', 'patient_breed', 'patient_weight', 'patient_age',
+      'patient_sex', 'owner_name', 'owner_phone', 'procedure_name', 'asa_classification',
+      'fasting_solid_hours', 'fasting_liquid_hours', 'start_time',
+      'pre_anesthesia', 'induction', 'maintenance', 'anesthesia_protocol',
+      'clinic_name', 'surgeon_name', 'revenue', 'status',
+      'pathology', 'fasting_solid', 'fasting_liquid',
+      'pre_existing_diseases', 'temperament', 'prior_medications', 'anamnesis_notes',
+      'pre_acp', 'pre_fc', 'pre_fr', 'pre_mucosas', 'pre_tpc', 'pre_temperature',
+      'pre_hydration', 'pre_pas', 'pre_pulse', 'pre_other_alterations',
+      'general_state', 'nutritional_state',
+      'exam_ht', 'exam_hb', 'exam_eritr', 'exam_ppt', 'exam_plaquetas', 'exam_leuc',
+      'exam_creat', 'exam_alt', 'exam_fa', 'exam_ureia', 'exam_alb', 'exam_glic',
+      'exam_raiox', 'exam_ultrassom', 'exam_eco_ecg', 'exam_outros',
+      'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
+      'block_type', 'block_drug', 'block_dose_volume',
+      'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
+      'post_operative',
+    ];
+
+    const numericFields = new Set([
+      'patient_weight', 'fasting_solid_hours', 'fasting_liquid_hours', 'revenue',
+      'fasting_solid', 'fasting_liquid', 'pre_fc', 'pre_fr', 'pre_temperature', 'pre_pas', 'peep',
+    ]);
+
+    const values = fields.map(f => {
+      if (f === 'user_id') return req.user.id;
+      if (f === 'status') return status;
+      if (f === 'revenue') return parseFloat(b.revenue) || 0;
+      const v = b[f];
+      if (v === undefined || v === null || v === '') return null;
+      if (numericFields.has(f)) return parseFloat(v);
+      return v;
+    });
+
+    const placeholders = fields.map(() => '?').join(', ');
     const result = db
-      .prepare(`
-        INSERT INTO surgeries
-          (user_id, patient_name, patient_species, patient_breed, patient_weight, patient_age,
-           patient_sex, owner_name, owner_phone, procedure_name, asa_classification,
-           fasting_solid_hours, fasting_liquid_hours, start_time,
-           pre_anesthesia, induction, maintenance, anesthesia_protocol,
-           clinic_name, surgeon_name, revenue, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(
-        req.user.id,
-        patient_name,
-        patient_species,
-        patient_breed || null,
-        patient_weight ? parseFloat(patient_weight) : null,
-        patient_age || null,
-        patient_sex || null,
-        owner_name || null,
-        owner_phone || null,
-        procedure_name,
-        asa_classification || null,
-        fasting_solid_hours ? parseFloat(fasting_solid_hours) : null,
-        fasting_liquid_hours ? parseFloat(fasting_liquid_hours) : null,
-        start_time || null,
-        pre_anesthesia || null,
-        induction || null,
-        maintenance || null,
-        anesthesia_protocol || null,
-        clinic_name || null,
-        surgeon_name || null,
-        parseFloat(revenue),
-        status
-      );
+      .prepare(`INSERT INTO surgeries (${fields.join(', ')}) VALUES (${placeholders})`)
+      .run(...values);
 
     const surgery = db
       .prepare('SELECT * FROM surgeries WHERE id = ?')
@@ -417,89 +402,51 @@ router.put('/:id', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot update a cancelled surgery' });
     }
 
-    const {
-      patient_name = existing.patient_name,
-      patient_species = existing.patient_species,
-      patient_breed = existing.patient_breed,
-      patient_weight = existing.patient_weight,
-      patient_age = existing.patient_age,
-      patient_sex = existing.patient_sex,
-      owner_name = existing.owner_name,
-      owner_phone = existing.owner_phone,
-      procedure_name = existing.procedure_name,
-      asa_classification = existing.asa_classification,
-      fasting_solid_hours = existing.fasting_solid_hours,
-      fasting_liquid_hours = existing.fasting_liquid_hours,
-      pre_anesthesia = existing.pre_anesthesia,
-      induction = existing.induction,
-      maintenance = existing.maintenance,
-      anesthesia_protocol = existing.anesthesia_protocol,
-      monitoring_notes = existing.monitoring_notes,
-      complications = existing.complications,
-      outcome = existing.outcome,
-      clinic_name = existing.clinic_name,
-      surgeon_name = existing.surgeon_name,
-      revenue = existing.revenue,
-      status = existing.status,
-      start_time = existing.start_time,
-    } = req.body;
+    const b = req.body;
 
-    db.prepare(`
-      UPDATE surgeries SET
-        patient_name = ?,
-        patient_species = ?,
-        patient_breed = ?,
-        patient_weight = ?,
-        patient_age = ?,
-        patient_sex = ?,
-        owner_name = ?,
-        owner_phone = ?,
-        procedure_name = ?,
-        asa_classification = ?,
-        fasting_solid_hours = ?,
-        fasting_liquid_hours = ?,
-        start_time = ?,
-        pre_anesthesia = ?,
-        induction = ?,
-        maintenance = ?,
-        anesthesia_protocol = ?,
-        monitoring_notes = ?,
-        complications = ?,
-        outcome = ?,
-        clinic_name = ?,
-        surgeon_name = ?,
-        revenue = ?,
-        status = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ?
-    `).run(
-      patient_name,
-      patient_species,
-      patient_breed || null,
-      patient_weight ? parseFloat(patient_weight) : null,
-      patient_age || null,
-      patient_sex || null,
-      owner_name || null,
-      owner_phone || null,
-      procedure_name,
-      asa_classification || null,
-      fasting_solid_hours ? parseFloat(fasting_solid_hours) : null,
-      fasting_liquid_hours ? parseFloat(fasting_liquid_hours) : null,
-      start_time || null,
-      pre_anesthesia || null,
-      induction || null,
-      maintenance || null,
-      anesthesia_protocol || null,
-      monitoring_notes || null,
-      complications || null,
-      outcome || 'success',
-      clinic_name || null,
-      surgeon_name || null,
-      parseFloat(revenue),
-      status,
-      id,
-      req.user.id
-    );
+    const updatableFields = [
+      'patient_name', 'patient_species', 'patient_breed', 'patient_weight', 'patient_age',
+      'patient_sex', 'owner_name', 'owner_phone', 'procedure_name', 'asa_classification',
+      'fasting_solid_hours', 'fasting_liquid_hours', 'start_time',
+      'pre_anesthesia', 'induction', 'maintenance', 'anesthesia_protocol',
+      'monitoring_notes', 'complications', 'outcome',
+      'clinic_name', 'surgeon_name', 'revenue', 'status',
+      'pathology', 'fasting_solid', 'fasting_liquid',
+      'pre_existing_diseases', 'temperament', 'prior_medications', 'anamnesis_notes',
+      'pre_acp', 'pre_fc', 'pre_fr', 'pre_mucosas', 'pre_tpc', 'pre_temperature',
+      'pre_hydration', 'pre_pas', 'pre_pulse', 'pre_other_alterations',
+      'general_state', 'nutritional_state',
+      'exam_ht', 'exam_hb', 'exam_eritr', 'exam_ppt', 'exam_plaquetas', 'exam_leuc',
+      'exam_creat', 'exam_alt', 'exam_fa', 'exam_ureia', 'exam_alb', 'exam_glic',
+      'exam_raiox', 'exam_ultrassom', 'exam_eco_ecg', 'exam_outros',
+      'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
+      'block_type', 'block_drug', 'block_dose_volume',
+      'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
+      'post_operative',
+    ];
+
+    const numericFields = new Set([
+      'patient_weight', 'fasting_solid_hours', 'fasting_liquid_hours', 'revenue',
+      'fasting_solid', 'fasting_liquid', 'pre_fc', 'pre_fr', 'pre_temperature', 'pre_pas', 'peep',
+    ]);
+
+    const setClauses = [];
+    const values = [];
+    for (const f of updatableFields) {
+      const v = b[f] !== undefined ? b[f] : existing[f];
+      setClauses.push(`${f} = ?`);
+      if (v === undefined || v === null || v === '') {
+        values.push(null);
+      } else if (numericFields.has(f)) {
+        values.push(parseFloat(v));
+      } else {
+        values.push(v);
+      }
+    }
+    setClauses.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id, req.user.id);
+
+    db.prepare(`UPDATE surgeries SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
 
     const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ?').get(id);
 
@@ -616,6 +563,8 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       administered_at,
       route,
       notes,
+      drug_source = 'proprio',
+      phase = 'mpa',
       decrement_stock = true,
     } = req.body;
 
@@ -659,12 +608,13 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
     const addMedicine = db.transaction(() => {
       const smResult = db
         .prepare(`
-          INSERT INTO surgery_medicines (surgery_id, medicine_id, dose, dose_unit, dose_mg_kg, administered_at, route, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO surgery_medicines (surgery_id, medicine_id, dose, dose_unit, dose_mg_kg, administered_at, route, notes, drug_source, phase)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        .run(id, medicine_id, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null);
+        .run(id, medicine_id, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null, drug_source, phase);
 
-      if (decrement_stock) {
+      // Only decrement stock if drug is from own inventory
+      if (decrement_stock && drug_source === 'proprio') {
         if (medicine.current_stock < doseNum) {
           throw new Error(`INSUFFICIENT_STOCK:${medicine.current_stock}:${doseNum}`);
         }

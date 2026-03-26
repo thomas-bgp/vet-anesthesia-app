@@ -4,15 +4,12 @@ import PrivateRoute from './components/PrivateRoute'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import Dashboard from './pages/Dashboard'
-import Medicines from './pages/Medicines'
-import Surgeries from './pages/Surgeries'
-import SurgeryForm from './pages/SurgeryForm'
-import SurgeryDetail from './pages/SurgeryDetail'
-import Stock from './pages/Stock'
-import Referrals from './pages/Referrals'
-import Reports from './pages/Reports'
-import PriceTable from './pages/PriceTable'
+import Fichas from './pages/Fichas'
+import FichaForm from './pages/FichaForm'
+import FichaDetail from './pages/FichaDetail'
+import Estoque from './pages/Estoque'
+import Resumo from './pages/Resumo'
+import Perfil from './pages/Perfil'
 
 export default function App() {
   return (
@@ -26,22 +23,23 @@ export default function App() {
           {/* Protected routes */}
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/medicines" element={<Medicines />} />
-              <Route path="/surgeries" element={<Surgeries />} />
-              <Route path="/surgeries/new" element={<SurgeryForm />} />
-              <Route path="/surgeries/:id" element={<SurgeryDetail />} />
-              <Route path="/surgeries/:id/edit" element={<SurgeryForm />} />
-              <Route path="/stock" element={<Stock />} />
-              <Route path="/price-table" element={<PriceTable />} />
-              <Route path="/referrals" element={<Referrals />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route path="/fichas" element={<Fichas />} />
+              <Route path="/fichas/new" element={<FichaForm />} />
+              <Route path="/fichas/:id" element={<FichaDetail />} />
+              <Route path="/fichas/:id/edit" element={<FichaForm />} />
+              <Route path="/estoque" element={<Estoque />} />
+              <Route path="/resumo" element={<Resumo />} />
+              <Route path="/perfil" element={<Perfil />} />
             </Route>
           </Route>
 
-          {/* Redirects */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          {/* Redirects - old routes to new */}
+          <Route path="/dashboard" element={<Navigate to="/fichas" replace />} />
+          <Route path="/surgeries" element={<Navigate to="/fichas" replace />} />
+          <Route path="/surgeries/new" element={<Navigate to="/fichas/new" replace />} />
+          <Route path="/surgeries/:id" element={<Navigate to="/fichas" replace />} />
+          <Route path="/" element={<Navigate to="/fichas" replace />} />
+          <Route path="*" element={<Navigate to="/fichas" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

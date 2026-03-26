@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+/* Safe area for bottom nav on iOS */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Smooth scrolling */
+html {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent zoom on input focus on iOS */
+@supports (-webkit-touch-callout: none) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="search"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
