@@ -352,7 +352,7 @@ export default function FichaForm() {
   }
 
   useEffect(() => {
-    api.get('/medicines').then(res => {
+    api.get('/medicines?limit=999').then(res => {
       const meds = res.data?.medicines || res.data || []
       setAllMedicines(meds.filter(m => (m.medicine_type || 'farmaco') === 'farmaco'))
       setAllDisposables(meds.filter(m => m.medicine_type === 'descartavel'))
@@ -637,18 +637,18 @@ export default function FichaForm() {
           <div className="space-y-3">
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_solid" checked={form.fasting_solid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum sólido</span></label>
-              {form.fasting_solid && <input type="number" inputMode="decimal" name="fasting_solid_hours" value={form.fasting_solid_hours} onChange={handle} className={`${inp} w-20`} placeholder="h" />}
+              {form.fasting_solid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_solid_hours" value={form.fasting_solid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_liquid" checked={form.fasting_liquid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum hídrico</span></label>
-              {form.fasting_liquid && <input type="number" inputMode="decimal" name="fasting_liquid_hours" value={form.fasting_liquid_hours} onChange={handle} className={`${inp} w-20`} placeholder="h" />}
+              {form.fasting_liquid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_liquid_hours" value={form.fasting_liquid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
             </div>
-            <Field label="Doenças pré-existentes" span2><textarea name="pre_existing_diseases" value={form.pre_existing_diseases} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
+            <Field label="Doenças pré-existentes" span2><textarea name="pre_existing_diseases" value={form.pre_existing_diseases} onChange={handle} rows={2} className={inp} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Temperamento"><input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" /></Field>
-              <Field label="Medicações prévias"><textarea name="prior_medications" value={form.prior_medications} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
+              <Field label="Medicações prévias"><textarea name="prior_medications" value={form.prior_medications} onChange={handle} rows={2} className={inp} /></Field>
             </div>
-            <Field label="Observações" span2><textarea name="anamnesis_notes" value={form.anamnesis_notes} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
+            <Field label="Observações" span2><textarea name="anamnesis_notes" value={form.anamnesis_notes} onChange={handle} rows={2} className={inp} /></Field>
           </div>
         </Section>
 
@@ -684,10 +684,10 @@ export default function FichaForm() {
             ))}
           </div>
           <div className="grid grid-cols-2 gap-3 pt-1">
-            <Field label="Raio-X"><textarea name="exam_raiox" value={form.exam_raiox} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
-            <Field label="Ultrassom"><textarea name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
-            <Field label="Eco/ECG" span2><textarea name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
-            <Field label="Outros exames" span2><textarea name="exam_outros" value={form.exam_outros} onChange={handle} rows={2} className={`${inp} resize-none`} /></Field>
+            <Field label="Raio-X"><textarea name="exam_raiox" value={form.exam_raiox} onChange={handle} rows={2} className={inp} /></Field>
+            <Field label="Ultrassom"><textarea name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} rows={2} className={inp} /></Field>
+            <Field label="Eco/ECG" span2><textarea name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} rows={2} className={inp} /></Field>
+            <Field label="Outros exames" span2><textarea name="exam_outros" value={form.exam_outros} onChange={handle} rows={2} className={inp} /></Field>
           </div>
         </Section>
 
@@ -903,8 +903,8 @@ export default function FichaForm() {
         </Section>
 
         <Section title="Pós-operatório" open={sections.pos_operatorio} onToggle={() => toggle('pos_operatorio')} badge={(drugs.pos_operatorio || []).length || null}>
-          <Field label="Pós-operatório"><textarea name="post_operative" value={form.post_operative} onChange={handle} rows={4} className={`${inp} resize-none`} /></Field>
-          <Field label="Qualidade da recuperação"><textarea name="recovery_quality" value={form.recovery_quality} onChange={handle} rows={2} className={`${inp} resize-none`} placeholder="Ex: Recuperação suave, sem excitação..." /></Field>
+          <Field label="Pós-operatório"><textarea name="post_operative" value={form.post_operative} onChange={handle} rows={4} className={inp} /></Field>
+          <Field label="Qualidade da recuperação"><textarea name="recovery_quality" value={form.recovery_quality} onChange={handle} rows={2} className={inp} placeholder="Ex: Recuperação suave, sem excitação..." /></Field>
           <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Pós-operatório</p>
@@ -915,7 +915,7 @@ export default function FichaForm() {
         </Section>
 
         <Section title="Observações" open={sections.observacoes} onToggle={() => toggle('observacoes')}>
-          <Field label="Observações gerais"><textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={4} className={`${inp} resize-none`} /></Field>
+          <Field label="Observações gerais"><textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={4} className={inp} /></Field>
         </Section>
 
         <button type="submit" disabled={saving}

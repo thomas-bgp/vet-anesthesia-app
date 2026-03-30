@@ -555,14 +555,12 @@ export default function FichaDetail() {
 
         {/* === MONITORAÇÃO TRANSOPERATÓRIA === */}
         <Card title="Monitoração" icon={Heart}>
-          {surgery.status === 'in_progress' && (
-            <button
-              onClick={() => setShowVitals(!showVitals)}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 mb-3 bg-teal-50 text-teal-700 text-sm font-medium rounded-lg active:bg-teal-100 min-h-[44px]"
-            >
-              <Plus size={16} /> Registrar sinais vitais
-            </button>
-          )}
+          <button
+            onClick={() => setShowVitals(!showVitals)}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 mb-3 bg-teal-50 text-teal-700 text-sm font-medium rounded-lg active:bg-teal-100 min-h-[44px]"
+          >
+            <Plus size={16} /> Registrar sinais vitais
+          </button>
 
           {showVitals && (
             <div className="bg-slate-50 rounded-lg p-3 mb-3 space-y-2">
