@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vetanestesia-v2';
+const CACHE_NAME = 'vetanestesia-v3';
 const OFFLINE_QUEUE_KEY = 'vetanestesia_offline_queue';
 
 // Assets to cache on install
