@@ -34,4 +34,13 @@ api.interceptors.response.use(
   }
 )
 
+// Notify service worker when back online to flush queued requests
+if ('serviceWorker' in navigator) {
+  window.addEventListener('online', () => {
+    navigator.serviceWorker.ready.then((reg) => {
+      reg.active?.postMessage({ type: 'ONLINE' })
+    })
+  })
+}
+
 export default api

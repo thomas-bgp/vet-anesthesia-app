@@ -206,6 +206,16 @@ function initializeSchema() {
       notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS surgery_disposables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      surgery_id INTEGER REFERENCES surgeries(id),
+      medicine_id INTEGER REFERENCES medicines(id),
+      quantity REAL NOT NULL DEFAULT 1,
+      unit_cost REAL DEFAULT 0,
+      total_cost REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Add columns if they don't exist (for existing databases)
@@ -276,8 +286,14 @@ function initializeSchema() {
   addSurgeryCol('anesthesia_end', 'DATETIME');
   // Pós-operatório
   addSurgeryCol('post_operative', 'TEXT');
+  addSurgeryCol('recovery_quality', 'TEXT');
   // Extubação
   addSurgeryCol('extubation_time', 'DATETIME');
+  // Vias aéreas extras (from WT4)
+  addSurgeryCol('airway_other', 'TEXT');
+  addSurgeryCol('ventilation_type', 'TEXT');
+  // Custom monitoring params (from WT4)
+  addSurgeryCol('custom_vitals_params', 'TEXT');
 
   const medCols = db.prepare("PRAGMA table_info(medicines)").all().map(c => c.name);
   if (!medCols.includes('bottle_volume')) {
@@ -292,6 +308,9 @@ function initializeSchema() {
   if (!medCols.includes('medicine_type')) {
     try { db.exec("ALTER TABLE medicines ADD COLUMN medicine_type TEXT DEFAULT 'farmaco'"); } catch {}
   }
+  if (!medCols.includes('presentation')) {
+    try { db.exec("ALTER TABLE medicines ADD COLUMN presentation TEXT"); } catch {}
+  }
 
   const smCols = db.prepare("PRAGMA table_info(surgery_medicines)").all().map(c => c.name);
   if (!smCols.includes('dose_mg_kg')) {
@@ -303,6 +322,9 @@ function initializeSchema() {
   if (!smCols.includes('phase')) {
     try { db.exec("ALTER TABLE surgery_medicines ADD COLUMN phase TEXT DEFAULT 'mpa'"); } catch {}
   }
+  if (!smCols.includes('custom_name')) {
+    try { db.exec('ALTER TABLE surgery_medicines ADD COLUMN custom_name TEXT'); } catch {}
+  }
 
   const mvCols = db.prepare("PRAGMA table_info(stock_movements)").all().map(c => c.name);
   if (!mvCols.includes('supplier')) {
@@ -312,6 +334,18 @@ function initializeSchema() {
   const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
   if (!userCols.includes('profit_margin_percent')) {
     try { db.exec('ALTER TABLE users ADD COLUMN profit_margin_percent REAL DEFAULT 30'); } catch {}
+  }
+  if (!userCols.includes('full_name')) {
+    try { db.exec('ALTER TABLE users ADD COLUMN full_name TEXT'); } catch {}
+  }
+  if (!userCols.includes('professional_title')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN professional_title TEXT DEFAULT 'Médica Veterinária'"); } catch {}
+  }
+  if (!userCols.includes('crmv_number')) {
+    try { db.exec('ALTER TABLE users ADD COLUMN crmv_number TEXT'); } catch {}
+  }
+  if (!userCols.includes('signature_image')) {
+    try { db.exec('ALTER TABLE users ADD COLUMN signature_image TEXT'); } catch {}
   }
 
   // Add fluid, anesthetic, o2 to monitoring_vitals
@@ -324,6 +358,9 @@ function initializeSchema() {
   }
   if (!vitalCols.includes('o2_l_min')) {
     try { db.exec('ALTER TABLE monitoring_vitals ADD COLUMN o2_l_min REAL'); } catch {}
+  }
+  if (!vitalCols.includes('custom_params')) {
+    try { db.exec('ALTER TABLE monitoring_vitals ADD COLUMN custom_params TEXT'); } catch {}
   }
 
   // Ensure permanent admin account exists (Camila)

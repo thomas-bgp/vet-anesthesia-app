@@ -187,12 +187,22 @@ export default function FichaDetail() {
   // Emergency modal
   const [showEmergency, setShowEmergency] = useState(false)
 
+  const [disposables, setDisposables] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [profile, setProfile] = useState(null)
+
   const load = async () => {
     try {
-      const res = await api.get(`/surgeries/${id}`)
-      setSurgery(res.data.surgery || res.data)
-      setMedicines(res.data.medicines || [])
-      setVitals(res.data.vitals || [])
+      const [surgeryRes, profileRes] = await Promise.all([
+        api.get(`/surgeries/${id}`),
+        api.get('/auth/me').catch(() => ({ data: {} })),
+      ])
+      setSurgery(surgeryRes.data.surgery || surgeryRes.data)
+      setMedicines(surgeryRes.data.medicines || [])
+      setVitals(surgeryRes.data.vitals || [])
+      setDisposables(surgeryRes.data.disposables || [])
+      setSummary(surgeryRes.data.summary || null)
+      setProfile(profileRes.data.user || null)
     } catch {
       setError('Erro ao carregar ficha.')
     } finally {
@@ -273,7 +283,7 @@ export default function FichaDetail() {
     if (!groupedMeds[phase]) groupedMeds[phase] = []
     groupedMeds[phase].push(m)
   })
-  const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op' }
+  const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
 
   return (
     <div className="pb-6">
@@ -363,6 +373,47 @@ export default function FichaDetail() {
           <InfoRow label="Data" value={fmtDate(surgery.start_time)} />
         </Card>
 
+        {/* Financial summary */}
+        {(surgery.revenue > 0 || (summary && summary.total_cost > 0)) && (
+          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 p-4">
+            <h3 className="text-xs font-semibold text-teal-600 uppercase tracking-wide mb-3">Financeiro</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {surgery.revenue > 0 && (
+                <div>
+                  <p className="text-[10px] text-teal-600 font-medium">Valor cobrado</p>
+                  <p className="text-lg font-bold text-teal-800">R$ {(surgery.revenue || 0).toFixed(2).replace('.', ',')}</p>
+                </div>
+              )}
+              {summary && summary.total_cost > 0 && (
+                <div>
+                  <p className="text-[10px] text-slate-500 font-medium">Custo total</p>
+                  <p className="text-lg font-bold text-slate-700">R$ {(summary.total_cost || 0).toFixed(2).replace('.', ',')}</p>
+                </div>
+              )}
+              {summary && summary.total_medicine_cost > 0 && (
+                <div>
+                  <p className="text-[10px] text-slate-500 font-medium">Farmacos</p>
+                  <p className="text-sm font-semibold text-slate-600">R$ {(summary.total_medicine_cost || 0).toFixed(2).replace('.', ',')}</p>
+                </div>
+              )}
+              {summary && summary.total_disposable_cost > 0 && (
+                <div>
+                  <p className="text-[10px] text-slate-500 font-medium">Descartaveis</p>
+                  <p className="text-sm font-semibold text-slate-600">R$ {(summary.total_disposable_cost || 0).toFixed(2).replace('.', ',')}</p>
+                </div>
+              )}
+              {surgery.revenue > 0 && summary && (
+                <div className="col-span-2 pt-2 border-t border-teal-200">
+                  <p className="text-[10px] text-teal-600 font-medium">Margem</p>
+                  <p className={`text-lg font-bold ${(summary.margin || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    R$ {(summary.margin || 0).toFixed(2).replace('.', ',')}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Anamnese */}
         {(surgery.pre_existing_diseases || surgery.temperament || surgery.prior_medications || surgery.anamnesis_notes) && (
           <Card title="Anamnese">
@@ -397,22 +448,45 @@ export default function FichaDetail() {
         {/* Vias aéreas */}
         {(surgery.airway_type || surgery.breathing_mode) && (
           <Card title="Vias Aéreas">
-            <InfoRow label="Tipo" value={surgery.airway_type} />
+            <InfoRow label="Tipo" value={surgery.airway_type === 'Outro' && surgery.airway_other ? `Outro: ${surgery.airway_other}` : surgery.airway_type} />
             <InfoRow label="Tubo" value={surgery.tube_number} />
             <InfoRow label="Respiração" value={surgery.breathing_mode} />
+            {surgery.breathing_mode === 'Controlada' && surgery.ventilation_type && (
+              <InfoRow label="Tipo de ventilação" value={surgery.ventilation_type} />
+            )}
             <InfoRow label="Sistema" value={surgery.breathing_system} />
             {surgery.peep ? <InfoRow label="PEEP" value="Sim" /> : null}
           </Card>
         )}
 
         {/* Bloqueios */}
-        {surgery.block_type && (
-          <Card title="Bloqueios">
-            <InfoRow label="Tipo" value={surgery.block_type} />
-            <InfoRow label="Fármaco" value={surgery.block_drug} />
-            <InfoRow label="Dose/volume" value={surgery.block_dose_volume} />
-          </Card>
-        )}
+        {surgery.block_type && (() => {
+          let parsedBlocks = []
+          try { parsedBlocks = JSON.parse(surgery.block_type) } catch { parsedBlocks = [{ type: surgery.block_type, drug: surgery.block_drug, dose_volume: surgery.block_dose_volume }] }
+          return parsedBlocks.length > 0 ? (
+            <Card title="Bloqueios">
+              {parsedBlocks.map((blk, i) => (
+                <div key={i} className={`${i > 0 ? 'mt-3 pt-3 border-t border-slate-100' : ''}`}>
+                  <InfoRow label="Tipo" value={blk.type === 'Outro' && blk.other_type ? `Outro: ${blk.other_type}` : blk.type} />
+                  {blk.drugs && Array.isArray(blk.drugs) ? (
+                    blk.drugs.map((drug, di) => (
+                      <div key={di} className="ml-2">
+                        <span className="text-slate-500">Fármaco{blk.drugs.length > 1 ? ` ${di + 1}` : ''}</span>
+                        <span className="text-slate-700 ml-1">{drug.name || '-'}</span>
+                        {drug.dose_volume && <span className="text-slate-500 ml-1">({drug.dose_volume})</span>}
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      <InfoRow label="Fármaco" value={blk.drug} />
+                      <InfoRow label="Dose/volume" value={blk.dose_volume} />
+                    </>
+                  )}
+                </div>
+              ))}
+            </Card>
+          ) : null
+        })()}
 
         {/* Medicamentos por fase */}
         <Card title="Fármacos Utilizados">
@@ -448,6 +522,25 @@ export default function FichaDetail() {
             ))
           )}
         </Card>
+
+        {/* Descartáveis Utilizados */}
+        {disposables.length > 0 && (
+          <Card title="Descartáveis Utilizados">
+            {disposables.map(d => (
+              <div key={d.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-800">{d.medicine_name}</p>
+                  <p className="text-xs text-slate-500">Qtd: {d.quantity}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-semibold text-slate-700">
+                    R$ {(d.total_cost || 0).toFixed(2).replace('.', ',')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </Card>
+        )}
 
         {/* Tempos cirúrgicos */}
         {(surgery.anesthesia_start || surgery.procedure_start || surgery.procedure_end || surgery.anesthesia_end || surgery.extubation_time) && (
@@ -539,10 +632,15 @@ export default function FichaDetail() {
         </Card>
 
         {/* Pós-operatório */}
-        {(surgery.post_operative || surgery.complications) && (
+        {(surgery.post_operative || surgery.complications || surgery.recovery_quality) && (
           <Card title="Pós-operatório">
             {surgery.post_operative && (
               <p className="text-sm text-slate-700">{surgery.post_operative}</p>
+            )}
+            {surgery.recovery_quality && (
+              <div className={`${surgery.post_operative ? 'mt-2' : ''}`}>
+                <InfoRow label="Qualidade da recuperação" value={surgery.recovery_quality} />
+              </div>
             )}
             {surgery.complications && (() => {
               let entries = []
@@ -554,7 +652,7 @@ export default function FichaDetail() {
               }
               return (
                 <div className={`bg-red-50 border border-red-200 rounded-lg p-3 ${surgery.post_operative ? 'mt-3' : ''}`}>
-                  <p className="text-[10px] font-bold text-red-600 uppercase mb-2">Intercorrências</p>
+                  <p className="text-[10px] font-bold text-red-600 uppercase mb-2">Intercorrências / Anotações</p>
                   <div className="space-y-1.5">
                     {entries.map((entry, i) => (
                       <div key={i} className="flex items-start gap-2">
@@ -576,6 +674,27 @@ export default function FichaDetail() {
           <Card title="Observações">
             <p className="text-sm text-slate-700">{surgery.monitoring_notes}</p>
           </Card>
+        )}
+
+        {/* Carimbo / Stamp (visible only in print) */}
+        {profile && (profile.full_name || profile.crmv_number) && (
+          <div className="print-carimbo">
+            <div className="carimbo-line" />
+            <div className="carimbo-content">
+              {profile.signature_image && (
+                <img src={profile.signature_image} alt="Assinatura" className="carimbo-signature" />
+              )}
+              {profile.full_name && (
+                <p className="carimbo-name">{profile.full_name}</p>
+              )}
+              {profile.professional_title && (
+                <p className="carimbo-title">{profile.professional_title}</p>
+              )}
+              {profile.crmv_number && (
+                <p className="carimbo-crmv">{profile.crmv_number}</p>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

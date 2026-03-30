@@ -33,6 +33,24 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // Auto-refresh token every 24h to keep session alive during long surgeries
+  useEffect(() => {
+    const REFRESH_INTERVAL = 24 * 60 * 60 * 1000 // 24 hours
+    const interval = setInterval(() => {
+      const token = localStorage.getItem('token')
+      if (token) {
+        api.post('/auth/refresh')
+          .then((res) => {
+            if (res.data.token) {
+              localStorage.setItem('token', res.data.token)
+            }
+          })
+          .catch(() => {}) // silent fail - old token still valid
+      }
+    }, REFRESH_INTERVAL)
+    return () => clearInterval(interval)
+  }, [])
+
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password })
     const { token, user: userData } = res.data
@@ -51,6 +69,11 @@ export function AuthProvider({ children }) {
     return userData
   }
 
+  const updateUser = (userData) => {
+    setUser(userData)
+    localStorage.setItem('user', JSON.stringify(userData))
+  }
+
   const logout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -58,7 +81,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

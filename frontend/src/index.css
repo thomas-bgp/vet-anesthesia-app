@@ -51,10 +51,58 @@
     display: none !important;
   }
 
+  /* Carimbo / Stamp */
+  .print-carimbo {
+    display: block !important;
+    margin-top: 40pt;
+    page-break-inside: avoid;
+  }
+
+  .carimbo-line {
+    border-top: 1pt solid #000;
+    width: 250pt;
+    margin: 0 auto 8pt auto;
+  }
+
+  .carimbo-content {
+    text-align: center;
+  }
+
+  .carimbo-signature {
+    max-width: 180pt;
+    max-height: 60pt;
+    margin: 0 auto 4pt auto;
+    display: block;
+  }
+
+  .carimbo-name {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #000;
+    margin: 0;
+  }
+
+  .carimbo-title {
+    font-size: 10pt;
+    color: #333;
+    margin: 2pt 0 0 0;
+  }
+
+  .carimbo-crmv {
+    font-size: 10pt;
+    color: #333;
+    margin: 2pt 0 0 0;
+  }
+
   /* Page margins */
   @page {
     margin: 1.5cm;
   }
+}
+
+/* Carimbo: hidden on screen, visible only in print */
+.print-carimbo {
+  display: none;
 }
 
 /* Smooth scrolling */

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, ChevronRight } from 'lucide-react'
+import { Plus, Search, ChevronRight, FileEdit } from 'lucide-react'
 import api from '../api/axios'
 
 const STATUS = {
@@ -10,11 +10,22 @@ const STATUS = {
   cancelled: { label: 'Cancelada', cls: 'bg-red-100 text-red-700' },
 }
 
+function getLocalDraft() {
+  try {
+    const raw = localStorage.getItem('vetanestesia_draft_new')
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    if (draft.form?.patient_name || draft.form?.procedure_name) return draft
+    return null
+  } catch { return null }
+}
+
 export default function Fichas() {
   const navigate = useNavigate()
   const [surgeries, setSurgeries] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [localDraft] = useState(() => getLocalDraft())
 
   useEffect(() => {
     api.get('/surgeries', { params: { limit: 100 } })
@@ -61,6 +72,28 @@ export default function Fichas() {
           className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[48px]"
         />
       </div>
+
+      {/* Local draft banner */}
+      {localDraft && (
+        <button
+          onClick={() => navigate('/fichas/new')}
+          className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-xl p-4 active:bg-amber-100 transition text-left"
+        >
+          <div className="p-2 bg-amber-200 rounded-lg shrink-0">
+            <FileEdit size={18} className="text-amber-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-amber-800 text-sm">Rascunho não salvo</p>
+            <p className="text-xs text-amber-600 truncate">
+              {localDraft.form?.patient_name || 'Sem nome'} — {localDraft.form?.procedure_name || ''}
+            </p>
+            <p className="text-[10px] text-amber-500 mt-0.5">
+              {new Date(localDraft._savedAt).toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <ChevronRight size={18} className="text-amber-400 shrink-0" />
+        </button>
+      )}
 
       {/* List */}
       {loading ? (

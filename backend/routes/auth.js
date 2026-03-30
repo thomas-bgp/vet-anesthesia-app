@@ -140,7 +140,7 @@ router.get('/me', authenticateToken, (req, res) => {
   try {
     const db = getDb();
     const user = db
-      .prepare('SELECT id, name, email, role, created_at FROM users WHERE id = ?')
+      .prepare('SELECT id, name, email, role, full_name, professional_title, crmv_number, signature_image, created_at FROM users WHERE id = ?')
       .get(req.user.id);
 
     if (!user) {
@@ -150,6 +150,46 @@ router.get('/me', authenticateToken, (req, res) => {
     res.json({ user });
   } catch (err) {
     console.error('Get me error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/auth/profile
+router.put('/profile', authenticateToken, (req, res) => {
+  try {
+    const { full_name, professional_title, crmv_number, signature_image } = req.body;
+    const db = getDb();
+
+    db.prepare(`
+      UPDATE users
+      SET full_name = ?, professional_title = ?, crmv_number = ?, signature_image = ?
+      WHERE id = ?
+    `).run(
+      full_name || null,
+      professional_title || 'Médica Veterinária',
+      crmv_number || null,
+      signature_image || null,
+      req.user.id
+    );
+
+    const user = db
+      .prepare('SELECT id, name, email, role, full_name, professional_title, crmv_number, signature_image, created_at FROM users WHERE id = ?')
+      .get(req.user.id);
+
+    res.json({ message: 'Profile updated successfully', user });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/refresh - Renew token before expiry
+router.post('/refresh', authenticateToken, (req, res) => {
+  try {
+    const token = generateToken(req.user.id);
+    res.json({ token });
+  } catch (err) {
+    console.error('Token refresh error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

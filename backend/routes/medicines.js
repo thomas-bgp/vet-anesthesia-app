@@ -11,6 +11,7 @@ router.get('/', authenticateToken, (req, res) => {
       search,
       low_stock,
       expiring_soon,
+      medicine_type,
       page = 1,
       limit = 50,
     } = req.query;
@@ -18,6 +19,11 @@ router.get('/', authenticateToken, (req, res) => {
     // Build WHERE conditions separately for clean COUNT and SELECT queries
     let whereClause = 'WHERE m.user_id = ? AND m.is_active = 1';
     const params = [req.user.id];
+
+    if (medicine_type && medicine_type !== 'todos') {
+      whereClause += " AND COALESCE(m.medicine_type, 'farmaco') = ?";
+      params.push(medicine_type);
+    }
 
     if (search) {
       whereClause += ` AND (m.name LIKE ? OR m.active_principle LIKE ? OR m.supplier LIKE ?)`;
@@ -194,6 +200,7 @@ router.post('/', authenticateToken, (req, res) => {
       expiry_date,
       units_per_box = 1,
       medicine_type = 'farmaco',
+      presentation,
     } = req.body;
 
     // unit is optional when creating via Compras (volume_ml path)
@@ -221,8 +228,8 @@ router.post('/', authenticateToken, (req, res) => {
       .prepare(`
         INSERT INTO medicines
           (user_id, name, active_principle, concentration, bottle_volume, unit, current_stock, min_stock,
-           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type, presentation)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         req.user.id,
@@ -239,7 +246,8 @@ router.post('/', authenticateToken, (req, res) => {
         expiry_date || null,
         parseInt(units_per_box) || 1,
         volume_ml ? parseFloat(volume_ml) : null,
-        medicine_type || 'farmaco'
+        medicine_type || 'farmaco',
+        presentation || null
       );
 
     // Register initial stock as purchase if > 0
@@ -295,6 +303,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       supplier = existing.supplier,
       batch_number = existing.batch_number,
       expiry_date = existing.expiry_date,
+      presentation = existing.presentation,
     } = req.body;
 
     if (!name || !unit) {
@@ -313,6 +322,7 @@ router.put('/:id', authenticateToken, (req, res) => {
         supplier = ?,
         batch_number = ?,
         expiry_date = ?,
+        presentation = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
     `).run(
@@ -326,6 +336,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       supplier || null,
       batch_number || null,
       expiry_date || null,
+      presentation || null,
       id,
       req.user.id
     );

@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ShoppingCart, Plus, Check, X, ChevronDown } from 'lucide-react'
+import { ShoppingCart, Plus, Check, X, ChevronDown, Pill, Package } from 'lucide-react'
 import api from '../api/axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
+
+const TYPE_TABS = [
+  { key: 'farmaco', label: 'Farmaco', icon: Pill },
+  { key: 'descartavel', label: 'Descartavel', icon: Package },
+]
 
 export default function Compras() {
   const [medicines, setMedicines] = useState([])
@@ -13,18 +18,26 @@ export default function Compras() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [saving, setSaving] = useState(false)
+  const [activeType, setActiveType] = useState('farmaco')
 
-  // Form state
+  // Common form state
   const [medicineId, setMedicineId] = useState('')
   const [isNewMedicine, setIsNewMedicine] = useState(false)
-  const [newMedicineName, setNewMedicineName] = useState('')
-  const [newMedicineVolume, setNewMedicineVolume] = useState('')
-  const [newMedicineUnitsPerBox, setNewMedicineUnitsPerBox] = useState('1')
-  const [newMedicineType, setNewMedicineType] = useState('farmaco')
   const [quantity, setQuantity] = useState('')
   const [unitPrice, setUnitPrice] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().split('T')[0])
   const [batchNumber, setBatchNumber] = useState('')
+
+  // Farmaco-specific new medicine fields
+  const [newMedicineName, setNewMedicineName] = useState('')
+  const [newMedicineVolume, setNewMedicineVolume] = useState('')
+  const [newMedicineUnitsPerBox, setNewMedicineUnitsPerBox] = useState('1')
+  const [newMedicineConcentration, setNewMedicineConcentration] = useState('')
+  const [newMedicineActivePrinciple, setNewMedicineActivePrinciple] = useState('')
+  const [newMedicinePresentation, setNewMedicinePresentation] = useState('ampola')
+
+  // Descartavel-specific new medicine fields
+  const [newDescName, setNewDescName] = useState('')
 
   const loadMedicines = useCallback(async () => {
     try {
@@ -40,7 +53,11 @@ export default function Compras() {
     try {
       const res = await api.get('/bottles')
       const bottles = res.data?.bottles || res.data || []
-      setHistory(bottles)
+      // Also load disposable purchases from stock movements
+      const stockRes = await api.get('/stock/purchases')
+      const purchases = stockRes.data?.purchases || []
+      // Merge: bottles are farmacos, stock purchases with descartavel type are disposables
+      setHistory({ bottles, purchases })
     } catch {
       // silent
     } finally {
@@ -59,10 +76,13 @@ export default function Compras() {
     }
   }, [successMsg])
 
+  const farmacoMedicines = medicines.filter(m => (m.medicine_type || 'farmaco') === 'farmaco')
+  const descartavelMedicines = medicines.filter(m => m.medicine_type === 'descartavel')
+
   const selectedMedicine = medicines.find((m) => String(m.id) === String(medicineId))
   const volumeMl = isNewMedicine
     ? parseFloat(newMedicineVolume) || 0
-    : selectedMedicine?.volume_ml || selectedMedicine?.default_volume_ml || 0
+    : selectedMedicine?.volume_per_unit_ml || selectedMedicine?.volume_ml || 0
 
   const qty = parseFloat(quantity) || 0
   const uPrice = parseFloat(unitPrice) || 0
@@ -85,11 +105,19 @@ export default function Compras() {
     setNewMedicineName('')
     setNewMedicineVolume('')
     setNewMedicineUnitsPerBox('1')
-    setNewMedicineType('farmaco')
+    setNewMedicineConcentration('')
+    setNewMedicineActivePrinciple('')
+    setNewMedicinePresentation('ampola')
+    setNewDescName('')
     setQuantity('')
     setUnitPrice('')
     setPurchaseDate(new Date().toISOString().split('T')[0])
     setBatchNumber('')
+  }
+
+  const handleTabChange = (type) => {
+    setActiveType(type)
+    resetForm()
   }
 
   const handleSubmit = async (e) => {
@@ -98,70 +126,107 @@ export default function Compras() {
     setSaving(true)
 
     try {
-      let medId = medicineId
-
-      // Create new medicine if needed
-      if (isNewMedicine) {
-        if (!newMedicineName.trim()) {
-          setError('Informe o nome do medicamento.')
-          setSaving(false)
-          return
-        }
-        if (!newMedicineVolume || parseFloat(newMedicineVolume) <= 0) {
-          setError('Informe o volume por unidade.')
-          setSaving(false)
-          return
-        }
-        const medRes = await api.post('/medicines', {
-          name: newMedicineName.trim(),
-          volume_ml: parseFloat(newMedicineVolume),
-          units_per_box: parseInt(newMedicineUnitsPerBox) || 1,
-          medicine_type: newMedicineType,
-        })
-        medId = medRes.data?.id || medRes.data?.medicine?.id
-        if (!medId) {
-          setError('Erro ao cadastrar medicamento.')
-          setSaving(false)
-          return
-        }
-        await loadMedicines()
+      if (activeType === 'farmaco') {
+        await submitFarmaco()
+      } else {
+        await submitDescartavel()
       }
-
-      if (!medId) {
-        setError('Selecione um medicamento.')
-        setSaving(false)
-        return
-      }
-      if (!qty || qty <= 0) {
-        setError('Informe a quantidade.')
-        setSaving(false)
-        return
-      }
-      if (!uPrice || uPrice <= 0) {
-        setError('Informe o valor unitário.')
-        setSaving(false)
-        return
-      }
-
-      await api.post('/bottles', {
-        medicine_id: parseInt(medId),
-        quantity: qty,
-        volume_ml: volumeMl,
-        purchase_cost_per_unit: uPrice,
-        units_per_box: isNewMedicine ? parseInt(newMedicineUnitsPerBox) || 1 : undefined,
-        purchased_at: purchaseDate,
-        batch_number: batchNumber || undefined,
-      })
-
       setSuccessMsg('Compra registrada com sucesso!')
       resetForm()
       loadHistory()
+      loadMedicines()
     } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao salvar compra.')
+      setError(err.response?.data?.error || err.message || 'Erro ao salvar compra.')
     } finally {
       setSaving(false)
     }
   }
+
+  const submitFarmaco = async () => {
+    let medId = medicineId
+
+    if (isNewMedicine) {
+      if (!newMedicineName.trim()) throw new Error('Informe o nome do farmaco.')
+      if (!newMedicineVolume || parseFloat(newMedicineVolume) <= 0) throw new Error('Informe o volume por unidade.')
+
+      const medRes = await api.post('/medicines', {
+        name: newMedicineName.trim(),
+        volume_ml: parseFloat(newMedicineVolume),
+        units_per_box: parseInt(newMedicineUnitsPerBox) || 1,
+        medicine_type: 'farmaco',
+        concentration: newMedicineConcentration || null,
+        active_principle: newMedicineActivePrinciple || null,
+        presentation: newMedicinePresentation,
+        unit: newMedicinePresentation === 'ampola' ? 'ampola' : 'frasco',
+      })
+      medId = medRes.data?.id || medRes.data?.medicine?.id
+      if (!medId) throw new Error('Erro ao cadastrar medicamento.')
+    }
+
+    if (!medId) throw new Error('Selecione um medicamento.')
+    if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
+    if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+
+    await api.post('/bottles', {
+      medicine_id: parseInt(medId),
+      quantity: qty,
+      volume_ml: volumeMl,
+      purchase_cost_per_unit: uPrice,
+      units_per_box: isNewMedicine ? parseInt(newMedicineUnitsPerBox) || 1 : undefined,
+      purchased_at: purchaseDate,
+      batch_number: batchNumber || undefined,
+    })
+  }
+
+  const submitDescartavel = async () => {
+    let medId = medicineId
+
+    if (isNewMedicine) {
+      if (!newDescName.trim()) throw new Error('Informe o nome do descartavel.')
+
+      const medRes = await api.post('/medicines', {
+        name: newDescName.trim(),
+        medicine_type: 'descartavel',
+        unit: 'unidade',
+        cost_per_unit: uPrice || 0,
+      })
+      medId = medRes.data?.id || medRes.data?.medicine?.id
+      if (!medId) throw new Error('Erro ao cadastrar descartavel.')
+    }
+
+    if (!medId) throw new Error('Selecione um descartavel.')
+    if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
+    if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+
+    await api.post('/stock/purchase', {
+      medicine_id: parseInt(medId),
+      quantity: qty,
+      unit_cost: uPrice,
+      supplier: null,
+      notes: `Compra de descartavel`,
+    })
+
+    // Update cost_per_unit on the medicine
+    await api.put(`/medicines/${medId}`, {
+      cost_per_unit: uPrice,
+    }).catch(() => {})
+  }
+
+  const formatMedicineLabel = (m) => {
+    const parts = [m.name]
+    if (m.concentration) parts.push(m.concentration)
+    if (m.presentation) parts.push(m.presentation === 'ampola' ? 'Ampola' : 'Frasco')
+    else if (m.volume_per_unit_ml) parts.push(`${m.volume_per_unit_ml} ml`)
+    return parts.join(' - ')
+  }
+
+  // Filter history based on active tab
+  const historyItems = activeType === 'farmaco'
+    ? (history.bottles || [])
+    : (history.purchases || []).filter(p => {
+        const med = medicines.find(m => m.id === p.medicine_id)
+        return med?.medicine_type === 'descartavel'
+      })
 
   if (loading) {
     return (
@@ -176,7 +241,28 @@ export default function Compras() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Compras</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Registre compras de medicamentos e insumos</p>
+        <p className="text-slate-500 text-sm mt-0.5">Registre compras de farmacos e descartaveis</p>
+      </div>
+
+      {/* Type tabs */}
+      <div className="flex gap-3">
+        {TYPE_TABS.map((t) => {
+          const Icon = t.icon
+          return (
+            <button
+              key={t.key}
+              onClick={() => handleTabChange(t.key)}
+              className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl border-2 text-sm font-semibold transition min-h-[60px] ${
+                activeType === t.key
+                  ? 'bg-teal-50 border-teal-600 text-teal-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              <Icon size={20} />
+              {t.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Success toast */}
@@ -198,36 +284,38 @@ export default function Compras() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <Plus size={20} className="text-teal-600" />
-          Nova Compra
+          Nova Compra - {activeType === 'farmaco' ? 'Farmaco' : 'Descartavel'}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Medicine selector */}
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Medicamento</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                {activeType === 'farmaco' ? 'Farmaco' : 'Descartavel'}
+              </label>
               <div className="relative">
                 <select
                   value={isNewMedicine ? '__new__' : medicineId}
                   onChange={(e) => handleMedicineChange(e.target.value)}
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none bg-white"
                 >
-                  <option value="">Selecione um medicamento...</option>
-                  {medicines.map((m) => (
+                  <option value="">Selecione...</option>
+                  {(activeType === 'farmaco' ? farmacoMedicines : descartavelMedicines).map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name} {m.volume_ml ? `(${m.volume_ml} ml)` : ''}
+                      {activeType === 'farmaco' ? formatMedicineLabel(m) : m.name}
                     </option>
                   ))}
-                  <option value="__new__">+ Cadastrar novo medicamento</option>
+                  <option value="__new__">+ Cadastrar novo</option>
                 </select>
                 <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
-            {/* New medicine fields */}
-            {isNewMedicine && (
+            {/* New farmaco fields */}
+            {isNewMedicine && activeType === 'farmaco' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome do medicamento</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome do farmaco</label>
                   <input
                     type="text"
                     value={newMedicineName}
@@ -235,6 +323,45 @@ export default function Compras() {
                     placeholder="Ex: Propofol 1%"
                     className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Principio ativo</label>
+                  <input
+                    type="text"
+                    value={newMedicineActivePrinciple}
+                    onChange={(e) => setNewMedicineActivePrinciple(e.target.value)}
+                    placeholder="Ex: Propofol"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Concentracao</label>
+                  <input
+                    type="text"
+                    value={newMedicineConcentration}
+                    onChange={(e) => setNewMedicineConcentration(e.target.value)}
+                    placeholder="Ex: 10 mg/ml"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Apresentacao</label>
+                  <div className="flex gap-2">
+                    {[{ key: 'ampola', label: 'Ampola' }, { key: 'frasco', label: 'Frasco' }].map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setNewMedicinePresentation(t.key)}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition min-h-[44px] ${
+                          newMedicinePresentation === t.key
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white text-slate-600 border-slate-300 hover:border-teal-400'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Volume por unidade (ml)</label>
@@ -259,26 +386,21 @@ export default function Compras() {
                   />
                   <p className="text-xs text-slate-400 mt-1">Ex: caixa com 5 ampolas = 5</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tipo</label>
-                  <div className="flex gap-2">
-                    {[{ key: 'farmaco', label: 'Fármaco' }, { key: 'descartavel', label: 'Descartável' }].map((t) => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => setNewMedicineType(t.key)}
-                        className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition min-h-[44px] ${
-                          newMedicineType === t.key
-                            ? 'bg-teal-600 text-white border-teal-600'
-                            : 'bg-white text-slate-600 border-slate-300 hover:border-teal-400'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </>
+            )}
+
+            {/* New descartavel fields */}
+            {isNewMedicine && activeType === 'descartavel' && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nome do descartavel</label>
+                <input
+                  type="text"
+                  value={newDescName}
+                  onChange={(e) => setNewDescName(e.target.value)}
+                  placeholder="Ex: Seringa 10ml, Equipo macro, Cateter 22G"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
             )}
 
             {/* Quantity */}
@@ -296,7 +418,7 @@ export default function Compras() {
 
             {/* Unit price */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Valor unitário (R$)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Valor unitario (R$)</label>
               <input
                 type="number"
                 step="0.01"
@@ -319,34 +441,46 @@ export default function Compras() {
               />
             </div>
 
-            {/* Batch */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Lote <span className="text-slate-400 font-normal">(opcional)</span></label>
-              <input
-                type="text"
-                value={batchNumber}
-                onChange={(e) => setBatchNumber(e.target.value)}
-                placeholder="Ex: ABC123"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
+            {/* Batch - only for farmacos */}
+            {activeType === 'farmaco' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Lote <span className="text-slate-400 font-normal">(opcional)</span></label>
+                <input
+                  type="text"
+                  value={batchNumber}
+                  onChange={(e) => setBatchNumber(e.target.value)}
+                  placeholder="Ex: ABC123"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            )}
           </div>
 
           {/* Auto-calculated summary */}
           {(qty > 0 || uPrice > 0) && (
-            <div className="bg-slate-50 rounded-lg p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className={`bg-slate-50 rounded-lg p-4 grid grid-cols-1 ${activeType === 'farmaco' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">Valor total</p>
                 <p className="text-lg font-bold text-slate-800">{fmt(totalPrice)}</p>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-0.5">Volume unitário</p>
-                <p className="text-lg font-bold text-slate-800">{volumeMl > 0 ? `${volumeMl} ml` : '-'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-0.5">Custo por ml</p>
-                <p className="text-lg font-bold text-teal-700">{costPerMl > 0 ? fmt(costPerMl) + '/ml' : '-'}</p>
-              </div>
+              {activeType === 'farmaco' && (
+                <>
+                  <div>
+                    <p className="text-xs text-slate-500 mb-0.5">Volume unitario</p>
+                    <p className="text-lg font-bold text-slate-800">{volumeMl > 0 ? `${volumeMl} ml` : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 mb-0.5">Custo por ml</p>
+                    <p className="text-lg font-bold text-teal-700">{costPerMl > 0 ? fmt(costPerMl) + '/ml' : '-'}</p>
+                  </div>
+                </>
+              )}
+              {activeType === 'descartavel' && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-0.5">Custo unitario</p>
+                  <p className="text-lg font-bold text-teal-700">{uPrice > 0 ? fmt(uPrice) : '-'}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -365,23 +499,24 @@ export default function Compras() {
         <div className="px-6 py-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <ShoppingCart size={20} className="text-slate-400" />
-            Histórico de Compras
+            Historico de Compras - {activeType === 'farmaco' ? 'Farmacos' : 'Descartaveis'}
           </h2>
         </div>
 
         {histLoading ? (
           <div className="py-16"><LoadingSpinner size="lg" className="mx-auto" /></div>
-        ) : history.length === 0 ? (
+        ) : historyItems.length === 0 ? (
           <div className="py-16 text-center">
             <ShoppingCart size={40} className="mx-auto text-slate-300 mb-3" />
             <p className="text-slate-500 font-medium">Nenhuma compra registrada</p>
-            <p className="text-slate-400 text-sm mt-1">Use o formulário acima para registrar a primeira compra</p>
+            <p className="text-slate-400 text-sm mt-1">Use o formulario acima para registrar a primeira compra</p>
           </div>
-        ) : (
+        ) : activeType === 'farmaco' ? (
+          /* Farmaco history */
           <>
             {/* Mobile cards */}
             <div className="block sm:hidden divide-y divide-slate-100">
-              {history.map((b) => (
+              {historyItems.map((b) => (
                 <div key={b.id} className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-semibold text-slate-800 text-sm">{b.medicine_name}</p>
@@ -392,11 +527,11 @@ export default function Compras() {
                   <div className="grid grid-cols-3 gap-2 text-sm">
                     <div>
                       <p className="text-xs text-slate-400">Valor unit.</p>
-                      <p className="font-medium text-slate-700">{fmt(b.purchase_cost_per_unit)}</p>
+                      <p className="font-medium text-slate-700">{fmt(b.purchase_cost)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400">Volume</p>
-                      <p className="font-medium text-slate-700">{b.total_volume_ml ? `${b.total_volume_ml} ml` : '-'}</p>
+                      <p className="font-medium text-slate-700">{b.volume_ml ? `${b.volume_ml} ml` : '-'}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400">Custo/ml</p>
@@ -414,7 +549,7 @@ export default function Compras() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className="text-left px-4 py-3 font-semibold text-slate-600">Data</th>
-                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Fármaco</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Farmaco</th>
                     <th className="text-right px-4 py-3 font-semibold text-slate-600">Volume</th>
                     <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor Unit.</th>
                     <th className="text-right px-4 py-3 font-semibold text-slate-600">Custo/ml</th>
@@ -423,10 +558,10 @@ export default function Compras() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {history.map((b) => {
-                    const st = { open: 'Aberto', sealed: 'Selado', expired: 'Vencido', empty: 'Vazio' }[b.status] || b.status
+                  {historyItems.map((b) => {
+                    const st = { opened: 'Aberto', sealed: 'Selado', expired: 'Vencido', empty: 'Vazio' }[b.status] || b.status
                     const stCls = {
-                      open: 'bg-green-100 text-green-700',
+                      opened: 'bg-green-100 text-green-700',
                       sealed: 'bg-blue-100 text-blue-700',
                       expired: 'bg-red-100 text-red-700',
                       empty: 'bg-slate-100 text-slate-500',
@@ -437,8 +572,8 @@ export default function Compras() {
                           {b.purchased_at ? new Date(b.purchased_at).toLocaleDateString('pt-BR') : '-'}
                         </td>
                         <td className="px-4 py-3 font-medium text-slate-800">{b.medicine_name}</td>
-                        <td className="px-4 py-3 text-right text-slate-700">{b.total_volume_ml ? `${b.total_volume_ml} ml` : '-'}</td>
-                        <td className="px-4 py-3 text-right text-slate-700">{fmt(b.purchase_cost_per_unit)}</td>
+                        <td className="px-4 py-3 text-right text-slate-700">{b.volume_ml ? `${b.volume_ml} ml` : '-'}</td>
+                        <td className="px-4 py-3 text-right text-slate-700">{fmt(b.purchase_cost)}</td>
                         <td className="px-4 py-3 text-right font-semibold text-teal-700">{b.cost_per_ml ? fmt(b.cost_per_ml) : '-'}</td>
                         <td className="px-4 py-3 text-slate-600">{b.batch_number || '-'}</td>
                         <td className="px-4 py-3">
@@ -447,6 +582,62 @@ export default function Compras() {
                       </tr>
                     )
                   })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          /* Descartavel history */
+          <>
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {historyItems.map((p) => (
+                <div key={p.id} className="p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-slate-800 text-sm">{p.medicine_name}</p>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                      {p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '-'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-slate-400">Qtd</p>
+                      <p className="font-medium text-slate-700">{p.quantity}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Valor unit.</p>
+                      <p className="font-medium text-slate-700">{fmt(p.unit_cost)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Total</p>
+                      <p className="font-bold text-teal-700">{fmt(p.total_cost)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Data</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600">Descartavel</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-600">Qtd</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor Unit.</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-600">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {historyItems.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-slate-600">
+                        {p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '-'}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-800">{p.medicine_name}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">{p.quantity}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">{fmt(p.unit_cost)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-teal-700">{fmt(p.total_cost)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

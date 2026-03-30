@@ -112,14 +112,22 @@ router.get('/:id', authenticateToken, (req, res, next) => {
       .prepare(`
         SELECT
           sm.*,
-          m.name as medicine_name,
+          COALESCE(m.name, sm.custom_name) as medicine_name,
           m.active_principle,
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
-          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
+          m.presentation,
+          m.volume_per_unit_ml,
+          COALESCE(m.medicine_type, 'farmaco') as medicine_type,
+          CASE
+            WHEN sm.drug_source != 'proprio' THEN 0
+            WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
+            WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
+            ELSE (m.cost_per_unit * sm.dose)
+          END as total_cost
         FROM surgery_medicines sm
-        JOIN medicines m ON sm.medicine_id = m.id
+        LEFT JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
         ORDER BY sm.administered_at ASC
       `)
@@ -133,17 +141,30 @@ router.get('/:id', authenticateToken, (req, res, next) => {
       `)
       .all(req.params.id);
 
+    const disposables = db.prepare(`
+      SELECT sd.*, m.name as medicine_name, m.cost_per_unit
+      FROM surgery_disposables sd
+      JOIN medicines m ON sd.medicine_id = m.id
+      WHERE sd.surgery_id = ?
+      ORDER BY sd.created_at ASC
+    `).all(req.params.id);
+
     const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
+    const totalDisposableCost = disposables.reduce((sum, d) => sum + (d.total_cost || 0), 0);
 
     res.json({
       surgery,
       medicines,
       vitals,
+      disposables,
       summary: {
         medicine_count: medicines.length,
         total_medicine_cost: totalMedicineCost,
+        disposable_count: disposables.length,
+        total_disposable_cost: totalDisposableCost,
+        total_cost: totalMedicineCost + totalDisposableCost,
         revenue: surgery.revenue,
-        margin: surgery.revenue - totalMedicineCost,
+        margin: surgery.revenue - totalMedicineCost - totalDisposableCost,
       },
     });
   } catch (err) {
@@ -169,14 +190,22 @@ router.get('/:id/details', authenticateToken, (req, res) => {
       .prepare(`
         SELECT
           sm.*,
-          m.name as medicine_name,
+          COALESCE(m.name, sm.custom_name) as medicine_name,
           m.active_principle,
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
-          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
+          m.presentation,
+          m.volume_per_unit_ml,
+          COALESCE(m.medicine_type, 'farmaco') as medicine_type,
+          CASE
+            WHEN sm.drug_source != 'proprio' THEN 0
+            WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
+            WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
+            ELSE (m.cost_per_unit * sm.dose)
+          END as total_cost
         FROM surgery_medicines sm
-        JOIN medicines m ON sm.medicine_id = m.id
+        LEFT JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
         ORDER BY sm.administered_at ASC
       `)
@@ -190,17 +219,30 @@ router.get('/:id/details', authenticateToken, (req, res) => {
       `)
       .all(req.params.id);
 
+    const disposables = db.prepare(`
+      SELECT sd.*, m.name as medicine_name, m.cost_per_unit
+      FROM surgery_disposables sd
+      JOIN medicines m ON sd.medicine_id = m.id
+      WHERE sd.surgery_id = ?
+      ORDER BY sd.created_at ASC
+    `).all(req.params.id);
+
     const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
+    const totalDisposableCost = disposables.reduce((sum, d) => sum + (d.total_cost || 0), 0);
 
     res.json({
       surgery,
       medicines,
       vitals,
+      disposables,
       summary: {
         medicine_count: medicines.length,
         total_medicine_cost: totalMedicineCost,
+        disposable_count: disposables.length,
+        total_disposable_cost: totalDisposableCost,
+        total_cost: totalMedicineCost + totalDisposableCost,
         revenue: surgery.revenue,
-        margin: surgery.revenue - totalMedicineCost,
+        margin: surgery.revenue - totalMedicineCost - totalDisposableCost,
       },
     });
   } catch (err) {
@@ -226,14 +268,14 @@ router.get('/:id/medicines', authenticateToken, (req, res) => {
       .prepare(`
         SELECT
           sm.*,
-          m.name as medicine_name,
+          COALESCE(m.name, sm.custom_name) as medicine_name,
           m.active_principle,
           m.concentration,
           m.unit as medicine_unit,
           m.cost_per_unit,
           CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
         FROM surgery_medicines sm
-        JOIN medicines m ON sm.medicine_id = m.id
+        LEFT JOIN medicines m ON sm.medicine_id = m.id
         WHERE sm.surgery_id = ?
         ORDER BY sm.administered_at ASC
       `)
@@ -264,19 +306,21 @@ router.post('/:id/vitals', authenticateToken, (req, res) => {
       recorded_at,
       fc, fr, spo2, etco2, pam, pas, pad, temperature, notes,
       fluid_ml_kg_h, anesthetic, o2_l_min,
+      custom_params,
     } = req.body;
 
     const result = db
       .prepare(`
-        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes, fluid_ml_kg_h, anesthetic, o2_l_min)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes, fluid_ml_kg_h, anesthetic, o2_l_min, custom_params)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
         recorded_at || new Date().toISOString(),
         fc || null, fr || null, spo2 || null, etco2 || null,
         pam || null, pas || null, pad || null, temperature || null,
-        notes || null, fluid_ml_kg_h || null, anesthetic || null, o2_l_min || null
+        notes || null, fluid_ml_kg_h || null, anesthetic || null, o2_l_min || null,
+        custom_params ? (typeof custom_params === 'string' ? custom_params : JSON.stringify(custom_params)) : null
       );
 
     const vital = db.prepare('SELECT * FROM monitoring_vitals WHERE id = ?').get(result.lastInsertRowid);
@@ -348,7 +392,8 @@ router.post('/', authenticateToken, (req, res) => {
       'block_type', 'block_drug', 'block_dose_volume',
       'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
       'extubation_time',
-      'post_operative',
+      'post_operative', 'recovery_quality',
+      'airway_other', 'ventilation_type', 'custom_vitals_params',
     ];
 
     const numericFields = new Set([
@@ -425,7 +470,8 @@ router.put('/:id', authenticateToken, (req, res) => {
       'block_type', 'block_drug', 'block_dose_volume',
       'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
       'extubation_time',
-      'post_operative',
+      'post_operative', 'recovery_quality',
+      'airway_other', 'ventilation_type', 'custom_vitals_params',
     ];
 
     const numericFields = new Set([
@@ -566,17 +612,24 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       administered_at,
       route,
       notes,
+      custom_name,
       drug_source = 'proprio',
       phase = 'mpa',
       decrement_stock = true,
     } = req.body;
 
-    if (!medicine_id || !dose || !dose_unit) {
-      return res.status(400).json({ error: 'medicine_id, dose and dose_unit are required' });
+    const isAE = dose_unit === 'AE';
+    const isCustomDrug = !medicine_id && custom_name;
+
+    if (!medicine_id && !custom_name) {
+      return res.status(400).json({ error: 'medicine_id or custom_name is required' });
+    }
+    if (!isAE && (!dose || !dose_unit)) {
+      return res.status(400).json({ error: 'dose and dose_unit are required (unless AE)' });
     }
 
-    const doseNum = parseFloat(dose);
-    if (isNaN(doseNum) || doseNum <= 0) {
+    const doseNum = isAE ? 0 : parseFloat(dose);
+    if (!isAE && (isNaN(doseNum) || doseNum <= 0)) {
       return res.status(400).json({ error: 'dose must be a positive number' });
     }
 
@@ -598,12 +651,15 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot add medicines to a completed surgery' });
     }
 
-    const medicine = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(medicine_id, req.user.id);
+    let medicine = null;
+    if (medicine_id) {
+      medicine = db
+        .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
+        .get(medicine_id, req.user.id);
 
-    if (!medicine) {
-      return res.status(404).json({ error: 'Medicine not found' });
+      if (!medicine) {
+        return res.status(404).json({ error: 'Medicine not found' });
+      }
     }
 
     const adminTime = administered_at || new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -611,13 +667,13 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
     const addMedicine = db.transaction(() => {
       const smResult = db
         .prepare(`
-          INSERT INTO surgery_medicines (surgery_id, medicine_id, dose, dose_unit, dose_mg_kg, administered_at, route, notes, drug_source, phase)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO surgery_medicines (surgery_id, medicine_id, custom_name, dose, dose_unit, dose_mg_kg, administered_at, route, notes, drug_source, phase)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        .run(id, medicine_id, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null, drug_source, phase);
+        .run(id, medicine_id || null, custom_name || null, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null, drug_source, phase);
 
-      // Only decrement stock if drug is from own inventory
-      if (decrement_stock && drug_source === 'proprio') {
+      // Only decrement stock if drug is from own inventory and has a medicine_id and not AE
+      if (medicine && decrement_stock && drug_source === 'proprio' && !isAE) {
         if (medicine.current_stock < doseNum) {
           throw new Error(`INSUFFICIENT_STOCK:${medicine.current_stock}:${doseNum}`);
         }
@@ -645,9 +701,9 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
 
       const surgeryMed = db
         .prepare(`
-          SELECT sm.*, m.name as medicine_name, m.active_principle, m.concentration
+          SELECT sm.*, COALESCE(m.name, sm.custom_name) as medicine_name, m.active_principle, m.concentration
           FROM surgery_medicines sm
-          JOIN medicines m ON sm.medicine_id = m.id
+          LEFT JOIN medicines m ON sm.medicine_id = m.id
           WHERE sm.id = ?
         `)
         .get(smResult.lastInsertRowid);
@@ -727,6 +783,114 @@ router.delete('/:id/medicines/:medId', authenticateToken, (req, res) => {
     res.json({ message: 'Medicine removed from surgery' });
   } catch (err) {
     console.error('Remove surgery medicine error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/surgeries/:id/disposables - list disposables for a surgery
+router.get('/:id/disposables', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const surgery = db.prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    const disposables = db.prepare(`
+      SELECT sd.*, m.name as medicine_name, m.cost_per_unit
+      FROM surgery_disposables sd
+      JOIN medicines m ON sd.medicine_id = m.id
+      WHERE sd.surgery_id = ?
+      ORDER BY sd.created_at ASC
+    `).all(req.params.id);
+
+    res.json({ disposables });
+  } catch (err) {
+    console.error('Surgery disposables error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/surgeries/:id/disposables - add disposable to surgery
+router.post('/:id/disposables', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { medicine_id, quantity = 1 } = req.body;
+
+    if (!medicine_id) return res.status(400).json({ error: 'medicine_id is required' });
+
+    const db = getDb();
+    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    const medicine = db.prepare("SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1").get(medicine_id, req.user.id);
+    if (!medicine) return res.status(404).json({ error: 'Disposable not found' });
+
+    const qty = parseFloat(quantity) || 1;
+    const unitCost = medicine.cost_per_unit || 0;
+    const totalCost = qty * unitCost;
+
+    const addDisposable = db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO surgery_disposables (surgery_id, medicine_id, quantity, unit_cost, total_cost)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(id, medicine_id, qty, unitCost, totalCost);
+
+      // Decrement disposable stock
+      if (medicine.current_stock >= qty) {
+        db.prepare('UPDATE medicines SET current_stock = current_stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(qty, medicine_id);
+        db.prepare(`
+          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, surgery_id, notes)
+          VALUES (?, ?, 'usage', ?, ?, ?, ?, ?)
+        `).run(medicine_id, req.user.id, qty, unitCost, totalCost, id,
+          `Descartável usado em: ${surgery.procedure_name} - ${surgery.patient_name}`);
+      }
+
+      return db.prepare(`
+        SELECT sd.*, m.name as medicine_name
+        FROM surgery_disposables sd
+        JOIN medicines m ON sd.medicine_id = m.id
+        WHERE sd.id = ?
+      `).get(result.lastInsertRowid);
+    });
+
+    const disposable = addDisposable();
+    res.status(201).json({ message: 'Disposable added', disposable });
+  } catch (err) {
+    console.error('Add surgery disposable error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/surgeries/:id/disposables/:dispId - remove disposable from surgery
+router.delete('/:id/disposables/:dispId', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { id, dispId } = req.params;
+    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    const sd = db.prepare('SELECT * FROM surgery_disposables WHERE id = ? AND surgery_id = ?').get(dispId, id);
+    if (!sd) return res.status(404).json({ error: 'Disposable record not found' });
+
+    const removeDisposable = db.transaction(() => {
+      // Restore stock
+      db.prepare('UPDATE medicines SET current_stock = current_stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(sd.quantity, sd.medicine_id);
+
+      // Remove usage movement
+      const movement = db.prepare(`
+        SELECT id FROM stock_movements
+        WHERE surgery_id = ? AND medicine_id = ? AND type = 'usage'
+        ORDER BY created_at DESC LIMIT 1
+      `).get(id, sd.medicine_id);
+      if (movement) db.prepare('DELETE FROM stock_movements WHERE id = ?').run(movement.id);
+
+      db.prepare('DELETE FROM surgery_disposables WHERE id = ?').run(dispId);
+    });
+
+    removeDisposable();
+    res.json({ message: 'Disposable removed' });
+  } catch (err) {
+    console.error('Remove surgery disposable error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
