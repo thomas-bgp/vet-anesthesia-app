@@ -261,18 +261,40 @@ export default function FichaForm() {
     return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline) }
   }, [])
 
+  const formRef = useRef(form)
+  const drugsRef = useRef(drugs)
+  const blocksRef = useRef(blocks)
+  const vitalsRef = useRef(vitals)
+  const complicationsRef = useRef(complications)
+  const sectionsRef = useRef(sections)
+  const disposablesRef = useRef(disposables)
+  const customParamsRef = useRef(customParams)
+
+  useEffect(() => { formRef.current = form }, [form])
+  useEffect(() => { drugsRef.current = drugs }, [drugs])
+  useEffect(() => { blocksRef.current = blocks }, [blocks])
+  useEffect(() => { vitalsRef.current = vitals }, [vitals])
+  useEffect(() => { complicationsRef.current = complications }, [complications])
+  useEffect(() => { sectionsRef.current = sections }, [sections])
+  useEffect(() => { disposablesRef.current = disposables }, [disposables])
+  useEffect(() => { customParamsRef.current = customParams }, [customParams])
+
   const doAutoSave = useCallback(() => {
     if (!initialLoadDone.current) return
-    const data = { form, drugs, blocks, vitals, complications, sections, disposables, customParams }
+    const data = {
+      form: formRef.current, drugs: drugsRef.current, blocks: blocksRef.current,
+      vitals: vitalsRef.current, complications: complicationsRef.current,
+      sections: sectionsRef.current, disposables: disposablesRef.current,
+      customParams: customParamsRef.current,
+    }
     saveDraftToStorage(id, data)
     setAutoSaveStatus('saved')
     setTimeout(() => setAutoSaveStatus(null), 3000)
-  }, [form, drugs, blocks, vitals, complications, sections, disposables, customParams, id])
+  }, [id])
 
   useEffect(() => {
     if (!initialLoadDone.current) return
     hasUnsavedChanges.current = true
-    setAutoSaveStatus('saving')
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(doAutoSave, 2000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }

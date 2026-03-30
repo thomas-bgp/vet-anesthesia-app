@@ -126,6 +126,10 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        full_name: user.full_name,
+        professional_title: user.professional_title,
+        crmv_number: user.crmv_number,
+        signature_image: user.signature_image,
         created_at: user.created_at,
       },
     });
