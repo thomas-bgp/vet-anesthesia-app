@@ -647,9 +647,7 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot add medicines to a cancelled surgery' });
     }
 
-    if (surgery.status === 'completed') {
-      return res.status(400).json({ error: 'Cannot add medicines to a completed surgery' });
-    }
+    // Completed surgeries can be edited (consistent with PUT /surgeries/:id)
 
     let medicine = null;
     if (medicine_id) {

@@ -274,7 +274,14 @@ export default function FichaDetail() {
     </div>
   )
 
-  if (!surgery) return <div className="p-4 text-red-600">Ficha não encontrada.</div>
+  if (!surgery) return (
+    <div className="p-4">
+      <button onClick={() => navigate('/fichas')} className="mb-4 text-teal-600 font-medium flex items-center gap-1">
+        ← Voltar
+      </button>
+      <p className="text-red-600">Ficha não encontrada.</p>
+    </div>
+  )
 
   const st = STATUS[surgery.status] || STATUS.scheduled
   const groupedMeds = {}
