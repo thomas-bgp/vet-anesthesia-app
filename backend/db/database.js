@@ -56,18 +56,8 @@ async function ensurePermanentAdmin() {
       .eq('email', email);
   }
 
-  // Schema migrations: add branding/onboarding columns
-  const migrations = [
-    "ALTER TABLE users ADD COLUMN theme_color TEXT DEFAULT '#0d9488'",
-    "ALTER TABLE users ADD COLUMN logo_image TEXT",
-    "ALTER TABLE users ADD COLUMN business_address TEXT",
-    "ALTER TABLE users ADD COLUMN business_phone TEXT",
-    "ALTER TABLE users ADD COLUMN business_email TEXT",
-    "ALTER TABLE users ADD COLUMN onboarding_done BOOLEAN DEFAULT false",
-  ];
-  for (const sql of migrations) {
-    try { await queryRows(sql); } catch {}
-  }
+  // Note: schema migrations (ALTER TABLE) are run manually via Supabase SQL Editor.
+  // The queryRows RPC cannot execute DDL statements.
 }
 
 module.exports = { getSupabase, queryRows, ensurePermanentAdmin };

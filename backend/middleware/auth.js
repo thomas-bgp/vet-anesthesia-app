@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getSupabase } = require('../db/database');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vet-anesthesia-super-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'vet-anesthesia-jwt-secret-prod-2026-kX9mP4';
 
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
