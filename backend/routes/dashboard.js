@@ -50,10 +50,38 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 
+    // Revenue by clinic
+    const byClinic = await queryRows(`
+      SELECT
+        COALESCE(clinic_name, 'Sem clínica') as clinic,
+        COUNT(*)::int as count,
+        COALESCE(SUM(revenue), 0)::numeric as total_revenue,
+        COALESCE(SUM(CASE WHEN paid = true THEN revenue ELSE 0 END), 0)::numeric as paid_revenue,
+        COALESCE(SUM(CASE WHEN COALESCE(paid, false) = false AND revenue > 0 THEN revenue ELSE 0 END), 0)::numeric as pending_revenue
+      FROM surgeries
+      WHERE user_id = $1 AND status != 'cancelled'
+      GROUP BY COALESCE(clinic_name, 'Sem clínica')
+      ORDER BY total_revenue DESC
+    `, [userId]);
+
+    // Monthly revenue by clinic (last 6 months, top 5 clinics)
+    const monthlyByClinic = await queryRows(`
+      SELECT
+        to_char(COALESCE(start_time, created_at), 'YYYY-MM') as month,
+        COALESCE(clinic_name, 'Sem clínica') as clinic,
+        COALESCE(SUM(revenue), 0)::numeric as revenue
+      FROM surgeries
+      WHERE user_id = $1 AND status != 'cancelled' AND created_at >= $2
+      GROUP BY to_char(COALESCE(start_time, created_at), 'YYYY-MM'), COALESCE(clinic_name, 'Sem clínica')
+      ORDER BY month ASC
+    `, [userId, sixMonthsAgo]);
+
     res.json({
       surgery_stats: surgeryStats,
       stock_alerts: stockAlerts,
       monthly_revenue: monthlyRevenue,
+      by_clinic: byClinic,
+      monthly_by_clinic: monthlyByClinic,
     });
   } catch (err) {
     console.error('Dashboard summary error:', err);
