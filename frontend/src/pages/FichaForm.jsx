@@ -474,6 +474,7 @@ export default function FichaForm() {
   }
 
   const removeVital = (idx) => { setVitals(v => v.filter((_, i) => i !== idx)); hasUnsavedChanges.current = true }
+  const updateVital = (idx, key, value) => { setVitals(v => v.map((item, i) => i === idx ? { ...item, [key]: value, edited: true } : item)); hasUnsavedChanges.current = true }
 
   const addDrug = (phase) => {
     const defaultUnit = phase === 'infusao' ? 'mg/kg/h' : 'mg/kg'
@@ -512,7 +513,11 @@ export default function FichaForm() {
       else { const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id }
 
       for (const vital of vitals) {
-        if (vital.fromServer) continue
+        if (vital.fromServer && !vital.edited) continue
+        // If edited from server, delete old and recreate
+        if (vital.fromServer && vital.edited) {
+          try { await api.delete(`/surgeries/${surgeryId}/vitals/${vital.id}`) } catch {}
+        }
         await api.post(`/surgeries/${surgeryId}/vitals`, {
           recorded_at: vital.recorded_at, fc: vital.fc || null, fr: vital.fr || null,
           spo2: vital.spo2 || null, etco2: vital.etco2 || null,
@@ -817,8 +822,8 @@ export default function FichaForm() {
 
         <Section title="Transoperatório" open={sections.transoperatorio} onToggle={() => toggle('transoperatorio')} badge={vitals.length || null}>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <Field label="Início anestesia"><input type="datetime-local" name="anesthesia_start" value={form.anesthesia_start} onChange={handle} className={inp} /></Field>
-            <Field label="Início procedimento"><input type="datetime-local" name="procedure_start" value={form.procedure_start} onChange={handle} className={inp} /></Field>
+            <Field label="Início anestesia"><input type="time" name="anesthesia_start" value={(form.anesthesia_start || '').slice(-8, -3) || (form.anesthesia_start || '').slice(11, 16) || ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            <Field label="Início procedimento"><input type="time" name="procedure_start" value={(form.procedure_start || '').slice(-8, -3) || (form.procedure_start || '').slice(11, 16) || ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
           </div>
 
           <div className="space-y-2 mb-3">
@@ -869,11 +874,24 @@ export default function FichaForm() {
                     <th className="w-6"></th>
                   </tr></thead>
                   <tbody>{vitals.map((v, i) => (
-                    <tr key={v.id || i} className="border-b border-slate-50">
-                      <td className="py-1.5 font-mono text-slate-600">{v.recorded_at ? new Date(v.recorded_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                      {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min','anesthetic'].map(k => <td key={k} className="py-1.5 text-center text-slate-700">{v[k] || '-'}</td>)}
-                      {customParams.map(p => { let cpData = v.custom_params; if (typeof cpData === 'string') { try { cpData = JSON.parse(cpData) } catch { cpData = {} } }; return <td key={p.key} className="py-1.5 text-center text-slate-700">{(cpData || {})[p.key] || '-'}</td> })}
-                      <td>{!v.fromServer && <button type="button" onClick={() => removeVital(i)} className="p-1 text-slate-400 active:text-red-500"><X size={12} /></button>}</td>
+                    <tr key={v.id || i} className={`border-b border-slate-50 ${v.edited ? 'bg-amber-50' : ''}`}>
+                      <td className="py-1 font-mono text-slate-600">
+                        <input type="time" value={v.recorded_at ? new Date(v.recorded_at).toTimeString().slice(0, 5) : ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); updateVital(i, 'recorded_at', date + 'T' + e.target.value + ':00') }} className="w-[70px] px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] bg-transparent" />
+                      </td>
+                      {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min'].map(k => (
+                        <td key={k} className="py-1 text-center">
+                          <input type="number" step="any" inputMode="decimal" value={v[k] ?? ''} onChange={e => updateVital(i, k, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                        </td>
+                      ))}
+                      <td className="py-1 text-center">
+                        <input type="text" value={v.anesthetic ?? ''} onChange={e => updateVital(i, 'anesthetic', e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                      </td>
+                      {customParams.map(p => { let cpData = v.custom_params; if (typeof cpData === 'string') { try { cpData = JSON.parse(cpData) } catch { cpData = {} } }; return (
+                        <td key={p.key} className="py-1 text-center">
+                          <input type="text" value={(cpData || {})[p.key] || ''} onChange={e => { const newCp = { ...(typeof v.custom_params === 'string' ? JSON.parse(v.custom_params || '{}') : (v.custom_params || {})), [p.key]: e.target.value }; updateVital(i, 'custom_params', newCp) }} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                        </td>
+                      ) })}
+                      <td><button type="button" onClick={() => removeVital(i)} className="p-1 text-slate-400 active:text-red-500"><X size={12} /></button></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -922,10 +940,10 @@ export default function FichaForm() {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Final procedimento"><input type="datetime-local" name="procedure_end" value={form.procedure_end} onChange={handle} className={inp} /></Field>
-            <Field label="Final anestesia"><input type="datetime-local" name="anesthesia_end" value={form.anesthesia_end} onChange={handle} className={inp} /></Field>
-            <Field label="Hora de extubação"><input type="datetime-local" name="extubation_time" value={form.extubation_time} onChange={handle} className={inp} /></Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Final procedimento"><input type="time" value={(form.procedure_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            <Field label="Final anestesia"><input type="time" value={(form.anesthesia_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            <Field label="Extubação"><input type="time" value={(form.extubation_time || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, extubation_time: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
           </div>
         </Section>
 
