@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
 import Layout from './components/Layout'
@@ -13,39 +13,46 @@ import Perfil from './pages/Perfil'
 import Compras from './pages/Compras'
 import Financeiro from './pages/Financeiro'
 
+const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <Login />,
+  },
+  {
+    path: '/register',
+    element: <Register />,
+  },
+  {
+    element: <PrivateRoute />,
+    children: [
+      {
+        element: <Layout />,
+        children: [
+          { path: '/fichas', element: <Fichas /> },
+          { path: '/fichas/new', element: <FichaForm /> },
+          { path: '/fichas/:id', element: <FichaDetail /> },
+          { path: '/fichas/:id/edit', element: <FichaForm /> },
+          { path: '/estoque', element: <Estoque /> },
+          { path: '/compras', element: <Compras /> },
+          { path: '/resumo', element: <Resumo /> },
+          { path: '/financeiro', element: <Financeiro /> },
+          { path: '/perfil', element: <Perfil /> },
+        ],
+      },
+    ],
+  },
+  { path: '/dashboard', element: <Navigate to="/fichas" replace /> },
+  { path: '/surgeries', element: <Navigate to="/fichas" replace /> },
+  { path: '/surgeries/new', element: <Navigate to="/fichas/new" replace /> },
+  { path: '/surgeries/:id', element: <Navigate to="/fichas" replace /> },
+  { path: '/', element: <Navigate to="/fichas" replace /> },
+  { path: '*', element: <Navigate to="/fichas" replace /> },
+])
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-
-          {/* Protected routes */}
-          <Route element={<PrivateRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/fichas" element={<Fichas />} />
-              <Route path="/fichas/new" element={<FichaForm />} />
-              <Route path="/fichas/:id" element={<FichaDetail />} />
-              <Route path="/fichas/:id/edit" element={<FichaForm />} />
-              <Route path="/estoque" element={<Estoque />} />
-              <Route path="/compras" element={<Compras />} />
-              <Route path="/resumo" element={<Resumo />} />
-              <Route path="/financeiro" element={<Financeiro />} />
-              <Route path="/perfil" element={<Perfil />} />
-            </Route>
-          </Route>
-
-          {/* Redirects - old routes to new */}
-          <Route path="/dashboard" element={<Navigate to="/fichas" replace />} />
-          <Route path="/surgeries" element={<Navigate to="/fichas" replace />} />
-          <Route path="/surgeries/new" element={<Navigate to="/fichas/new" replace />} />
-          <Route path="/surgeries/:id" element={<Navigate to="/fichas" replace />} />
-          <Route path="/" element={<Navigate to="/fichas" replace />} />
-          <Route path="*" element={<Navigate to="/fichas" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   )
 }
