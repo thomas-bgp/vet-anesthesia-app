@@ -305,19 +305,27 @@ export default function FichaDetail() {
       `}</style>
 
       {/* Print-only professional header */}
-      <div className="print-only print-header">
+      <div className="print-only print-header" style={{ display: 'none', position: 'relative' }}>
+        {/* Logo: top-right corner, fixed size */}
         {profile?.logo_image && (
-          <img src={profile.logo_image} alt="Logo" style={{ maxHeight: '40pt', maxWidth: '180pt', margin: '0 auto 8pt', display: 'block', objectFit: 'contain' }} />
+          <img src={profile.logo_image} alt="Logo" className="print-logo" style={{ position: 'absolute', top: 0, right: 0, width: '60pt', height: '30pt', objectFit: 'contain' }} />
         )}
-        {profile?.full_name && (
-          <p style={{ fontSize: '12pt', fontWeight: 700, margin: '0 0 2pt', color: profile?.theme_color || '#0d9488' }}>{profile.full_name}</p>
-        )}
-        {(profile?.business_address || profile?.business_phone || profile?.business_email) && (
-          <p style={{ fontSize: '8pt', color: '#555', margin: '0 0 4pt' }}>
-            {[profile.business_address, profile.business_phone, profile.business_email].filter(Boolean).join(' | ')}
-          </p>
-        )}
-        <h1>Ficha de Anestesia Veterinaria</h1>
+        {/* Left-aligned professional info */}
+        <div style={{ textAlign: 'left', paddingRight: profile?.logo_image ? '70pt' : 0 }}>
+          {profile?.full_name && (
+            <p style={{ fontSize: '11pt', fontWeight: 700, margin: '0 0 1pt', color: profile?.theme_color || '#0d9488' }}>{profile.full_name}</p>
+          )}
+          {profile?.professional_title && (
+            <p style={{ fontSize: '8pt', color: '#555', margin: 0 }}>{profile.professional_title}{profile?.crmv_number ? ` — ${profile.crmv_number}` : ''}</p>
+          )}
+          {(profile?.business_address || profile?.business_phone || profile?.business_email) && (
+            <p style={{ fontSize: '7.5pt', color: '#777', margin: '1pt 0 0' }}>
+              {[profile.business_address, profile.business_phone, profile.business_email].filter(Boolean).join(' | ')}
+            </p>
+          )}
+        </div>
+        {/* Title centered */}
+        <h1 style={{ marginTop: '8pt' }}>Ficha de Anestesia Veterinaria</h1>
         <p style={{ fontSize: '9pt', color: '#666', marginTop: '2pt' }}>
           Data: {fmtDate(surgery.start_time || surgery.created_at)}
           {surgery.clinic_name ? ` — ${surgery.clinic_name}` : ''}

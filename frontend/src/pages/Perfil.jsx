@@ -201,9 +201,8 @@ export default function Perfil() {
       const scaleY = img.naturalHeight / cropImgSize.h
       const sx = cropBox.x * scaleX, sy = cropBox.y * scaleY
       const sw = cropBox.w * scaleX, sh = cropBox.h * scaleY
-      // Output: max 600px wide, keep aspect ratio, PNG with transparency
-      const outW = Math.min(600, sw)
-      const outH = (sh / sw) * outW
+      // Output: fixed 240x120 (2:1), crisp for print at 60pt x 30pt
+      const outW = 240, outH = 120
       const canvas = document.createElement('canvas')
       canvas.width = outW; canvas.height = outH
       canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH)
@@ -411,8 +410,8 @@ export default function Perfil() {
                   onLoad={e => {
                     const r = e.target.getBoundingClientRect()
                     setCropImgSize({ w: r.width, h: r.height, natW: e.target.naturalWidth, natH: e.target.naturalHeight })
-                    // Init crop box centered, 60% width, 3:1 aspect
-                    const bw = r.width * 0.6, bh = bw / 3
+                    // Init crop box centered, 50% width, 2:1 aspect
+                    const bw = r.width * 0.5, bh = bw / 2
                     setCropBox({ x: (r.width - bw) / 2, y: (r.height - bh) / 2, w: bw, h: bh })
                   }} />
                 {/* Dimmed overlay */}
