@@ -341,7 +341,7 @@ export default function FichaDetail() {
           )}
         </div>
         {/* Title centered */}
-        <h1 style={{ marginTop: '8pt' }}>Ficha de Anestesia Veterinaria</h1>
+        <h1 style={{ marginTop: '8pt' }}>Ficha de Anestesia Veterinária</h1>
         <p style={{ fontSize: '9pt', color: '#666', marginTop: '2pt' }}>
           Data: {fmtDate(surgery.start_time || surgery.created_at)}
           {surgery.clinic_name ? ` — ${surgery.clinic_name}` : ''}
@@ -762,17 +762,17 @@ export default function FichaDetail() {
           }}>
             <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '6pt', marginBottom: '8pt' }}>
               <span style={{ fontSize: '8.5pt', fontWeight: 700, color: '#0d9488', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
-                Assinatura Eletronica
+                Assinatura Eletrônica
               </span>
             </div>
             <p style={{ margin: '0 0 2pt', fontSize: '7.5pt', color: '#64748b' }}>
-              Assinado com Assinatura Eletronica (Art. 4, II da Lei 14.063/2020)
+              Assinado com Assinatura Eletrônica (Art. 4, II da Lei 14.063/2020)
             </p>
             <p style={{ margin: '0 0 2pt', fontFamily: 'monospace', fontSize: '7pt', wordBreak: 'break-all' }}>
               Hash SHA256: {signature.hash_sha256}
             </p>
             <p style={{ margin: '0 0 2pt', fontSize: '7.5pt' }}>
-              Codigo de verificacao: <strong>{signature.verification_code}</strong>
+              Código de verificação: <strong>{signature.verification_code}</strong>
             </p>
             <p style={{ margin: '0 0 6pt', fontSize: '7.5pt' }}>
               Validar em: {window.location.origin}/validar?code={signature.verification_code}
