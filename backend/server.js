@@ -118,7 +118,7 @@ app.use('/api/signatures', signatureRoutes);
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {
   res.json({
-    name: 'Vet Anesthesia API',
+    name: 'Anestify API',
     version: require('./package.json').version,
     endpoints: {
       auth: '/api/auth',
@@ -162,7 +162,7 @@ async function startServer() {
     console.log('Database initialized successfully (Supabase)');
 
     app.listen(PORT, () => {
-      console.log(`\nVet Anesthesia API running on http://localhost:${PORT}`);
+      console.log(`\nAnestify API running on http://localhost:${PORT}`);
       console.log(`   Health check: http://localhost:${PORT}/health`);
       console.log(`   API info:     http://localhost:${PORT}/api`);
       console.log(`   Environment:  ${process.env.NODE_ENV || 'development'}\n`);

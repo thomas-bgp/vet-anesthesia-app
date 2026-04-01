@@ -51,7 +51,7 @@ export default function Sidebar({ open, onClose }) {
             <PawPrint size={20} className="text-white" />
           </div>
           <div>
-            <p className="text-white font-bold text-sm leading-tight">VetAnestesia</p>
+            <p className="text-white font-bold text-sm leading-tight">Anestify</p>
             <p className="text-slate-400 text-xs">Gestão Veterinária</p>
           </div>
         </div>

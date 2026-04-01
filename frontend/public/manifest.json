@@ -1,6 +1,6 @@
 {
-  "name": "VetAnestesia",
-  "short_name": "VetAnestesia",
+  "name": "Anestify",
+  "short_name": "Anestify",
   "description": "Ficha anestésica veterinária digital com controle de estoque",
   "start_url": "/",
   "display": "standalone",

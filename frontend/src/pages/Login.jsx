@@ -39,7 +39,7 @@ export default function Login() {
           <div className="inline-flex items-center justify-center bg-teal-600 p-4 rounded-2xl mb-4 shadow-lg">
             <PawPrint size={32} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">VetAnestesia</h1>
+          <h1 className="text-3xl font-bold text-white">Anestify</h1>
           <p className="text-teal-200 mt-1">Sistema de Gestão Veterinária</p>
         </div>
 

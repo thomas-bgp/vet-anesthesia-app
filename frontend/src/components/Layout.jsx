@@ -31,7 +31,7 @@ export default function Layout() {
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: themeColor }}>
             <ClipboardList size={18} className="text-white" />
           </div>
-          <span className="font-bold text-slate-700 text-sm">VetAnestesia</span>
+          <span className="font-bold text-slate-700 text-sm">Anestify</span>
         </div>
         <span className="text-xs text-slate-400 truncate max-w-[150px]">{user?.name}</span>
       </header>

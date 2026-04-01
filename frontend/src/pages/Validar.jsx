@@ -45,7 +45,7 @@ export default function Validar() {
             <Shield size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-slate-800 text-lg">VetAnestesia</h1>
+            <h1 className="font-bold text-slate-800 text-lg">Anestify</h1>
             <p className="text-xs text-slate-500">Verificação de autenticidade</p>
           </div>
         </div>
@@ -218,7 +218,7 @@ export default function Validar() {
 
         {/* Footer */}
         <div className="text-center py-6 text-xs text-slate-400">
-          <p>VetAnestesia — Sistema de Gestão para Anestesiologistas Veterinários</p>
+          <p>Anestify — Sistema de Gestão para Anestesiologistas Veterinários</p>
           <p className="mt-1">Validação de assinatura eletrônica conforme Lei 14.063/2020</p>
         </div>
       </div>

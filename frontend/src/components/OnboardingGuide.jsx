@@ -39,7 +39,7 @@ export default function OnboardingGuide() {
         {/* Header */}
         <div className="px-6 pt-6 pb-4 text-center">
           <p className="text-3xl mb-2">👋</p>
-          <h2 className="text-xl font-bold text-slate-800">Bem-vinda ao VetAnestesia!</h2>
+          <h2 className="text-xl font-bold text-slate-800">Bem-vinda ao Anestify!</h2>
           <p className="text-sm text-slate-500 mt-1">Aqui vai um resumo rapido do que voce pode fazer:</p>
         </div>
 
