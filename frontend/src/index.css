@@ -40,104 +40,93 @@ html {
 
 /* ===== PRINT STYLES ===== */
 @media print {
-  /* ── Page setup ── */
   @page {
     margin: 1.5cm;
-    size: portrait;
+    size: A4 portrait;
   }
 
-  /* ── Hide ALL app UI chrome ── */
-  nav,
-  .bottom-nav,
-  [data-no-print],
-  .no-print,
-  .emergency-modal-overlay {
-    display: none !important;
-  }
-
-  /* ── Show print-only elements ── */
-  .print-only {
-    display: block !important;
-  }
-
-  /* ── Global resets ── */
-  * {
+  /* ── NUKE all overflow/scroll ── */
+  *, *::before, *::after {
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    max-height: none !important;
     color-adjust: exact;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  html, body {
+  html, body, #root, main,
+  .flex.flex-col.h-\[100dvh\],
+  .flex-1.overflow-y-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
     background: #fff !important;
     color: #000 !important;
-    font-family: "Times New Roman", "Georgia", serif;
+  }
+
+  html, body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     font-size: 10pt;
-    line-height: 1.4;
+    line-height: 1.45;
     margin: 0;
     padding: 0;
     width: 100%;
   }
 
-  /* ── Remove sticky positioning ── */
-  .sticky {
+  /* ── Hide UI chrome ── */
+  nav, .bottom-nav, [data-no-print], .no-print,
+  .emergency-modal-overlay, header, .safe-bottom {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* ── Remove sticky / fixed ── */
+  .sticky, .fixed {
     position: static !important;
   }
 
-  /* ── Kill ALL app container constraints ── */
-  .max-w-lg {
-    max-width: 100% !important;
-  }
-
-  .px-4 {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-
-  .pb-6 {
-    padding-bottom: 0 !important;
-  }
-
-  .pt-4 {
-    padding-top: 0 !important;
-  }
+  /* ── Kill app container constraints ── */
+  .max-w-lg { max-width: 100% !important; }
+  .px-4 { padding-left: 0 !important; padding-right: 0 !important; }
+  .pb-6 { padding-bottom: 0 !important; }
+  .pt-4 { padding-top: 0 !important; }
+  .mx-auto { margin-left: 0 !important; margin-right: 0 !important; }
 
   /* ── Print header ── */
   .print-header {
     text-align: center;
-    border-bottom: 2pt solid #000;
-    padding-bottom: 8pt;
-    margin-bottom: 12pt;
+    border-bottom: 2.5pt solid #222;
+    padding-bottom: 10pt;
+    margin-bottom: 14pt;
   }
 
   .print-header h1 {
-    font-size: 16pt;
-    font-weight: bold;
-    letter-spacing: 2pt;
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: 3pt;
     text-transform: uppercase;
-    margin: 0 0 2pt 0;
-    color: #000;
+    margin: 0 0 3pt 0;
+    color: #111;
   }
 
   .print-header p {
     font-size: 9pt;
-    color: #333;
-    margin: 0;
+    color: #444;
+    margin: 1pt 0 0 0;
   }
 
-  /* ── App header bar: restyle for print ── */
-  .sticky.top-0 {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  /* Hide the entire app header content (patient name bar, status badge) */
+  /* ── App header bar: hide completely ── */
+  .sticky.top-0,
   .sticky.top-0 > div {
     display: none !important;
   }
 
-  /* ── Cards: flatten into clean sections ── */
+  /* ── Cards → flat sections ── */
   .bg-white.rounded-xl,
   .bg-white.rounded-lg,
   [class*="rounded-xl"].border,
@@ -147,127 +136,54 @@ html {
     border: none !important;
     border-radius: 0 !important;
     padding: 0 !important;
-    margin-bottom: 10pt !important;
+    margin-bottom: 12pt !important;
     break-inside: avoid;
   }
 
-  /* Section titles */
+  /* Section titles — clean line above */
   .bg-white.rounded-xl h3,
   .bg-white.rounded-lg h3 {
-    font-size: 10pt !important;
-    font-weight: bold !important;
+    font-size: 9pt !important;
+    font-weight: 700 !important;
     text-transform: uppercase !important;
-    letter-spacing: 1pt !important;
-    color: #000 !important;
-    border-top: 1pt solid #000 !important;
+    letter-spacing: 1.5pt !important;
+    color: #333 !important;
+    border-top: 1.5pt solid #333 !important;
     padding-top: 6pt !important;
     margin-bottom: 6pt !important;
   }
 
-  /* Icon next to section titles: hide */
   .bg-white.rounded-xl h3 svg,
   .bg-white.rounded-lg h3 svg {
     display: none !important;
   }
 
-  /* ── Print section containers ── */
-  .print-section {
-    margin-bottom: 10pt;
-    break-inside: avoid;
-  }
-
-  .print-section-title {
-    font-size: 10pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1pt;
-    color: #000;
-    border-top: 1pt solid #000;
-    padding-top: 6pt;
-    margin-bottom: 6pt;
-    margin-top: 0;
-  }
-
-  /* ── Two-column patient info layout ── */
-  .print-patient-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 24pt;
-    margin-bottom: 10pt;
-  }
-
-  .print-patient-grid .print-info-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 2pt 0;
-    border-bottom: 0.5pt solid #ddd;
-    font-size: 10pt;
-  }
-
-  .print-info-label {
-    color: #555;
-    font-weight: normal;
-  }
-
-  .print-info-value {
-    font-weight: 600;
-    color: #000;
-    text-align: right;
-  }
-
-  /* ── InfoRow: clean print style ── */
+  /* ── InfoRow ── */
   .flex.justify-between.text-sm {
-    font-size: 10pt !important;
-    padding: 2pt 0 !important;
-    border-bottom: 0.5pt solid #eee;
+    font-size: 9.5pt !important;
+    padding: 2.5pt 0 !important;
+    border-bottom: 0.5pt solid #e0e0e0;
   }
 
   .flex.justify-between.text-sm .text-slate-500 {
-    color: #555 !important;
-    font-size: 10pt !important;
+    color: #666 !important;
+    font-size: 9pt !important;
   }
 
   .flex.justify-between.text-sm .font-medium {
-    color: #000 !important;
-    font-size: 10pt !important;
+    color: #111 !important;
+    font-size: 9.5pt !important;
+    font-weight: 600 !important;
   }
 
-  /* ── Grid inside cards (pre-anesthetic exam) ── */
+  /* ── Grid layouts ── */
   .grid.grid-cols-2 {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
     gap: 0 16pt !important;
   }
 
-  /* ── Medicines table ── */
-  .print-med-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9pt;
-    margin-bottom: 8pt;
-  }
-
-  .print-med-table th {
-    background: #f0f0f0 !important;
-    border: 0.5pt solid #999;
-    padding: 3pt 5pt;
-    text-align: left;
-    font-weight: bold;
-    font-size: 8pt;
-    text-transform: uppercase;
-  }
-
-  .print-med-table td {
-    border: 0.5pt solid #ccc;
-    padding: 3pt 5pt;
-    font-size: 9pt;
-  }
-
-  .print-med-table tr:nth-child(even) td {
-    background: #f9f9f9 !important;
-  }
-
-  /* ── Vitals table: professional condensed ── */
+  /* ── Vitals table ── */
   .overflow-x-auto {
     overflow: visible !important;
     margin: 0 !important;
@@ -278,91 +194,99 @@ html {
     width: 100% !important;
     min-width: unset !important;
     border-collapse: collapse !important;
-    font-size: 8pt !important;
-  }
-
-  table thead tr {
-    border-bottom: 1pt solid #000 !important;
+    font-size: 7.5pt !important;
+    break-inside: auto;
   }
 
   table th {
-    background: #f0f0f0 !important;
-    border: 0.5pt solid #999 !important;
-    padding: 2pt 3pt !important;
+    background: #f5f5f5 !important;
+    border: 0.5pt solid #aaa !important;
+    padding: 3pt 2pt !important;
     font-size: 7pt !important;
-    font-weight: bold !important;
+    font-weight: 700 !important;
     text-transform: uppercase !important;
-    color: #000 !important;
+    color: #333 !important;
+    text-align: center !important;
   }
 
   table td {
     border: 0.5pt solid #ccc !important;
-    padding: 2pt 3pt !important;
-    font-size: 8pt !important;
+    padding: 2.5pt 2pt !important;
+    font-size: 7.5pt !important;
     text-align: center !important;
-    color: #000 !important;
+    color: #111 !important;
   }
 
-  /* First column (time) */
+  /* Time column */
   table td:first-child,
   table th:first-child {
     text-align: left !important;
-    font-weight: bold !important;
+    font-weight: 600 !important;
     white-space: nowrap !important;
   }
 
   table tbody tr:nth-child(even) td {
-    background: #f9f9f9 !important;
+    background: #fafafa !important;
   }
 
-  /* Delete column in vitals */
-  table th:last-child:empty,
-  table td:last-child:has(button) {
+  table tr {
+    break-inside: avoid;
+  }
+
+  /* Hide inputs inside table cells — show value only */
+  table input {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: inherit !important;
+    font-family: inherit !important;
+    color: inherit !important;
+    text-align: inherit !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    box-shadow: none !important;
+    outline: none !important;
+    -webkit-appearance: none !important;
+  }
+
+  /* Delete column */
+  table th:last-child,
+  table td:last-child {
+    width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+  }
+
+  table td:last-child button,
+  table td:last-child svg {
     display: none !important;
   }
 
-  /* ── Tempos cirúrgicos: inline row ── */
-  .print-times-row {
-    display: flex;
-    gap: 16pt;
-    flex-wrap: wrap;
-    padding: 4pt 0;
-  }
-
-  .print-times-row span {
-    font-size: 9pt;
-  }
-
-  .print-times-row .label {
-    color: #555;
-  }
-
-  .print-times-row .value {
-    font-weight: bold;
-    color: #000;
+  /* Edited row highlight — remove in print */
+  table tr.bg-amber-50,
+  table tr[class*="bg-amber"] {
+    background: transparent !important;
   }
 
   /* ── Complications ── */
   .bg-red-50 {
     background: transparent !important;
-    border: 1pt solid #666 !important;
+    border: 1pt solid #888 !important;
     border-radius: 0 !important;
     padding: 6pt !important;
   }
 
   .bg-red-50 .text-red-600,
   .bg-red-50 .text-red-700 {
-    color: #000 !important;
+    color: #111 !important;
   }
 
-  /* ── Financial section: hide in print ── */
+  /* ── Financial section: hide ── */
   .bg-gradient-to-r.from-teal-50 {
     display: none !important;
-  }
-
-  /* ── Bloqueios: clean ── */
-  .ml-2 {
-    margin-left: 8pt !important;
   }
 
   /* ── Carimbo / Stamp ── */
@@ -379,9 +303,7 @@ html {
     margin: 0 auto 8pt auto;
   }
 
-  .carimbo-content {
-    text-align: center;
-  }
+  .carimbo-content { text-align: center; }
 
   .carimbo-signature {
     max-width: 180pt;
@@ -397,93 +319,37 @@ html {
     margin: 0;
   }
 
-  .carimbo-title {
+  .carimbo-title, .carimbo-crmv {
     font-size: 10pt;
     color: #333;
     margin: 2pt 0 0 0;
   }
 
-  .carimbo-crmv {
-    font-size: 10pt;
-    color: #333;
-    margin: 2pt 0 0 0;
-  }
-
-  /* ── Vitals quick-add form: hide ── */
-  .bg-slate-50.rounded-lg.p-3 {
-    display: none !important;
-  }
-
-  /* ── "Registrar sinais vitais" button: hide ── */
-  .bg-teal-50.text-teal-700 {
-    display: none !important;
-  }
-
-  /* ── Badge pills (drug source): hide ── */
+  /* ── Hide interactive elements ── */
+  .bg-slate-50.rounded-lg.p-3,
+  .bg-teal-50.text-teal-700,
   [class*="bg-purple-100"],
-  [class*="bg-teal-100"] {
-    display: none !important;
-  }
-
-  /* ── "Nenhum registro" empty state: hide ── */
-  .text-slate-400.text-center.py-4 {
-    color: #999 !important;
-    font-style: italic;
-  }
-
-  /* ── Space between sections ── */
-  .space-y-3 > * + * {
-    margin-top: 8pt !important;
-  }
-
-  /* ── Page breaks ── */
-  .print-page-break {
-    page-break-before: always;
-  }
-
-  /* ── Prevent orphans in vitals table ── */
-  table {
-    break-inside: auto;
-  }
-
-  table tr {
-    break-inside: avoid;
-  }
-
-  /* ── Status badge: hide ── */
+  [class*="bg-teal-100"],
+  .text-slate-400.active\:text-red-500,
+  .active\:text-red-500,
   [class*="rounded-full"][class*="font-semibold"] {
     display: none !important;
   }
 
-  /* ── Trash/delete buttons: hide ── */
-  button:has(svg) {
-    /* Only hide delete-style small buttons */
-  }
-  .text-slate-400.active\:text-red-500,
-  .active\:text-red-500 {
-    display: none !important;
-  }
+  /* ── Colors ── */
+  .text-slate-800, .text-slate-700, .text-slate-600 { color: #111 !important; }
+  .text-slate-500 { color: #666 !important; }
+  .bg-slate-50 { background: transparent !important; }
 
-  /* ── Ensure text colors are black ── */
-  .text-slate-800,
-  .text-slate-700,
-  .text-slate-600 {
-    color: #000 !important;
-  }
-
-  .text-slate-500 {
-    color: #555 !important;
-  }
-
-  /* ── Remove colored section backgrounds ── */
-  .bg-slate-50 {
-    background: transparent !important;
-  }
-
-  /* ── Truncate: allow full text in print ── */
+  /* ── Truncate off ── */
   .truncate {
     overflow: visible !important;
     text-overflow: unset !important;
     white-space: normal !important;
+  }
+
+  /* ── Section spacing ── */
+  .space-y-3 > * + * {
+    margin-top: 10pt !important;
   }
 }
