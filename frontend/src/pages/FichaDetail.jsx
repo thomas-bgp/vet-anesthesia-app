@@ -155,9 +155,9 @@ function InfoRow({ label, value }) {
   )
 }
 
-function Card({ title, icon: Icon, children }) {
+function Card({ title, icon: Icon, children, ...rest }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-slate-200 p-4" {...rest}>
       {title && (
         <div className="flex items-center gap-2 mb-3">
           {Icon && <Icon size={15} className="text-slate-400" />}
@@ -299,8 +299,18 @@ export default function FichaDetail() {
         <EmergencyModal surgery={surgery} onClose={() => setShowEmergency(false)} />
       )}
 
+      {/* Print-only professional header */}
+      <div className="print-only print-header">
+        <h1>Ficha de Anestesia Veterinária</h1>
+        {profile?.clinic_name && <p>{profile.clinic_name}</p>}
+        <p style={{ fontSize: '9pt', color: '#666', marginTop: '2pt' }}>
+          Data: {fmtDate(surgery.start_time || surgery.created_at)}
+          {surgery.clinic_name ? ` — ${surgery.clinic_name}` : ''}
+        </p>
+      </div>
+
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 px-4 py-3">
+      <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 px-4 py-3" data-no-print>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -382,7 +392,7 @@ export default function FichaDetail() {
 
         {/* Financial summary */}
         {(surgery.revenue > 0 || (summary && summary.total_cost > 0)) && (
-          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 p-4">
+          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 p-4" data-no-print>
             <h3 className="text-xs font-semibold text-teal-600 uppercase tracking-wide mb-3">Financeiro</h3>
             <div className="grid grid-cols-2 gap-3">
               {surgery.revenue > 0 && (
@@ -514,11 +524,11 @@ export default function FichaDetail() {
                     <div className="flex items-center gap-2 shrink-0">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                         m.drug_source === 'clinica' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'
-                      }`}>
+                      }`} data-no-print>
                         {m.drug_source === 'clinica' ? 'Clínica' : 'Próprio'}
                       </span>
                       {surgery.status !== 'completed' && (
-                        <button onClick={() => removeMedicine(m.id)} className="p-1.5 text-slate-400 active:text-red-500 min-h-[36px] min-w-[36px] flex items-center justify-center">
+                        <button onClick={() => removeMedicine(m.id)} className="p-1.5 text-slate-400 active:text-red-500 min-h-[36px] min-w-[36px] flex items-center justify-center" data-no-print>
                           <Trash2 size={14} />
                         </button>
                       )}
@@ -532,7 +542,7 @@ export default function FichaDetail() {
 
         {/* Descartáveis Utilizados */}
         {disposables.length > 0 && (
-          <Card title="Descartáveis Utilizados">
+          <Card title="Descartáveis Utilizados" data-no-print>
             {disposables.map(d => (
               <div key={d.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
                 <div className="min-w-0 flex-1">
@@ -565,12 +575,13 @@ export default function FichaDetail() {
           <button
             onClick={() => setShowVitals(!showVitals)}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 mb-3 bg-teal-50 text-teal-700 text-sm font-medium rounded-lg active:bg-teal-100 min-h-[44px]"
+            data-no-print
           >
             <Plus size={16} /> Registrar sinais vitais
           </button>
 
           {showVitals && (
-            <div className="bg-slate-50 rounded-lg p-3 mb-3 space-y-2">
+            <div className="bg-slate-50 rounded-lg p-3 mb-3 space-y-2" data-no-print>
               <div className="grid grid-cols-3 gap-2">
                 {VITAL_FIELDS.map(f => (
                   <div key={f.key}>
@@ -611,7 +622,7 @@ export default function FichaDetail() {
                     {VITAL_FIELDS.map(f => (
                       <th key={f.key} className="text-center py-2 font-semibold text-slate-500 px-1">{f.label}</th>
                     ))}
-                    <th className="w-8"></th>
+                    <th className="w-8" data-no-print></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -621,7 +632,7 @@ export default function FichaDetail() {
                       {VITAL_FIELDS.map(f => (
                         <td key={f.key} className="py-2 text-center text-slate-700 px-1">{v[f.key] ?? '-'}</td>
                       ))}
-                      <td>
+                      <td data-no-print>
                         {surgery.status !== 'completed' && (
                           <button onClick={() => deleteVital(v.id)} className="p-1 text-slate-400 active:text-red-500">
                             <Trash2 size={12} />
