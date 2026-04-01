@@ -153,23 +153,64 @@ export default function Perfil() {
     reader.readAsDataURL(file)
   }
 
-  // Compress image to max ~200KB
-  const compressImage = (dataUrl, maxWidth = 400) => {
-    return new Promise((resolve) => {
-      if (!dataUrl) return resolve(null)
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        const scale = Math.min(1, maxWidth / img.width)
-        canvas.width = img.width * scale
-        canvas.height = img.height * scale
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', 0.7))
+  // Logo crop state
+  const [rawLogo, setRawLogo] = useState(null) // original image before crop
+  const cropCanvasRef = useRef(null)
+  const [cropBox, setCropBox] = useState({ x: 0, y: 0, w: 200, h: 70 })
+  const [cropImgSize, setCropImgSize] = useState({ w: 0, h: 0, natW: 0, natH: 0 })
+  const [dragging, setDragging] = useState(null) // null | 'move' | 'resize'
+  const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0, bw: 0, bh: 0 })
+
+  const onCropPointerDown = (e, mode) => {
+    e.preventDefault()
+    setDragging(mode)
+    const rect = e.currentTarget.closest('.crop-area').getBoundingClientRect()
+    dragStart.current = { mx: e.clientX, my: e.clientY, bx: cropBox.x, by: cropBox.y, bw: cropBox.w, bh: cropBox.h, rx: rect.left, ry: rect.top }
+  }
+
+  useEffect(() => {
+    if (!dragging) return
+    const onMove = (e) => {
+      const dx = e.clientX - dragStart.current.mx
+      const dy = e.clientY - dragStart.current.my
+      if (dragging === 'move') {
+        setCropBox(b => ({
+          ...b,
+          x: Math.max(0, Math.min(cropImgSize.w - b.w, dragStart.current.bx + dx)),
+          y: Math.max(0, Math.min(cropImgSize.h - b.h, dragStart.current.by + dy)),
+        }))
+      } else {
+        setCropBox(b => ({
+          ...b,
+          w: Math.max(60, Math.min(cropImgSize.w - b.x, dragStart.current.bw + dx)),
+          h: Math.max(30, Math.min(cropImgSize.h - b.y, dragStart.current.bh + dy)),
+        }))
       }
-      img.onerror = () => resolve(dataUrl)
-      img.src = dataUrl
-    })
+    }
+    const onUp = () => setDragging(null)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+  }, [dragging, cropImgSize])
+
+  const confirmCrop = () => {
+    if (!rawLogo) return
+    const img = new Image()
+    img.onload = () => {
+      const scaleX = img.naturalWidth / cropImgSize.w
+      const scaleY = img.naturalHeight / cropImgSize.h
+      const sx = cropBox.x * scaleX, sy = cropBox.y * scaleY
+      const sw = cropBox.w * scaleX, sh = cropBox.h * scaleY
+      // Output: max 600px wide, keep aspect ratio, PNG with transparency
+      const outW = Math.min(600, sw)
+      const outH = (sh / sw) * outW
+      const canvas = document.createElement('canvas')
+      canvas.width = outW; canvas.height = outH
+      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH)
+      setLogoImage(canvas.toDataURL('image/png', 0.9))
+      setRawLogo(null)
+    }
+    img.src = rawLogo
   }
 
   const handleSave = async () => {
@@ -183,16 +224,13 @@ export default function Perfil() {
         sig = canvasRef.current.toDataURL('image/png')
       }
 
-      // Compress logo if present
-      const compressedLogo = await compressImage(logoImage)
-
       const res = await api.put('/auth/profile', {
         full_name: fullName,
         professional_title: professionalTitle,
         crmv_number: crmvNumber,
         signature_image: sig,
         theme_color: themeColor,
-        logo_image: compressedLogo,
+        logo_image: logoImage,
         business_address: businessAddress,
         business_phone: businessPhone,
         business_email: businessEmail,
@@ -358,38 +396,68 @@ export default function Perfil() {
           </div>
         </div>
 
-        {/* Logo upload */}
+        {/* Logo upload + crop */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
           <p className="text-xs text-slate-400 mb-2">Aparece no cabeçalho da ficha impressa</p>
-          {logoImage ? (
+
+          {rawLogo ? (
+            /* ── Crop editor ── */
+            <div className="space-y-3">
+              <p className="text-xs text-teal-700 font-medium">Arraste para posicionar, arraste o canto para redimensionar</p>
+              <div className="crop-area relative overflow-hidden rounded-lg border border-slate-300 bg-slate-900 select-none touch-none"
+                style={{ maxHeight: '250px' }}>
+                <img src={rawLogo} alt="Crop" className="w-full block" draggable={false}
+                  onLoad={e => {
+                    const r = e.target.getBoundingClientRect()
+                    setCropImgSize({ w: r.width, h: r.height, natW: e.target.naturalWidth, natH: e.target.naturalHeight })
+                    // Init crop box centered, 60% width, 3:1 aspect
+                    const bw = r.width * 0.6, bh = bw / 3
+                    setCropBox({ x: (r.width - bw) / 2, y: (r.height - bh) / 2, w: bw, h: bh })
+                  }} />
+                {/* Dimmed overlay */}
+                <div className="absolute inset-0 bg-black/50 pointer-events-none" style={{
+                  clipPath: `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% ${cropBox.y}px, ${cropBox.x}px ${cropBox.y}px, ${cropBox.x}px ${cropBox.y + cropBox.h}px, ${cropBox.x + cropBox.w}px ${cropBox.y + cropBox.h}px, ${cropBox.x + cropBox.w}px ${cropBox.y}px, 0% ${cropBox.y}px)`
+                }} />
+                {/* Crop box */}
+                <div className="absolute border-2 border-white rounded cursor-move"
+                  style={{ left: cropBox.x, top: cropBox.y, width: cropBox.w, height: cropBox.h }}
+                  onPointerDown={e => onCropPointerDown(e, 'move')}>
+                  {/* Resize handle */}
+                  <div className="absolute -bottom-2 -right-2 w-5 h-5 bg-white rounded-full border-2 border-teal-600 cursor-se-resize"
+                    onPointerDown={e => { e.stopPropagation(); onCropPointerDown(e, 'resize') }} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setRawLogo(null)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg min-h-[44px]">Cancelar</button>
+                <button type="button" onClick={confirmCrop}
+                  className="flex-1 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg min-h-[44px] active:bg-teal-700">Recortar e usar</button>
+              </div>
+            </div>
+          ) : logoImage ? (
+            /* ── Preview ── */
             <div className="flex items-center gap-3">
-              <img src={logoImage} alt="Logo" className="h-12 max-w-[200px] object-contain rounded border border-slate-200 p-1" />
-              <button
-                type="button"
-                onClick={() => setLogoImage(null)}
-                className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]"
-              >
-                <Trash2 size={14} />
-                Remover
-              </button>
+              <div className="bg-white border border-slate-200 rounded-lg p-2 flex items-center justify-center" style={{ minWidth: '120px', height: '50px' }}>
+                <img src={logoImage} alt="Logo" className="max-h-full max-w-[180px] object-contain" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[36px] cursor-pointer">
+                  Trocar
+                  <input type="file" accept="image/*" onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setRawLogo(ev.target.result); r.readAsDataURL(f) }} className="hidden" />
+                </label>
+                <button type="button" onClick={() => setLogoImage(null)}
+                  className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[36px]">
+                  <Trash2 size={12} /> Remover
+                </button>
+              </div>
             </div>
           ) : (
+            /* ── Empty state ── */
             <label className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 text-sm cursor-pointer active:bg-slate-100 min-h-[44px]">
               <Upload size={16} />
               Enviar logo
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files[0]
-                  if (!file) return
-                  const reader = new FileReader()
-                  reader.onload = (ev) => setLogoImage(ev.target.result)
-                  reader.readAsDataURL(file)
-                }}
-                className="hidden"
-              />
+              <input type="file" accept="image/*" onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setRawLogo(ev.target.result); r.readAsDataURL(f) }} className="hidden" />
             </label>
           )}
         </div>

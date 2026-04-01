@@ -307,7 +307,7 @@ export default function FichaDetail() {
       {/* Print-only professional header */}
       <div className="print-only print-header">
         {profile?.logo_image && (
-          <img src={profile.logo_image} alt="Logo" style={{ maxHeight: '50px', margin: '0 auto 6pt', display: 'block' }} />
+          <img src={profile.logo_image} alt="Logo" style={{ maxHeight: '40pt', maxWidth: '180pt', margin: '0 auto 8pt', display: 'block', objectFit: 'contain' }} />
         )}
         {profile?.full_name && (
           <p style={{ fontSize: '12pt', fontWeight: 700, margin: '0 0 2pt', color: profile?.theme_color || '#0d9488' }}>{profile.full_name}</p>
