@@ -299,13 +299,18 @@ export default function FichaDetail() {
         <EmergencyModal surgery={surgery} onClose={() => setShowEmergency(false)} />
       )}
 
+      {/* Inject theme color as CSS variable for print */}
+      <style>{`
+        :root { --print-theme: ${profile?.theme_color || '#0d9488'}; }
+      `}</style>
+
       {/* Print-only professional header */}
       <div className="print-only print-header">
         {profile?.logo_image && (
           <img src={profile.logo_image} alt="Logo" style={{ maxHeight: '50px', margin: '0 auto 6pt', display: 'block' }} />
         )}
         {profile?.full_name && (
-          <p style={{ fontSize: '12pt', fontWeight: 700, margin: '0 0 2pt' }}>{profile.full_name}</p>
+          <p style={{ fontSize: '12pt', fontWeight: 700, margin: '0 0 2pt', color: profile?.theme_color || '#0d9488' }}>{profile.full_name}</p>
         )}
         {(profile?.business_address || profile?.business_phone || profile?.business_email) && (
           <p style={{ fontSize: '8pt', color: '#555', margin: '0 0 4pt' }}>
