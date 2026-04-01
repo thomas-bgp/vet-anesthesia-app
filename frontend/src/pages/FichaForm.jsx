@@ -804,13 +804,25 @@ export default function FichaForm() {
                 <div className="space-y-2">
                   <label className="block text-xs font-medium text-slate-500">Fármacos</label>
                   {(blk.drugs || []).map((drug, di) => (
-                    <div key={di} className="flex items-center gap-2">
-                      <input type="text" value={drug.name || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, name: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Fármaco" />
-                      <input type="text" value={drug.dose_volume || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_volume: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Dose/volume" />
-                      {(blk.drugs || []).length > 1 && <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.filter((_, dIdx) => dIdx !== di) } : item))} className="p-1 text-slate-400 active:text-red-500 shrink-0"><X size={14} /></button>}
+                    <div key={di} className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={drug.name || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, name: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Fármaco" />
+                        <input type="text" value={drug.dose_volume || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_volume: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Dose/volume" />
+                        {(blk.drugs || []).length > 1 && <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.filter((_, dIdx) => dIdx !== di) } : item))} className="p-1 text-slate-400 active:text-red-500 shrink-0"><X size={14} /></button>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, drug_source: 'proprio' } : d) } : item))}
+                          className={`flex-1 py-1.5 text-[10px] font-medium rounded-lg transition min-h-[32px] ${(drug.drug_source || 'proprio') === 'proprio' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                          Meu fármaco
+                        </button>
+                        <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, drug_source: 'clinica' } : d) } : item))}
+                          className={`flex-1 py-1.5 text-[10px] font-medium rounded-lg transition min-h-[32px] ${drug.drug_source === 'clinica' ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                          Da clínica
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: [...(item.drugs || []), { name: '', dose_volume: '' }] } : item))}
+                  <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: [...(item.drugs || []), { name: '', dose_volume: '', drug_source: 'proprio' }] } : item))}
                     className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar fármaco</button>
                 </div>
               </div>
