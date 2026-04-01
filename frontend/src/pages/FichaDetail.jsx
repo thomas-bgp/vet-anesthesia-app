@@ -430,7 +430,9 @@ export default function FichaDetail() {
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
         {/* Patient + Surgery info */}
-        <Card title="Paciente">
+        <Card title="Identificação">
+          <InfoRow label="Paciente" value={surgery.patient_name} />
+          <InfoRow label="Procedimento" value={surgery.procedure_name} />
           <InfoRow label="Espécie / Raça" value={[surgery.patient_species, surgery.patient_breed].filter(Boolean).join(' · ')} />
           <InfoRow label="Peso" value={surgery.patient_weight ? `${surgery.patient_weight} kg` : null} />
           <InfoRow label="Idade" value={surgery.patient_age} />
