@@ -1,11 +1,11 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // POST /api/referrals - create a new referral link
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { expires_in_days = 7, max_uses = 1 } = req.body;
 
@@ -20,30 +20,44 @@ router.post('/', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'max_uses must be between 1 and 100' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
     // Generate unique code
     const code = 'VET-' + uuidv4().toUpperCase().replace(/-/g, '').substring(0, 10);
+    const expiresAt = new Date(Date.now() + expiryDays * 86400000).toISOString();
 
-    const result = db
-      .prepare(`
-        INSERT INTO referral_links (code, created_by, expires_at, max_uses)
-        VALUES (?, ?, datetime('now', '+' || ? || ' days'), ?)
-      `)
-      .run(code, req.user.id, expiryDays, maxUses);
+    const { data: inserted, error: insertError } = await supabase
+      .from('referral_links')
+      .insert({
+        code,
+        created_by: req.user.id,
+        expires_at: expiresAt,
+        max_uses: maxUses,
+      })
+      .select()
+      .single();
 
-    const referral = db
-      .prepare(`
-        SELECT rl.*, u.name as creator_name
-        FROM referral_links rl
-        LEFT JOIN users u ON rl.created_by = u.id
-        WHERE rl.id = ?
-      `)
-      .get(result.lastInsertRowid);
+    if (insertError) {
+      console.error('Insert referral error:', insertError);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    // Fetch with creator name
+    const { data: referral } = await supabase
+      .from('referral_links')
+      .select('*, users!referral_links_created_by_fkey(name)')
+      .eq('id', inserted.id)
+      .single();
+
+    const result = {
+      ...referral,
+      creator_name: referral.users?.name || null,
+    };
+    delete result.users;
 
     res.status(201).json({
       message: 'Referral link created successfully',
-      referral,
+      referral: result,
     });
   } catch (err) {
     console.error('Create referral error:', err);
@@ -52,27 +66,23 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/referrals - list my referral links
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
-
-    const referrals = db
-      .prepare(`
-        SELECT
-          rl.*,
-          u.name as creator_name,
-          CASE
-            WHEN rl.is_active = 0 THEN 'inactive'
-            WHEN rl.expires_at <= datetime('now') THEN 'expired'
-            WHEN rl.uses >= rl.max_uses THEN 'exhausted'
-            ELSE 'active'
-          END as current_status
-        FROM referral_links rl
-        LEFT JOIN users u ON rl.created_by = u.id
-        WHERE rl.created_by = ?
-        ORDER BY rl.created_at DESC
-      `)
-      .all(req.user.id);
+    const referrals = await queryRows(`
+      SELECT
+        rl.*,
+        u.name as creator_name,
+        CASE
+          WHEN rl.is_active = false THEN 'inactive'
+          WHEN rl.expires_at <= NOW() THEN 'expired'
+          WHEN rl.uses >= rl.max_uses THEN 'exhausted'
+          ELSE 'active'
+        END as current_status
+      FROM referral_links rl
+      LEFT JOIN users u ON rl.created_by = u.id
+      WHERE rl.created_by = $1
+      ORDER BY rl.created_at DESC
+    `, [req.user.id]);
 
     res.json({ referrals });
   } catch (err) {
@@ -82,36 +92,34 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/referrals/validate/:code - validate a referral code (public)
-router.get('/validate/:code', (req, res) => {
+router.get('/validate/:code', async (req, res) => {
   try {
     const { code } = req.params;
-    const db = getDb();
 
-    const referral = db
-      .prepare(`
-        SELECT
-          rl.code,
-          rl.expires_at,
-          rl.max_uses,
-          rl.uses,
-          rl.is_active,
-          u.name as created_by_name,
-          CASE
-            WHEN rl.is_active = 0 THEN 'inactive'
-            WHEN rl.expires_at <= datetime('now') THEN 'expired'
-            WHEN rl.uses >= rl.max_uses THEN 'exhausted'
-            ELSE 'valid'
-          END as status
-        FROM referral_links rl
-        LEFT JOIN users u ON rl.created_by = u.id
-        WHERE rl.code = ?
-      `)
-      .get(code);
+    const rows = await queryRows(`
+      SELECT
+        rl.code,
+        rl.expires_at,
+        rl.max_uses,
+        rl.uses,
+        rl.is_active,
+        u.name as created_by_name,
+        CASE
+          WHEN rl.is_active = false THEN 'inactive'
+          WHEN rl.expires_at <= NOW() THEN 'expired'
+          WHEN rl.uses >= rl.max_uses THEN 'exhausted'
+          ELSE 'valid'
+        END as status
+      FROM referral_links rl
+      LEFT JOIN users u ON rl.created_by = u.id
+      WHERE rl.code = $1
+    `, [code]);
 
-    if (!referral) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: 'Referral code not found', valid: false });
     }
 
+    const referral = rows[0];
     const isValid = referral.status === 'valid';
 
     res.json({
@@ -129,14 +137,16 @@ router.get('/validate/:code', (req, res) => {
 });
 
 // DELETE /api/referrals/:id - deactivate a referral link
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const referral = db
-      .prepare('SELECT * FROM referral_links WHERE id = ?')
-      .get(id);
+    const { data: referral } = await supabase
+      .from('referral_links')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
 
     if (!referral) {
       return res.status(404).json({ error: 'Referral link not found' });
@@ -147,7 +157,10 @@ router.delete('/:id', authenticateToken, (req, res) => {
       return res.status(403).json({ error: 'Not authorized to deactivate this referral link' });
     }
 
-    db.prepare('UPDATE referral_links SET is_active = 0 WHERE id = ?').run(id);
+    await supabase
+      .from('referral_links')
+      .update({ is_active: false })
+      .eq('id', id);
 
     res.json({ message: 'Referral link deactivated successfully' });
   } catch (err) {

@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
-const { getDb } = require('../db/database');
+const { getSupabase } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vet-anesthesia-super-secret-key-2024';
 
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -15,12 +15,14 @@ function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Verify user still exists and is active
-    const db = getDb();
-    const user = db
-      .prepare('SELECT id, name, email, role, is_active FROM users WHERE id = ?')
-      .get(decoded.userId);
+    const supabase = getSupabase();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, name, email, role, is_active')
+      .eq('id', decoded.userId)
+      .maybeSingle();
 
-    if (!user || !user.is_active) {
+    if (error || !user || !user.is_active) {
       return res.status(401).json({ error: 'User not found or inactive' });
     }
 

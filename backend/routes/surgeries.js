@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/surgeries - list with filters
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const {
       status,
@@ -17,51 +17,59 @@ router.get('/', authenticateToken, (req, res) => {
       limit = 20,
     } = req.query;
 
-    const db = getDb();
-
-    let whereClause = 'WHERE s.user_id = ?';
+    let whereClause = 'WHERE s.user_id = $1';
     const params = [req.user.id];
+    let paramIdx = 2;
 
     if (status) {
-      whereClause += ` AND s.status = ?`;
+      whereClause += ` AND s.status = $${paramIdx}`;
       params.push(status);
+      paramIdx++;
     }
 
     if (start_date) {
-      whereClause += ` AND date(COALESCE(s.start_time, s.created_at)) >= date(?)`;
+      whereClause += ` AND COALESCE(s.start_time, s.created_at)::date >= $${paramIdx}::date`;
       params.push(start_date);
+      paramIdx++;
     }
 
     if (end_date) {
-      whereClause += ` AND date(COALESCE(s.start_time, s.created_at)) <= date(?)`;
+      whereClause += ` AND COALESCE(s.start_time, s.created_at)::date <= $${paramIdx}::date`;
       params.push(end_date);
+      paramIdx++;
     }
 
     if (species) {
-      whereClause += ` AND s.patient_species = ?`;
+      whereClause += ` AND s.patient_species = $${paramIdx}`;
       params.push(species);
+      paramIdx++;
     }
 
     if (clinic) {
-      whereClause += ` AND s.clinic_name LIKE ?`;
+      whereClause += ` AND s.clinic_name ILIKE $${paramIdx}`;
       params.push(`%${clinic}%`);
+      paramIdx++;
     }
 
     if (search) {
-      whereClause += ` AND (s.patient_name LIKE ? OR s.procedure_name LIKE ? OR s.owner_name LIKE ? OR s.clinic_name LIKE ?)`;
+      whereClause += ` AND (s.patient_name ILIKE $${paramIdx} OR s.procedure_name ILIKE $${paramIdx + 1} OR s.owner_name ILIKE $${paramIdx + 2} OR s.clinic_name ILIKE $${paramIdx + 3})`;
       const sp = `%${search}%`;
       params.push(sp, sp, sp, sp);
+      paramIdx += 4;
     }
 
-    const countResult = db
-      .prepare(`SELECT COUNT(*) as total FROM surgeries s ${whereClause}`)
-      .get(...params);
+    const countRows = await queryRows(
+      `SELECT COUNT(*)::int as total FROM surgeries s ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
 
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     const selectQuery = `
       SELECT
         s.*,
         (
-          SELECT COUNT(*) FROM surgery_medicines sm WHERE sm.surgery_id = s.id
+          SELECT COUNT(*)::int FROM surgery_medicines sm WHERE sm.surgery_id = s.id
         ) as medicine_count,
         (
           SELECT COALESCE(SUM(sm2.unit_cost * sm2.quantity), 0)
@@ -71,19 +79,18 @@ router.get('/', authenticateToken, (req, res) => {
       FROM surgeries s
       ${whereClause}
       ORDER BY COALESCE(s.start_time, s.created_at) DESC
-      LIMIT ? OFFSET ?
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
     `;
 
-    const dataParams = [...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit)];
-    const surgeries = db.prepare(selectQuery).all(...dataParams);
+    const surgeries = await queryRows(selectQuery, [...params, parseInt(limit), offset]);
 
     res.json({
       surgeries,
       pagination: {
-        total: countResult?.total || surgeries.length,
+        total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil((countResult?.total || surgeries.length) / parseInt(limit)),
+        pages: Math.ceil(total / parseInt(limit)),
       },
     });
   } catch (err) {
@@ -93,17 +100,16 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/surgeries/unpaid - list unpaid surgeries grouped by clinic
-router.get('/unpaid', authenticateToken, (req, res) => {
+router.get('/unpaid', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
-    const surgeries = db.prepare(`
+    const surgeries = await queryRows(`
       SELECT id, patient_name, procedure_name, clinic_name, surgeon_name,
              revenue, start_time, created_at, status, paid, paid_at,
-             CAST(julianday('now') - julianday(COALESCE(start_time, created_at)) AS INTEGER) as days_ago
+             (CURRENT_DATE - COALESCE(start_time, created_at)::date)::int as days_ago
       FROM surgeries
-      WHERE user_id = ? AND COALESCE(paid, 0) = 0 AND status != 'cancelled' AND revenue > 0
+      WHERE user_id = $1 AND COALESCE(paid, false) = false AND status != 'cancelled' AND revenue > 0
       ORDER BY clinic_name ASC, start_time DESC
-    `).all(req.user.id);
+    `, [req.user.id]);
 
     const byClinic = {};
     let totalPending = 0;
@@ -111,8 +117,8 @@ router.get('/unpaid', authenticateToken, (req, res) => {
       const clinic = s.clinic_name || 'Sem clínica';
       if (!byClinic[clinic]) byClinic[clinic] = { clinic, surgeries: [], total: 0 };
       byClinic[clinic].surgeries.push(s);
-      byClinic[clinic].total += s.revenue || 0;
-      totalPending += s.revenue || 0;
+      byClinic[clinic].total += parseFloat(s.revenue) || 0;
+      totalPending += parseFloat(s.revenue) || 0;
     }
 
     res.json({
@@ -127,64 +133,60 @@ router.get('/unpaid', authenticateToken, (req, res) => {
 });
 
 // GET /api/surgeries/:id - single surgery (alias for details)
-router.get('/:id', authenticateToken, (req, res, next) => {
+router.get('/:id', authenticateToken, async (req, res, next) => {
   // Skip if it matches a named sub-route
   if (['details'].includes(req.params.id)) return next();
 
   try {
-    const db = getDb();
+    const surgeryRows = await queryRows(
+      `SELECT s.* FROM surgeries s WHERE s.id = $1 AND s.user_id = $2`,
+      [req.params.id, req.user.id]
+    );
 
-    const surgery = db
-      .prepare(`SELECT s.* FROM surgeries s WHERE s.id = ? AND s.user_id = ?`)
-      .get(req.params.id, req.user.id);
-
-    if (!surgery) {
+    if (surgeryRows.length === 0) {
       return res.status(404).json({ error: 'Surgery not found' });
     }
+    const surgery = surgeryRows[0];
 
-    const medicines = db
-      .prepare(`
-        SELECT
-          sm.*,
-          COALESCE(m.name, sm.custom_name) as medicine_name,
-          m.active_principle,
-          m.concentration,
-          m.unit as medicine_unit,
-          m.cost_per_unit,
-          m.presentation,
-          m.volume_per_unit_ml,
-          COALESCE(m.medicine_type, 'farmaco') as medicine_type,
-          CASE
-            WHEN sm.drug_source != 'proprio' THEN 0
-            WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
-            WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
-            ELSE (m.cost_per_unit * sm.dose)
-          END as total_cost
-        FROM surgery_medicines sm
-        LEFT JOIN medicines m ON sm.medicine_id = m.id
-        WHERE sm.surgery_id = ?
-        ORDER BY sm.administered_at ASC
-      `)
-      .all(req.params.id);
+    const medicines = await queryRows(`
+      SELECT
+        sm.*,
+        COALESCE(m.name, sm.custom_name) as medicine_name,
+        m.active_principle,
+        m.concentration,
+        m.unit as medicine_unit,
+        m.cost_per_unit,
+        m.presentation,
+        m.volume_per_unit_ml,
+        COALESCE(m.medicine_type, 'farmaco') as medicine_type,
+        CASE
+          WHEN sm.drug_source != 'proprio' THEN 0
+          WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
+          WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
+          ELSE (m.cost_per_unit * sm.dose)
+        END as total_cost
+      FROM surgery_medicines sm
+      LEFT JOIN medicines m ON sm.medicine_id = m.id
+      WHERE sm.surgery_id = $1
+      ORDER BY sm.administered_at ASC
+    `, [req.params.id]);
 
-    const vitals = db
-      .prepare(`
-        SELECT * FROM monitoring_vitals
-        WHERE surgery_id = ?
-        ORDER BY recorded_at ASC
-      `)
-      .all(req.params.id);
+    const vitals = await queryRows(`
+      SELECT * FROM monitoring_vitals
+      WHERE surgery_id = $1
+      ORDER BY recorded_at ASC
+    `, [req.params.id]);
 
-    const disposables = db.prepare(`
+    const disposables = await queryRows(`
       SELECT sd.*, m.name as medicine_name, m.cost_per_unit
       FROM surgery_disposables sd
       JOIN medicines m ON sd.medicine_id = m.id
-      WHERE sd.surgery_id = ?
+      WHERE sd.surgery_id = $1
       ORDER BY sd.created_at ASC
-    `).all(req.params.id);
+    `, [req.params.id]);
 
-    const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
-    const totalDisposableCost = disposables.reduce((sum, d) => sum + (d.total_cost || 0), 0);
+    const totalMedicineCost = medicines.reduce((sum, m) => sum + (parseFloat(m.total_cost) || 0), 0);
+    const totalDisposableCost = disposables.reduce((sum, d) => sum + (parseFloat(d.total_cost) || 0), 0);
 
     res.json({
       surgery,
@@ -197,8 +199,8 @@ router.get('/:id', authenticateToken, (req, res, next) => {
         disposable_count: disposables.length,
         total_disposable_cost: totalDisposableCost,
         total_cost: totalMedicineCost + totalDisposableCost,
-        revenue: surgery.revenue,
-        margin: surgery.revenue - totalMedicineCost - totalDisposableCost,
+        revenue: parseFloat(surgery.revenue) || 0,
+        margin: (parseFloat(surgery.revenue) || 0) - totalMedicineCost - totalDisposableCost,
       },
     });
   } catch (err) {
@@ -208,61 +210,57 @@ router.get('/:id', authenticateToken, (req, res, next) => {
 });
 
 // GET /api/surgeries/:id/details - full surgery details with medicines
-router.get('/:id/details', authenticateToken, (req, res) => {
+router.get('/:id/details', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const surgeryRows = await queryRows(
+      `SELECT s.* FROM surgeries s WHERE s.id = $1 AND s.user_id = $2`,
+      [req.params.id, req.user.id]
+    );
 
-    const surgery = db
-      .prepare(`SELECT s.* FROM surgeries s WHERE s.id = ? AND s.user_id = ?`)
-      .get(req.params.id, req.user.id);
-
-    if (!surgery) {
+    if (surgeryRows.length === 0) {
       return res.status(404).json({ error: 'Surgery not found' });
     }
+    const surgery = surgeryRows[0];
 
-    const medicines = db
-      .prepare(`
-        SELECT
-          sm.*,
-          COALESCE(m.name, sm.custom_name) as medicine_name,
-          m.active_principle,
-          m.concentration,
-          m.unit as medicine_unit,
-          m.cost_per_unit,
-          m.presentation,
-          m.volume_per_unit_ml,
-          COALESCE(m.medicine_type, 'farmaco') as medicine_type,
-          CASE
-            WHEN sm.drug_source != 'proprio' THEN 0
-            WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
-            WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
-            ELSE (m.cost_per_unit * sm.dose)
-          END as total_cost
-        FROM surgery_medicines sm
-        LEFT JOIN medicines m ON sm.medicine_id = m.id
-        WHERE sm.surgery_id = ?
-        ORDER BY sm.administered_at ASC
-      `)
-      .all(req.params.id);
+    const medicines = await queryRows(`
+      SELECT
+        sm.*,
+        COALESCE(m.name, sm.custom_name) as medicine_name,
+        m.active_principle,
+        m.concentration,
+        m.unit as medicine_unit,
+        m.cost_per_unit,
+        m.presentation,
+        m.volume_per_unit_ml,
+        COALESCE(m.medicine_type, 'farmaco') as medicine_type,
+        CASE
+          WHEN sm.drug_source != 'proprio' THEN 0
+          WHEN COALESCE(m.presentation, '') = 'ampola' THEN m.cost_per_unit
+          WHEN COALESCE(m.presentation, '') = 'frasco' AND m.volume_per_unit_ml > 0 THEN (sm.dose / m.volume_per_unit_ml) * m.cost_per_unit
+          ELSE (m.cost_per_unit * sm.dose)
+        END as total_cost
+      FROM surgery_medicines sm
+      LEFT JOIN medicines m ON sm.medicine_id = m.id
+      WHERE sm.surgery_id = $1
+      ORDER BY sm.administered_at ASC
+    `, [req.params.id]);
 
-    const vitals = db
-      .prepare(`
-        SELECT * FROM monitoring_vitals
-        WHERE surgery_id = ?
-        ORDER BY recorded_at ASC
-      `)
-      .all(req.params.id);
+    const vitals = await queryRows(`
+      SELECT * FROM monitoring_vitals
+      WHERE surgery_id = $1
+      ORDER BY recorded_at ASC
+    `, [req.params.id]);
 
-    const disposables = db.prepare(`
+    const disposables = await queryRows(`
       SELECT sd.*, m.name as medicine_name, m.cost_per_unit
       FROM surgery_disposables sd
       JOIN medicines m ON sd.medicine_id = m.id
-      WHERE sd.surgery_id = ?
+      WHERE sd.surgery_id = $1
       ORDER BY sd.created_at ASC
-    `).all(req.params.id);
+    `, [req.params.id]);
 
-    const totalMedicineCost = medicines.reduce((sum, m) => sum + (m.total_cost || 0), 0);
-    const totalDisposableCost = disposables.reduce((sum, d) => sum + (d.total_cost || 0), 0);
+    const totalMedicineCost = medicines.reduce((sum, m) => sum + (parseFloat(m.total_cost) || 0), 0);
+    const totalDisposableCost = disposables.reduce((sum, d) => sum + (parseFloat(d.total_cost) || 0), 0);
 
     res.json({
       surgery,
@@ -275,8 +273,8 @@ router.get('/:id/details', authenticateToken, (req, res) => {
         disposable_count: disposables.length,
         total_disposable_cost: totalDisposableCost,
         total_cost: totalMedicineCost + totalDisposableCost,
-        revenue: surgery.revenue,
-        margin: surgery.revenue - totalMedicineCost - totalDisposableCost,
+        revenue: parseFloat(surgery.revenue) || 0,
+        margin: (parseFloat(surgery.revenue) || 0) - totalMedicineCost - totalDisposableCost,
       },
     });
   } catch (err) {
@@ -286,34 +284,31 @@ router.get('/:id/details', authenticateToken, (req, res) => {
 });
 
 // GET /api/surgeries/:id/medicines - list medicines for a surgery
-router.get('/:id/medicines', authenticateToken, (req, res) => {
+router.get('/:id/medicines', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const surgeryCheck = await queryRows(
+      'SELECT id FROM surgeries WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
 
-    const surgery = db
-      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(req.params.id, req.user.id);
-
-    if (!surgery) {
+    if (surgeryCheck.length === 0) {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    const medicines = db
-      .prepare(`
-        SELECT
-          sm.*,
-          COALESCE(m.name, sm.custom_name) as medicine_name,
-          m.active_principle,
-          m.concentration,
-          m.unit as medicine_unit,
-          m.cost_per_unit,
-          CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
-        FROM surgery_medicines sm
-        LEFT JOIN medicines m ON sm.medicine_id = m.id
-        WHERE sm.surgery_id = ?
-        ORDER BY sm.administered_at ASC
-      `)
-      .all(req.params.id);
+    const medicines = await queryRows(`
+      SELECT
+        sm.*,
+        COALESCE(m.name, sm.custom_name) as medicine_name,
+        m.active_principle,
+        m.concentration,
+        m.unit as medicine_unit,
+        m.cost_per_unit,
+        CASE WHEN sm.drug_source = 'proprio' THEN (m.cost_per_unit * sm.dose) ELSE 0 END as total_cost
+      FROM surgery_medicines sm
+      LEFT JOIN medicines m ON sm.medicine_id = m.id
+      WHERE sm.surgery_id = $1
+      ORDER BY sm.administered_at ASC
+    `, [req.params.id]);
 
     res.json({ medicines });
   } catch (err) {
@@ -323,14 +318,17 @@ router.get('/:id/medicines', authenticateToken, (req, res) => {
 });
 
 // POST /api/surgeries/:id/vitals - add vital signs record
-router.post('/:id/vitals', authenticateToken, (req, res) => {
+router.post('/:id/vitals', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const surgery = db
-      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -343,21 +341,29 @@ router.post('/:id/vitals', authenticateToken, (req, res) => {
       custom_params,
     } = req.body;
 
-    const result = db
-      .prepare(`
-        INSERT INTO monitoring_vitals (surgery_id, recorded_at, fc, fr, spo2, etco2, pam, pas, pad, temperature, notes, fluid_ml_kg_h, anesthetic, o2_l_min, custom_params)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(
-        id,
-        recorded_at || new Date().toISOString(),
-        fc || null, fr || null, spo2 || null, etco2 || null,
-        pam || null, pas || null, pad || null, temperature || null,
-        notes || null, fluid_ml_kg_h || null, anesthetic || null, o2_l_min || null,
-        custom_params ? (typeof custom_params === 'string' ? custom_params : JSON.stringify(custom_params)) : null
-      );
+    const { data: vital, error } = await supabase
+      .from('monitoring_vitals')
+      .insert({
+        surgery_id: id,
+        recorded_at: recorded_at || new Date().toISOString(),
+        fc: fc || null,
+        fr: fr || null,
+        spo2: spo2 || null,
+        etco2: etco2 || null,
+        pam: pam || null,
+        pas: pas || null,
+        pad: pad || null,
+        temperature: temperature || null,
+        notes: notes || null,
+        fluid_ml_kg_h: fluid_ml_kg_h || null,
+        anesthetic: anesthetic || null,
+        o2_l_min: o2_l_min || null,
+        custom_params: custom_params ? (typeof custom_params === 'string' ? custom_params : JSON.stringify(custom_params)) : null,
+      })
+      .select()
+      .single();
 
-    const vital = db.prepare('SELECT * FROM monitoring_vitals WHERE id = ?').get(result.lastInsertRowid);
+    if (error) throw error;
 
     res.status(201).json({ message: 'Vital signs recorded', vital });
   } catch (err) {
@@ -367,20 +373,26 @@ router.post('/:id/vitals', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/surgeries/:id/vitals/:vitalId
-router.delete('/:id/vitals/:vitalId', authenticateToken, (req, res) => {
+router.delete('/:id/vitals/:vitalId', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const surgery = db
-      .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(req.params.id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('id')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    db.prepare('DELETE FROM monitoring_vitals WHERE id = ? AND surgery_id = ?')
-      .run(req.params.vitalId, req.params.id);
+    await supabase
+      .from('monitoring_vitals')
+      .delete()
+      .eq('id', req.params.vitalId)
+      .eq('surgery_id', req.params.id);
 
     res.json({ message: 'Vital signs record deleted' });
   } catch (err) {
@@ -390,7 +402,7 @@ router.delete('/:id/vitals/:vitalId', authenticateToken, (req, res) => {
 });
 
 // POST /api/surgeries - create surgery
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const b = req.body;
 
@@ -406,7 +418,7 @@ router.post('/', authenticateToken, (req, res) => {
       return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
     const fields = [
       'user_id', 'patient_name', 'patient_species', 'patient_breed', 'patient_weight', 'patient_age',
@@ -435,24 +447,33 @@ router.post('/', authenticateToken, (req, res) => {
       'fasting_solid', 'fasting_liquid', 'pre_fc', 'pre_fr', 'pre_temperature', 'pre_pas', 'peep',
     ]);
 
-    const values = fields.map(f => {
-      if (f === 'user_id') return req.user.id;
-      if (f === 'status') return status;
-      if (f === 'revenue') return parseFloat(b.revenue) || 0;
-      const v = b[f];
-      if (v === undefined || v === null || v === '') return null;
-      if (numericFields.has(f)) return parseFloat(v);
-      return v;
-    });
+    const insertObj = {};
+    for (const f of fields) {
+      if (f === 'user_id') {
+        insertObj[f] = req.user.id;
+      } else if (f === 'status') {
+        insertObj[f] = status;
+      } else if (f === 'revenue') {
+        insertObj[f] = parseFloat(b.revenue) || 0;
+      } else {
+        const v = b[f];
+        if (v === undefined || v === null || v === '') {
+          insertObj[f] = null;
+        } else if (numericFields.has(f)) {
+          insertObj[f] = parseFloat(v);
+        } else {
+          insertObj[f] = v;
+        }
+      }
+    }
 
-    const placeholders = fields.map(() => '?').join(', ');
-    const result = db
-      .prepare(`INSERT INTO surgeries (${fields.join(', ')}) VALUES (${placeholders})`)
-      .run(...values);
+    const { data: surgery, error } = await supabase
+      .from('surgeries')
+      .insert(insertObj)
+      .select()
+      .single();
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ?')
-      .get(result.lastInsertRowid);
+    if (error) throw error;
 
     res.status(201).json({
       message: 'Surgery created successfully',
@@ -465,14 +486,17 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // PUT /api/surgeries/:id - update surgery
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const existing = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: existing } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!existing) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -481,7 +505,6 @@ router.put('/:id', authenticateToken, (req, res) => {
     if (existing.status === 'cancelled') {
       return res.status(400).json({ error: 'Cannot update a cancelled surgery' });
     }
-    // completed surgeries CAN be edited (re-opened / corrected)
 
     const b = req.body;
 
@@ -513,25 +536,30 @@ router.put('/:id', authenticateToken, (req, res) => {
       'fasting_solid', 'fasting_liquid', 'pre_fc', 'pre_fr', 'pre_temperature', 'pre_pas', 'peep',
     ]);
 
-    const setClauses = [];
-    const values = [];
+    const updateObj = {};
     for (const f of updatableFields) {
       const v = b[f] !== undefined ? b[f] : existing[f];
-      setClauses.push(`${f} = ?`);
       if (v === undefined || v === null || v === '') {
-        values.push(null);
+        updateObj[f] = null;
       } else if (numericFields.has(f)) {
-        values.push(parseFloat(v));
+        updateObj[f] = parseFloat(v);
       } else {
-        values.push(v);
+        updateObj[f] = v;
       }
     }
-    setClauses.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(id, req.user.id);
+    updateObj.updated_at = new Date().toISOString();
 
-    db.prepare(`UPDATE surgeries SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
+    await supabase
+      .from('surgeries')
+      .update(updateObj)
+      .eq('id', id)
+      .eq('user_id', req.user.id);
 
-    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ?').get(id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.json({ message: 'Surgery updated successfully', surgery });
   } catch (err) {
@@ -541,14 +569,17 @@ router.put('/:id', authenticateToken, (req, res) => {
 });
 
 // PUT /api/surgeries/:id/start - start surgery
-router.put('/:id/start', authenticateToken, (req, res) => {
+router.put('/:id/start', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -562,15 +593,20 @@ router.put('/:id/start', authenticateToken, (req, res) => {
 
     const startTime = req.body.start_time || new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-    db.prepare(`
-      UPDATE surgeries SET
-        status = 'in_progress',
-        start_time = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(startTime, id);
+    await supabase
+      .from('surgeries')
+      .update({
+        status: 'in_progress',
+        start_time: startTime,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-    const updated = db.prepare('SELECT * FROM surgeries WHERE id = ?').get(id);
+    const { data: updated } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.json({ message: 'Surgery started', surgery: updated });
   } catch (err) {
@@ -580,14 +616,17 @@ router.put('/:id/start', authenticateToken, (req, res) => {
 });
 
 // PUT /api/surgeries/:id/end - end surgery
-router.put('/:id/end', authenticateToken, (req, res) => {
+router.put('/:id/end', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -609,19 +648,26 @@ router.put('/:id/end', authenticateToken, (req, res) => {
       durationMinutes = Math.round((end - start) / 60000);
     }
 
-    db.prepare(`
-      UPDATE surgeries SET
-        status = 'completed',
-        end_time = ?,
-        duration_minutes = ?,
-        outcome = ?,
-        monitoring_notes = COALESCE(?, monitoring_notes),
-        complications = COALESCE(?, complications),
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(endTime, durationMinutes, outcome, monitoring_notes || null, complications || null, id);
+    const updateData = {
+      status: 'completed',
+      end_time: endTime,
+      duration_minutes: durationMinutes,
+      outcome,
+      updated_at: new Date().toISOString(),
+    };
+    if (monitoring_notes) updateData.monitoring_notes = monitoring_notes;
+    if (complications) updateData.complications = complications;
 
-    const updated = db.prepare('SELECT * FROM surgeries WHERE id = ?').get(id);
+    await supabase
+      .from('surgeries')
+      .update(updateData)
+      .eq('id', id);
+
+    const { data: updated } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.json({
       message: 'Surgery completed',
@@ -635,7 +681,7 @@ router.put('/:id/end', authenticateToken, (req, res) => {
 });
 
 // POST /api/surgeries/:id/medicines - add medicine to surgery
-router.post('/:id/medicines', authenticateToken, (req, res) => {
+router.post('/:id/medicines', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -667,11 +713,14 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'dose must be a positive number' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -681,87 +730,97 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot add medicines to a cancelled surgery' });
     }
 
-    // Completed surgeries can be edited (consistent with PUT /surgeries/:id)
-
     let medicine = null;
     if (medicine_id) {
-      medicine = db
-        .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-        .get(medicine_id, req.user.id);
+      const { data: med } = await supabase
+        .from('medicines')
+        .select('*')
+        .eq('id', medicine_id)
+        .eq('user_id', req.user.id)
+        .eq('is_active', true)
+        .maybeSingle();
 
-      if (!medicine) {
+      if (!med) {
         return res.status(404).json({ error: 'Medicine not found' });
       }
+      medicine = med;
     }
 
     const adminTime = administered_at || new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-    const addMedicine = db.transaction(() => {
-      const smResult = db
-        .prepare(`
-          INSERT INTO surgery_medicines (surgery_id, medicine_id, custom_name, dose, dose_unit, dose_mg_kg, administered_at, route, notes, drug_source, phase)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        .run(id, medicine_id || null, custom_name || null, doseNum, dose_unit, dose_mg_kg ? parseFloat(dose_mg_kg) : null, adminTime, route || null, notes || null, drug_source, phase);
+    // Insert surgery medicine
+    const { data: surgeryMedInserted, error: smError } = await supabase
+      .from('surgery_medicines')
+      .insert({
+        surgery_id: id,
+        medicine_id: medicine_id || null,
+        custom_name: custom_name || null,
+        dose: doseNum,
+        dose_unit,
+        dose_mg_kg: dose_mg_kg ? parseFloat(dose_mg_kg) : null,
+        administered_at: adminTime,
+        route: route || null,
+        notes: notes || null,
+        drug_source,
+        phase,
+      })
+      .select()
+      .single();
 
-      // Only decrement stock if drug is from own inventory and has a medicine_id and not AE
-      if (medicine && decrement_stock && drug_source === 'proprio' && !isAE) {
-        if (medicine.current_stock < doseNum) {
-          throw new Error(`INSUFFICIENT_STOCK:${medicine.current_stock}:${doseNum}`);
-        }
+    if (smError) throw smError;
 
-        const unitCost = medicine.cost_per_unit;
-        const totalCost = doseNum * unitCost;
-
-        db.prepare(`
-          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, surgery_id, notes)
-          VALUES (?, ?, 'usage', ?, ?, ?, ?, ?)
-        `).run(
-          medicine_id,
-          req.user.id,
-          doseNum,
-          unitCost,
-          totalCost,
-          id,
-          `Usado em cirurgia: ${surgery.procedure_name} - ${surgery.patient_name}`
-        );
-
-        db.prepare(`
-          UPDATE medicines SET current_stock = current_stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(doseNum, medicine_id);
-      }
-
-      const surgeryMed = db
-        .prepare(`
-          SELECT sm.*, COALESCE(m.name, sm.custom_name) as medicine_name, m.active_principle, m.concentration
-          FROM surgery_medicines sm
-          LEFT JOIN medicines m ON sm.medicine_id = m.id
-          WHERE sm.id = ?
-        `)
-        .get(smResult.lastInsertRowid);
-
-      const updatedMedicine = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
-
-      return { surgery_medicine: surgeryMed, updated_medicine: updatedMedicine };
-    });
-
-    try {
-      const result = addMedicine();
-      res.status(201).json({
-        message: 'Medicine added to surgery successfully',
-        ...result,
-      });
-    } catch (txErr) {
-      if (txErr.message.startsWith('INSUFFICIENT_STOCK')) {
-        const [, available, requested] = txErr.message.split(':');
+    // Decrement stock if applicable
+    if (medicine && decrement_stock && drug_source === 'proprio' && !isAE) {
+      if (medicine.current_stock < doseNum) {
+        // Rollback the surgery_medicine insert
+        await supabase.from('surgery_medicines').delete().eq('id', surgeryMedInserted.id);
         return res.status(400).json({
           error: 'Insufficient stock',
-          available: parseFloat(available),
-          requested: parseFloat(requested),
+          available: medicine.current_stock,
+          requested: doseNum,
         });
       }
-      throw txErr;
+
+      const unitCost = medicine.cost_per_unit;
+      const totalCost = doseNum * unitCost;
+
+      await supabase.from('stock_movements').insert({
+        medicine_id,
+        user_id: req.user.id,
+        type: 'usage',
+        quantity: doseNum,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        surgery_id: id,
+        notes: `Usado em cirurgia: ${surgery.procedure_name} - ${surgery.patient_name}`,
+      });
+
+      await supabase
+        .from('medicines')
+        .update({
+          current_stock: medicine.current_stock - doseNum,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', medicine_id);
     }
+
+    // Fetch the full surgery medicine record with joins
+    const surgMedRows = await queryRows(`
+      SELECT sm.*, COALESCE(m.name, sm.custom_name) as medicine_name, m.active_principle, m.concentration
+      FROM surgery_medicines sm
+      LEFT JOIN medicines m ON sm.medicine_id = m.id
+      WHERE sm.id = $1
+    `, [surgeryMedInserted.id]);
+
+    const { data: updatedMedicine } = medicine_id
+      ? await supabase.from('medicines').select('*').eq('id', medicine_id).single()
+      : { data: null };
+
+    res.status(201).json({
+      message: 'Medicine added to surgery successfully',
+      surgery_medicine: surgMedRows[0] || surgeryMedInserted,
+      updated_medicine: updatedMedicine,
+    });
   } catch (err) {
     console.error('Add surgery medicine error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -769,48 +828,75 @@ router.post('/:id/medicines', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/surgeries/:id/medicines/:medId - remove medicine from surgery
-router.delete('/:id/medicines/:medId', authenticateToken, (req, res) => {
+router.delete('/:id/medicines/:medId', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id, medId } = req.params;
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    const sm = db
-      .prepare('SELECT * FROM surgery_medicines WHERE id = ? AND surgery_id = ?')
-      .get(medId, id);
+    const { data: sm } = await supabase
+      .from('surgery_medicines')
+      .select('*')
+      .eq('id', medId)
+      .eq('surgery_id', id)
+      .maybeSingle();
 
     if (!sm) {
       return res.status(404).json({ error: 'Surgery medicine record not found' });
     }
 
-    const removeMedicine = db.transaction(() => {
-      // Restore stock if there was a usage movement for this
-      const movement = db
-        .prepare(`
-          SELECT * FROM stock_movements
-          WHERE surgery_id = ? AND medicine_id = ? AND type = 'usage'
-          ORDER BY created_at DESC LIMIT 1
-        `)
-        .get(id, sm.medicine_id);
+    // Restore stock if there was a usage movement
+    if (sm.medicine_id) {
+      const { data: movements } = await supabase
+        .from('stock_movements')
+        .select('*')
+        .eq('surgery_id', id)
+        .eq('medicine_id', sm.medicine_id)
+        .eq('type', 'usage')
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-      if (movement) {
-        db.prepare('UPDATE medicines SET current_stock = current_stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(movement.quantity, sm.medicine_id);
+      if (movements && movements.length > 0) {
+        const movement = movements[0];
 
-        db.prepare('DELETE FROM stock_movements WHERE id = ?').run(movement.id);
+        // Get current medicine stock
+        const { data: med } = await supabase
+          .from('medicines')
+          .select('current_stock')
+          .eq('id', sm.medicine_id)
+          .single();
+
+        if (med) {
+          await supabase
+            .from('medicines')
+            .update({
+              current_stock: med.current_stock + movement.quantity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sm.medicine_id);
+        }
+
+        await supabase
+          .from('stock_movements')
+          .delete()
+          .eq('id', movement.id);
       }
+    }
 
-      db.prepare('DELETE FROM surgery_medicines WHERE id = ?').run(medId);
-    });
-
-    removeMedicine();
+    await supabase
+      .from('surgery_medicines')
+      .delete()
+      .eq('id', medId);
 
     res.json({ message: 'Medicine removed from surgery' });
   } catch (err) {
@@ -820,19 +906,26 @@ router.delete('/:id/medicines/:medId', authenticateToken, (req, res) => {
 });
 
 // GET /api/surgeries/:id/disposables - list disposables for a surgery
-router.get('/:id/disposables', authenticateToken, (req, res) => {
+router.get('/:id/disposables', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
-    const surgery = db.prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    const supabase = getSupabase();
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('id')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    const disposables = db.prepare(`
+    const disposables = await queryRows(`
       SELECT sd.*, m.name as medicine_name, m.cost_per_unit
       FROM surgery_disposables sd
       JOIN medicines m ON sd.medicine_id = m.id
-      WHERE sd.surgery_id = ?
+      WHERE sd.surgery_id = $1
       ORDER BY sd.created_at ASC
-    `).all(req.params.id);
+    `, [req.params.id]);
 
     res.json({ disposables });
   } catch (err) {
@@ -842,50 +935,83 @@ router.get('/:id/disposables', authenticateToken, (req, res) => {
 });
 
 // POST /api/surgeries/:id/disposables - add disposable to surgery
-router.post('/:id/disposables', authenticateToken, (req, res) => {
+router.post('/:id/disposables', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { medicine_id, quantity = 1 } = req.body;
 
     if (!medicine_id) return res.status(400).json({ error: 'medicine_id is required' });
 
-    const db = getDb();
-    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    const supabase = getSupabase();
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    const medicine = db.prepare("SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1").get(medicine_id, req.user.id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
+
     if (!medicine) return res.status(404).json({ error: 'Disposable not found' });
 
     const qty = parseFloat(quantity) || 1;
     const unitCost = medicine.cost_per_unit || 0;
     const totalCost = qty * unitCost;
 
-    const addDisposable = db.transaction(() => {
-      const result = db.prepare(`
-        INSERT INTO surgery_disposables (surgery_id, medicine_id, quantity, unit_cost, total_cost)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(id, medicine_id, qty, unitCost, totalCost);
+    // Insert disposable
+    const { data: inserted, error: insError } = await supabase
+      .from('surgery_disposables')
+      .insert({
+        surgery_id: id,
+        medicine_id,
+        quantity: qty,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+      })
+      .select()
+      .single();
 
-      // Decrement disposable stock
-      if (medicine.current_stock >= qty) {
-        db.prepare('UPDATE medicines SET current_stock = current_stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(qty, medicine_id);
-        db.prepare(`
-          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, surgery_id, notes)
-          VALUES (?, ?, 'usage', ?, ?, ?, ?, ?)
-        `).run(medicine_id, req.user.id, qty, unitCost, totalCost, id,
-          `Descartável usado em: ${surgery.procedure_name} - ${surgery.patient_name}`);
-      }
+    if (insError) throw insError;
 
-      return db.prepare(`
-        SELECT sd.*, m.name as medicine_name
-        FROM surgery_disposables sd
-        JOIN medicines m ON sd.medicine_id = m.id
-        WHERE sd.id = ?
-      `).get(result.lastInsertRowid);
-    });
+    // Decrement stock
+    if (medicine.current_stock >= qty) {
+      await supabase
+        .from('medicines')
+        .update({
+          current_stock: medicine.current_stock - qty,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', medicine_id);
 
-    const disposable = addDisposable();
-    res.status(201).json({ message: 'Disposable added', disposable });
+      await supabase.from('stock_movements').insert({
+        medicine_id,
+        user_id: req.user.id,
+        type: 'usage',
+        quantity: qty,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        surgery_id: id,
+        notes: `Descartável usado em: ${surgery.procedure_name} - ${surgery.patient_name}`,
+      });
+    }
+
+    const rows = await queryRows(`
+      SELECT sd.*, m.name as medicine_name
+      FROM surgery_disposables sd
+      JOIN medicines m ON sd.medicine_id = m.id
+      WHERE sd.id = $1
+    `, [inserted.id]);
+
+    res.status(201).json({ message: 'Disposable added', disposable: rows[0] || inserted });
   } catch (err) {
     console.error('Add surgery disposable error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -893,33 +1019,68 @@ router.post('/:id/disposables', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/surgeries/:id/disposables/:dispId - remove disposable from surgery
-router.delete('/:id/disposables/:dispId', authenticateToken, (req, res) => {
+router.delete('/:id/disposables/:dispId', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id, dispId } = req.params;
-    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    const sd = db.prepare('SELECT * FROM surgery_disposables WHERE id = ? AND surgery_id = ?').get(dispId, id);
+    const { data: sd } = await supabase
+      .from('surgery_disposables')
+      .select('*')
+      .eq('id', dispId)
+      .eq('surgery_id', id)
+      .maybeSingle();
+
     if (!sd) return res.status(404).json({ error: 'Disposable record not found' });
 
-    const removeDisposable = db.transaction(() => {
-      // Restore stock
-      db.prepare('UPDATE medicines SET current_stock = current_stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-        .run(sd.quantity, sd.medicine_id);
+    // Restore stock
+    const { data: med } = await supabase
+      .from('medicines')
+      .select('current_stock')
+      .eq('id', sd.medicine_id)
+      .single();
 
-      // Remove usage movement
-      const movement = db.prepare(`
-        SELECT id FROM stock_movements
-        WHERE surgery_id = ? AND medicine_id = ? AND type = 'usage'
-        ORDER BY created_at DESC LIMIT 1
-      `).get(id, sd.medicine_id);
-      if (movement) db.prepare('DELETE FROM stock_movements WHERE id = ?').run(movement.id);
+    if (med) {
+      await supabase
+        .from('medicines')
+        .update({
+          current_stock: med.current_stock + sd.quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sd.medicine_id);
+    }
 
-      db.prepare('DELETE FROM surgery_disposables WHERE id = ?').run(dispId);
-    });
+    // Remove usage movement
+    const { data: movements } = await supabase
+      .from('stock_movements')
+      .select('id')
+      .eq('surgery_id', id)
+      .eq('medicine_id', sd.medicine_id)
+      .eq('type', 'usage')
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-    removeDisposable();
+    if (movements && movements.length > 0) {
+      await supabase
+        .from('stock_movements')
+        .delete()
+        .eq('id', movements[0].id);
+    }
+
+    await supabase
+      .from('surgery_disposables')
+      .delete()
+      .eq('id', dispId);
+
     res.json({ message: 'Disposable removed' });
   } catch (err) {
     console.error('Remove surgery disposable error:', err);
@@ -928,14 +1089,17 @@ router.delete('/:id/disposables/:dispId', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/surgeries/:id - cancel surgery
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const surgery = db
-      .prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?')
-      .get(id, req.user.id);
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
@@ -945,9 +1109,10 @@ router.delete('/:id', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Cannot cancel a completed surgery' });
     }
 
-    db.prepare(`
-      UPDATE surgeries SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(id);
+    await supabase
+      .from('surgeries')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', id);
 
     res.json({ message: 'Surgery cancelled successfully' });
   } catch (err) {
@@ -957,16 +1122,28 @@ router.delete('/:id', authenticateToken, (req, res) => {
 });
 
 // PUT /api/surgeries/:id/pay - mark surgery as paid
-router.put('/:id/pay', authenticateToken, (req, res) => {
+router.put('/:id/pay', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
-    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    db.prepare(`
-      UPDATE surgeries SET paid = 1, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(id);
+    await supabase
+      .from('surgeries')
+      .update({
+        paid: 1,
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
     res.json({ message: 'Marcado como pago' });
   } catch (err) {
@@ -976,16 +1153,28 @@ router.put('/:id/pay', authenticateToken, (req, res) => {
 });
 
 // PUT /api/surgeries/:id/unpay - unmark payment
-router.put('/:id/unpay', authenticateToken, (req, res) => {
+router.put('/:id/unpay', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
-    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    db.prepare(`
-      UPDATE surgeries SET paid = 0, paid_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(id);
+    await supabase
+      .from('surgeries')
+      .update({
+        paid: 0,
+        paid_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
     res.json({ message: 'Pagamento desmarcado' });
   } catch (err) {

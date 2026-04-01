@@ -3,7 +3,8 @@
 cd /app/backend
 NODE_ENV=production \
 JWT_SECRET="${JWT_SECRET:-vet-anesthesia-super-secret-key-change-in-production}" \
-DB_PATH="${DB_PATH:-/data/vetanesthesia.db}" \
+SUPABASE_URL="${SUPABASE_URL}" \
+SUPABASE_SERVICE_KEY="${SUPABASE_SERVICE_KEY}" \
 PORT=3001 \
 CORS_ORIGINS="${CORS_ORIGINS:-*}" \
 node server.js &

@@ -1,52 +1,56 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/stock/purchases - list all purchases
-router.get('/purchases', authenticateToken, (req, res) => {
+router.get('/purchases', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const { start_date, end_date, page = 1, limit = 50 } = req.query;
 
-    let whereClause = "WHERE sm.user_id = ? AND sm.type = 'purchase'";
+    let whereClause = "WHERE sm.user_id = $1 AND sm.type = 'purchase'";
     const params = [req.user.id];
+    let paramIdx = 2;
 
     if (start_date) {
-      whereClause += ' AND date(sm.created_at) >= date(?)';
+      whereClause += ` AND sm.created_at::date >= $${paramIdx}::date`;
       params.push(start_date);
+      paramIdx++;
     }
     if (end_date) {
-      whereClause += ' AND date(sm.created_at) <= date(?)';
+      whereClause += ` AND sm.created_at::date <= $${paramIdx}::date`;
       params.push(end_date);
+      paramIdx++;
     }
 
-    const purchases = db
-      .prepare(`
-        SELECT
-          sm.*,
-          m.name as medicine_name,
-          m.active_principle,
-          m.unit as medicine_unit
-        FROM stock_movements sm
-        JOIN medicines m ON sm.medicine_id = m.id
-        ${whereClause}
-        ORDER BY sm.created_at DESC
-        LIMIT ? OFFSET ?
-      `)
-      .all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const total = db
-      .prepare(`SELECT COUNT(*) as total FROM stock_movements sm ${whereClause}`)
-      .get(...params);
+    const purchases = await queryRows(`
+      SELECT
+        sm.*,
+        m.name as medicine_name,
+        m.active_principle,
+        m.unit as medicine_unit
+      FROM stock_movements sm
+      JOIN medicines m ON sm.medicine_id = m.id
+      ${whereClause}
+      ORDER BY sm.created_at DESC
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, [...params, parseInt(limit), offset]);
+
+    const countRows = await queryRows(
+      `SELECT COUNT(*)::int as total FROM stock_movements sm ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
 
     res.json({
       purchases,
       pagination: {
-        total: total?.total || purchases.length,
+        total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil((total?.total || purchases.length) / parseInt(limit)),
+        pages: Math.ceil(total / parseInt(limit)),
       },
     });
   } catch (err) {
@@ -56,56 +60,61 @@ router.get('/purchases', authenticateToken, (req, res) => {
 });
 
 // GET /api/stock/movements - list all movements
-router.get('/movements', authenticateToken, (req, res) => {
+router.get('/movements', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const { type, start_date, end_date, page = 1, limit = 50 } = req.query;
 
-    let whereClause = 'WHERE sm.user_id = ?';
+    let whereClause = 'WHERE sm.user_id = $1';
     const params = [req.user.id];
+    let paramIdx = 2;
 
     if (type && ['purchase', 'usage', 'adjustment', 'expired'].includes(type)) {
-      whereClause += ' AND sm.type = ?';
+      whereClause += ` AND sm.type = $${paramIdx}`;
       params.push(type);
+      paramIdx++;
     }
     if (start_date) {
-      whereClause += ' AND date(sm.created_at) >= date(?)';
+      whereClause += ` AND sm.created_at::date >= $${paramIdx}::date`;
       params.push(start_date);
+      paramIdx++;
     }
     if (end_date) {
-      whereClause += ' AND date(sm.created_at) <= date(?)';
+      whereClause += ` AND sm.created_at::date <= $${paramIdx}::date`;
       params.push(end_date);
+      paramIdx++;
     }
 
-    const movements = db
-      .prepare(`
-        SELECT
-          sm.*,
-          m.name as medicine_name,
-          m.active_principle,
-          m.unit as medicine_unit,
-          s.patient_name,
-          s.procedure_name
-        FROM stock_movements sm
-        JOIN medicines m ON sm.medicine_id = m.id
-        LEFT JOIN surgeries s ON sm.surgery_id = s.id
-        ${whereClause}
-        ORDER BY sm.created_at DESC
-        LIMIT ? OFFSET ?
-      `)
-      .all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const total = db
-      .prepare(`SELECT COUNT(*) as total FROM stock_movements sm ${whereClause}`)
-      .get(...params);
+    const movements = await queryRows(`
+      SELECT
+        sm.*,
+        m.name as medicine_name,
+        m.active_principle,
+        m.unit as medicine_unit,
+        s.patient_name,
+        s.procedure_name
+      FROM stock_movements sm
+      JOIN medicines m ON sm.medicine_id = m.id
+      LEFT JOIN surgeries s ON sm.surgery_id = s.id
+      ${whereClause}
+      ORDER BY sm.created_at DESC
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, [...params, parseInt(limit), offset]);
+
+    const countRows = await queryRows(
+      `SELECT COUNT(*)::int as total FROM stock_movements sm ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
 
     res.json({
       movements,
       pagination: {
-        total: total?.total || movements.length,
+        total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil((total?.total || movements.length) / parseInt(limit)),
+        pages: Math.ceil(total / parseInt(limit)),
       },
     });
   } catch (err) {
@@ -119,7 +128,7 @@ router.get('/movements', authenticateToken, (req, res) => {
 router.post('/purchase', authenticateToken, handlePurchase);
 router.post('/purchases', authenticateToken, handlePurchase);
 
-function handlePurchase(req, res) {
+async function handlePurchase(req, res) {
   try {
     const {
       medicine_id,
@@ -140,11 +149,15 @@ function handlePurchase(req, res) {
       return res.status(400).json({ error: 'Quantity must be a positive number' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const medicine = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(medicine_id, req.user.id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!medicine) {
       return res.status(404).json({ error: 'Medicine not found' });
@@ -153,54 +166,49 @@ function handlePurchase(req, res) {
     const unitCost = parseFloat(unit_cost) || medicine.cost_per_unit;
     const totalCost = qty * unitCost;
 
-    const purchase = db.transaction(() => {
-      const movResult = db
-        .prepare(`
-          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, supplier, notes)
-          VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?)
-        `)
-        .run(medicine_id, req.user.id, qty, unitCost, totalCost, supplier || null, notes || null);
+    // Insert movement
+    const { data: movement, error: movError } = await supabase
+      .from('stock_movements')
+      .insert({
+        medicine_id,
+        user_id: req.user.id,
+        type: 'purchase',
+        quantity: qty,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        supplier: supplier || null,
+        notes: notes || null,
+      })
+      .select()
+      .single();
 
-      let updateQuery = `
-        UPDATE medicines SET
-          current_stock = current_stock + ?,
-          updated_at = CURRENT_TIMESTAMP
-      `;
-      const updateParams = [qty];
+    if (movError) throw movError;
 
-      if (unit_cost) {
-        updateQuery += ', cost_per_unit = ?';
-        updateParams.push(unitCost);
-      }
-      if (batch_number) {
-        updateQuery += ', batch_number = ?';
-        updateParams.push(batch_number);
-      }
-      if (expiry_date) {
-        updateQuery += ', expiry_date = ?';
-        updateParams.push(expiry_date);
-      }
-      if (supplier) {
-        updateQuery += ', supplier = ?';
-        updateParams.push(supplier);
-      }
+    // Update medicine stock and related fields
+    const updateData = {
+      current_stock: medicine.current_stock + qty,
+      updated_at: new Date().toISOString(),
+    };
+    if (unit_cost) updateData.cost_per_unit = unitCost;
+    if (batch_number) updateData.batch_number = batch_number;
+    if (expiry_date) updateData.expiry_date = expiry_date;
+    if (supplier) updateData.supplier = supplier;
 
-      updateQuery += ' WHERE id = ?';
-      updateParams.push(medicine_id);
+    await supabase
+      .from('medicines')
+      .update(updateData)
+      .eq('id', medicine_id);
 
-      db.prepare(updateQuery).run(...updateParams);
-
-      const updatedMedicine = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
-      const movement = db.prepare('SELECT * FROM stock_movements WHERE id = ?').get(movResult.lastInsertRowid);
-
-      return { medicine: updatedMedicine, movement };
-    });
-
-    const result = purchase();
+    const { data: updatedMedicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .single();
 
     res.status(201).json({
       message: 'Purchase registered successfully',
-      ...result,
+      medicine: updatedMedicine,
+      movement,
     });
   } catch (err) {
     console.error('Purchase error:', err);
@@ -209,7 +217,7 @@ function handlePurchase(req, res) {
 }
 
 // POST /api/stock/usage - register usage (decrements stock)
-router.post('/usage', authenticateToken, (req, res) => {
+router.post('/usage', authenticateToken, async (req, res) => {
   try {
     const {
       medicine_id,
@@ -227,11 +235,15 @@ router.post('/usage', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Quantity must be a positive number' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const medicine = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(medicine_id, req.user.id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!medicine) {
       return res.status(404).json({ error: 'Medicine not found' });
@@ -246,9 +258,12 @@ router.post('/usage', authenticateToken, (req, res) => {
     }
 
     if (surgery_id) {
-      const surgery = db
-        .prepare('SELECT id FROM surgeries WHERE id = ? AND user_id = ?')
-        .get(surgery_id, req.user.id);
+      const { data: surgery } = await supabase
+        .from('surgeries')
+        .select('id')
+        .eq('id', surgery_id)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
 
       if (!surgery) {
         return res.status(404).json({ error: 'Surgery not found' });
@@ -258,32 +273,43 @@ router.post('/usage', authenticateToken, (req, res) => {
     const unitCost = medicine.cost_per_unit;
     const totalCost = qty * unitCost;
 
-    const usage = db.transaction(() => {
-      const movResult = db
-        .prepare(`
-          INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, surgery_id, notes)
-          VALUES (?, ?, 'usage', ?, ?, ?, ?, ?)
-        `)
-        .run(medicine_id, req.user.id, qty, unitCost, totalCost, surgery_id || null, notes || null);
+    // Insert movement
+    const { data: movement, error: movError } = await supabase
+      .from('stock_movements')
+      .insert({
+        medicine_id,
+        user_id: req.user.id,
+        type: 'usage',
+        quantity: qty,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        surgery_id: surgery_id || null,
+        notes: notes || null,
+      })
+      .select()
+      .single();
 
-      db.prepare(`
-        UPDATE medicines SET
-          current_stock = current_stock - ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(qty, medicine_id);
+    if (movError) throw movError;
 
-      const updatedMedicine = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
-      const movement = db.prepare('SELECT * FROM stock_movements WHERE id = ?').get(movResult.lastInsertRowid);
+    // Update stock
+    await supabase
+      .from('medicines')
+      .update({
+        current_stock: medicine.current_stock - qty,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', medicine_id);
 
-      return { medicine: updatedMedicine, movement };
-    });
-
-    const result = usage();
+    const { data: updatedMedicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .single();
 
     res.status(201).json({
       message: 'Usage registered successfully',
-      ...result,
+      medicine: updatedMedicine,
+      movement,
     });
   } catch (err) {
     console.error('Usage error:', err);
@@ -292,34 +318,42 @@ router.post('/usage', authenticateToken, (req, res) => {
 });
 
 // GET /api/stock/history/:medicineId - movement history for a medicine
-router.get('/history/:medicineId', authenticateToken, (req, res) => {
+router.get('/history/:medicineId', authenticateToken, async (req, res) => {
   try {
     const { medicineId } = req.params;
     const { page = 1, limit = 20, type } = req.query;
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const medicine = db
-      .prepare('SELECT id, name, unit FROM medicines WHERE id = ? AND user_id = ?')
-      .get(medicineId, req.user.id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('id, name, unit')
+      .eq('id', medicineId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
     if (!medicine) {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    let whereClause = 'WHERE sm.medicine_id = ? AND sm.user_id = ?';
+    let whereClause = 'WHERE sm.medicine_id = $1 AND sm.user_id = $2';
     const params = [medicineId, req.user.id];
+    let paramIdx = 3;
 
     if (type && ['purchase', 'usage', 'adjustment', 'expired'].includes(type)) {
-      whereClause += ' AND sm.type = ?';
+      whereClause += ` AND sm.type = $${paramIdx}`;
       params.push(type);
+      paramIdx++;
     }
 
-    const countResult = db
-      .prepare(`SELECT COUNT(*) as total FROM stock_movements sm ${whereClause}`)
-      .get(...params);
+    const countRows = await queryRows(
+      `SELECT COUNT(*)::int as total FROM stock_movements sm ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
 
-    const movements = db.prepare(`
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const movements = await queryRows(`
       SELECT
         sm.*,
         s.patient_name,
@@ -328,30 +362,28 @@ router.get('/history/:medicineId', authenticateToken, (req, res) => {
       FROM stock_movements sm
       LEFT JOIN surgeries s ON sm.surgery_id = s.id
       ${whereClause}
-      ORDER BY sm.created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+      ORDER BY sm.created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, [...params, parseInt(limit), offset]);
 
-    const summary = db
-      .prepare(`
-        SELECT
-          SUM(CASE WHEN type = 'purchase' THEN quantity ELSE 0 END) as total_purchased,
-          SUM(CASE WHEN type = 'usage' THEN quantity ELSE 0 END) as total_used,
-          SUM(CASE WHEN type = 'purchase' THEN total_cost ELSE 0 END) as total_spent,
-          COUNT(*) as total_movements
-        FROM stock_movements
-        WHERE medicine_id = ? AND user_id = ?
-      `)
-      .get(medicineId, req.user.id);
+    const summaryRows = await queryRows(`
+      SELECT
+        SUM(CASE WHEN type = 'purchase' THEN quantity ELSE 0 END) as total_purchased,
+        SUM(CASE WHEN type = 'usage' THEN quantity ELSE 0 END) as total_used,
+        SUM(CASE WHEN type = 'purchase' THEN total_cost ELSE 0 END) as total_spent,
+        COUNT(*)::int as total_movements
+      FROM stock_movements
+      WHERE medicine_id = $1 AND user_id = $2
+    `, [medicineId, req.user.id]);
 
     res.json({
       medicine,
       movements,
-      summary,
+      summary: summaryRows[0] || {},
       pagination: {
-        total: countResult?.total || movements.length,
+        total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil((countResult?.total || movements.length) / parseInt(limit)),
+        pages: Math.ceil(total / parseInt(limit)),
       },
     });
   } catch (err) {
@@ -361,7 +393,7 @@ router.get('/history/:medicineId', authenticateToken, (req, res) => {
 });
 
 // GET /api/stock/report - financial report with date range
-router.get('/report', authenticateToken, (req, res) => {
+router.get('/report', authenticateToken, async (req, res) => {
   try {
     const {
       start_date,
@@ -369,9 +401,7 @@ router.get('/report', authenticateToken, (req, res) => {
       type,
     } = req.query;
 
-    const db = getDb();
-
-    let query = `
+    let movQuery = `
       SELECT
         sm.*,
         m.name as medicine_name,
@@ -382,79 +412,92 @@ router.get('/report', authenticateToken, (req, res) => {
       FROM stock_movements sm
       JOIN medicines m ON sm.medicine_id = m.id
       LEFT JOIN surgeries s ON sm.surgery_id = s.id
-      WHERE sm.user_id = ?
+      WHERE sm.user_id = $1
     `;
-
-    const params = [req.user.id];
+    const movParams = [req.user.id];
+    let movIdx = 2;
 
     if (start_date) {
-      query += ` AND date(sm.created_at) >= date(?)`;
-      params.push(start_date);
+      movQuery += ` AND sm.created_at::date >= $${movIdx}::date`;
+      movParams.push(start_date);
+      movIdx++;
     }
-
     if (end_date) {
-      query += ` AND date(sm.created_at) <= date(?)`;
-      params.push(end_date);
+      movQuery += ` AND sm.created_at::date <= $${movIdx}::date`;
+      movParams.push(end_date);
+      movIdx++;
     }
-
     if (type && ['purchase', 'usage', 'adjustment', 'expired'].includes(type)) {
-      query += ` AND sm.type = ?`;
-      params.push(type);
+      movQuery += ` AND sm.type = $${movIdx}`;
+      movParams.push(type);
+      movIdx++;
     }
+    movQuery += ' ORDER BY sm.created_at DESC';
 
-    query += ` ORDER BY sm.created_at DESC`;
-
-    const movements = db.prepare(query).all(...params);
+    const movements = await queryRows(movQuery, movParams);
 
     // Financial summary
+    let summaryQuery = `
+      SELECT
+        SUM(CASE WHEN sm.type = 'purchase' THEN sm.total_cost ELSE 0 END) as total_purchases,
+        SUM(CASE WHEN sm.type = 'usage' THEN sm.total_cost ELSE 0 END) as total_usage_cost,
+        SUM(CASE WHEN sm.type = 'purchase' THEN sm.quantity ELSE 0 END) as total_quantity_purchased,
+        SUM(CASE WHEN sm.type = 'usage' THEN sm.quantity ELSE 0 END) as total_quantity_used,
+        COUNT(DISTINCT sm.medicine_id)::int as unique_medicines,
+        COUNT(*)::int as total_transactions
+      FROM stock_movements sm
+      WHERE sm.user_id = $1
+    `;
     const summaryParams = [req.user.id];
-    let summaryWhere = 'WHERE sm.user_id = ?';
+    let sumIdx = 2;
 
     if (start_date) {
-      summaryWhere += ` AND date(sm.created_at) >= date(?)`;
+      summaryQuery += ` AND sm.created_at::date >= $${sumIdx}::date`;
       summaryParams.push(start_date);
+      sumIdx++;
     }
     if (end_date) {
-      summaryWhere += ` AND date(sm.created_at) <= date(?)`;
+      summaryQuery += ` AND sm.created_at::date <= $${sumIdx}::date`;
       summaryParams.push(end_date);
+      sumIdx++;
     }
 
-    const summary = db
-      .prepare(`
-        SELECT
-          SUM(CASE WHEN sm.type = 'purchase' THEN sm.total_cost ELSE 0 END) as total_purchases,
-          SUM(CASE WHEN sm.type = 'usage' THEN sm.total_cost ELSE 0 END) as total_usage_cost,
-          SUM(CASE WHEN sm.type = 'purchase' THEN sm.quantity ELSE 0 END) as total_quantity_purchased,
-          SUM(CASE WHEN sm.type = 'usage' THEN sm.quantity ELSE 0 END) as total_quantity_used,
-          COUNT(DISTINCT sm.medicine_id) as unique_medicines,
-          COUNT(*) as total_transactions
-        FROM stock_movements sm
-        ${summaryWhere}
-      `)
-      .get(...summaryParams);
+    const summaryRows = await queryRows(summaryQuery, summaryParams);
 
     // By medicine breakdown
-    const byMedicine = db
-      .prepare(`
-        SELECT
-          m.id,
-          m.name,
-          m.unit,
-          SUM(CASE WHEN sm.type = 'purchase' THEN sm.quantity ELSE 0 END) as purchased,
-          SUM(CASE WHEN sm.type = 'usage' THEN sm.quantity ELSE 0 END) as used,
-          SUM(CASE WHEN sm.type = 'purchase' THEN sm.total_cost ELSE 0 END) as purchase_cost,
-          SUM(CASE WHEN sm.type = 'usage' THEN sm.total_cost ELSE 0 END) as usage_cost
-        FROM stock_movements sm
-        JOIN medicines m ON sm.medicine_id = m.id
-        ${summaryWhere}
-        GROUP BY m.id, m.name, m.unit
-        ORDER BY usage_cost DESC
-      `)
-      .all(...summaryParams);
+    let byMedQuery = `
+      SELECT
+        m.id,
+        m.name,
+        m.unit,
+        SUM(CASE WHEN sm.type = 'purchase' THEN sm.quantity ELSE 0 END) as purchased,
+        SUM(CASE WHEN sm.type = 'usage' THEN sm.quantity ELSE 0 END) as used,
+        SUM(CASE WHEN sm.type = 'purchase' THEN sm.total_cost ELSE 0 END) as purchase_cost,
+        SUM(CASE WHEN sm.type = 'usage' THEN sm.total_cost ELSE 0 END) as usage_cost
+      FROM stock_movements sm
+      JOIN medicines m ON sm.medicine_id = m.id
+      WHERE sm.user_id = $1
+    `;
+    const byMedParams = [req.user.id];
+    let bmIdx = 2;
+
+    if (start_date) {
+      byMedQuery += ` AND sm.created_at::date >= $${bmIdx}::date`;
+      byMedParams.push(start_date);
+      bmIdx++;
+    }
+    if (end_date) {
+      byMedQuery += ` AND sm.created_at::date <= $${bmIdx}::date`;
+      byMedParams.push(end_date);
+      bmIdx++;
+    }
+    byMedQuery += ' GROUP BY m.id, m.name, m.unit ORDER BY usage_cost DESC';
+
+    const byMedicine = await queryRows(byMedQuery, byMedParams);
 
     res.json({
       movements,
-      summary,
+      summary: summaryRows[0] || {},
       by_medicine: byMedicine,
       filters: { start_date, end_date, type },
     });
@@ -465,7 +508,7 @@ router.get('/report', authenticateToken, (req, res) => {
 });
 
 // POST /api/stock/adjustment - manual stock adjustment
-router.post('/adjustment', authenticateToken, (req, res) => {
+router.post('/adjustment', authenticateToken, async (req, res) => {
   try {
     const { medicine_id, new_quantity, notes } = req.body;
 
@@ -478,11 +521,15 @@ router.post('/adjustment', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'new_quantity must be a non-negative number' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const medicine = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(medicine_id, req.user.id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!medicine) {
       return res.status(404).json({ error: 'Medicine not found' });
@@ -490,27 +537,31 @@ router.post('/adjustment', authenticateToken, (req, res) => {
 
     const diff = newQty - medicine.current_stock;
 
-    const adjustment = db.transaction(() => {
-      db.prepare(`
-        INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, notes)
-        VALUES (?, ?, 'adjustment', ?, ?, ?, ?)
-      `).run(
-        medicine_id,
-        req.user.id,
-        diff,
-        medicine.cost_per_unit,
-        diff * medicine.cost_per_unit,
-        notes || `Ajuste manual: ${medicine.current_stock} -> ${newQty}`
-      );
-
-      db.prepare(`
-        UPDATE medicines SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).run(newQty, medicine_id);
-
-      return db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
+    // Insert adjustment movement
+    await supabase.from('stock_movements').insert({
+      medicine_id,
+      user_id: req.user.id,
+      type: 'adjustment',
+      quantity: diff,
+      unit_cost: medicine.cost_per_unit,
+      total_cost: diff * medicine.cost_per_unit,
+      notes: notes || `Ajuste manual: ${medicine.current_stock} -> ${newQty}`,
     });
 
-    const updatedMedicine = adjustment();
+    // Update medicine stock
+    await supabase
+      .from('medicines')
+      .update({
+        current_stock: newQty,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', medicine_id);
+
+    const { data: updatedMedicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', medicine_id)
+      .single();
 
     res.json({
       message: 'Stock adjusted successfully',

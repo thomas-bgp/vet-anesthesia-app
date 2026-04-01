@@ -1,44 +1,49 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/bottles - List bottles for user
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const { status, medicine_id, medicine_type } = req.query;
 
     // Auto-mark expired bottles
-    db.prepare(`
-      UPDATE medicine_bottles
-      SET status = 'expired'
-      WHERE user_id = ? AND status = 'opened' AND expires_at < datetime('now')
-    `).run(userId);
+    await supabase
+      .from('medicine_bottles')
+      .update({ status: 'expired' })
+      .eq('user_id', userId)
+      .eq('status', 'opened')
+      .lt('expires_at', new Date().toISOString());
 
     let sql = `
       SELECT mb.*, m.name as medicine_name, m.active_principle, m.concentration,
              COALESCE(m.medicine_type, 'farmaco') as medicine_type
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.user_id = ?
+      WHERE mb.user_id = $1
     `;
     const params = [userId];
+    let paramIdx = 2;
 
     if (status && status !== 'all') {
-      sql += ' AND mb.status = ?';
+      sql += ` AND mb.status = $${paramIdx}`;
       params.push(status);
+      paramIdx++;
     }
 
     if (medicine_id) {
-      sql += ' AND mb.medicine_id = ?';
+      sql += ` AND mb.medicine_id = $${paramIdx}`;
       params.push(medicine_id);
+      paramIdx++;
     }
 
     if (medicine_type && medicine_type !== 'todos') {
-      sql += " AND COALESCE(m.medicine_type, 'farmaco') = ?";
+      sql += ` AND COALESCE(m.medicine_type, 'farmaco') = $${paramIdx}`;
       params.push(medicine_type);
+      paramIdx++;
     }
 
     sql += `
@@ -48,7 +53,7 @@ router.get('/', authenticateToken, (req, res) => {
         mb.created_at DESC
     `;
 
-    const bottles = db.prepare(sql).all(...params);
+    const bottles = await queryRows(sql, params);
     res.json({ bottles });
   } catch (err) {
     console.error('List bottles error:', err);
@@ -57,21 +62,22 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/bottles/expiring-soon - Bottles expiring within 2 days
-router.get('/expiring-soon', authenticateToken, (req, res) => {
+router.get('/expiring-soon', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const userId = req.user.id;
+    const now = new Date().toISOString();
+    const in2days = new Date(Date.now() + 2 * 86400000).toISOString();
 
-    const bottles = db.prepare(`
+    const bottles = await queryRows(`
       SELECT mb.*, m.name as medicine_name, m.active_principle
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.user_id = ?
+      WHERE mb.user_id = $1
         AND mb.status = 'opened'
-        AND mb.expires_at <= datetime('now', '+2 days')
-        AND mb.expires_at >= datetime('now')
+        AND mb.expires_at <= $2
+        AND mb.expires_at >= $3
       ORDER BY mb.expires_at ASC
-    `).all(userId);
+    `, [userId, in2days, now]);
 
     res.json({ bottles });
   } catch (err) {
@@ -81,23 +87,24 @@ router.get('/expiring-soon', authenticateToken, (req, res) => {
 });
 
 // GET /api/bottles/stats - Bottle statistics
-router.get('/stats', authenticateToken, (req, res) => {
+router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const userId = req.user.id;
+    const now = new Date().toISOString();
+    const in2days = new Date(Date.now() + 2 * 86400000).toISOString();
 
-    const stats = db.prepare(`
+    const rows = await queryRows(`
       SELECT
-        COUNT(*) as total_bottles,
-        SUM(CASE WHEN status = 'sealed' THEN 1 ELSE 0 END) as sealed_count,
-        SUM(CASE WHEN status = 'opened' THEN 1 ELSE 0 END) as opened_count,
+        COUNT(*)::int as total_bottles,
+        SUM(CASE WHEN status = 'sealed' THEN 1 ELSE 0 END)::int as sealed_count,
+        SUM(CASE WHEN status = 'opened' THEN 1 ELSE 0 END)::int as opened_count,
         SUM(CASE WHEN status IN ('sealed', 'opened') THEN purchase_cost ELSE 0 END) as total_stock_value,
-        SUM(CASE WHEN status = 'opened' AND expires_at <= datetime('now', '+2 days') AND expires_at >= datetime('now') THEN 1 ELSE 0 END) as expiring_soon_count
+        SUM(CASE WHEN status = 'opened' AND expires_at <= $2 AND expires_at >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count
       FROM medicine_bottles
-      WHERE user_id = ?
-    `).get(userId);
+      WHERE user_id = $1
+    `, [userId, in2days, now]);
 
-    res.json(stats);
+    res.json(rows[0]);
   } catch (err) {
     console.error('Bottle stats error:', err);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -105,9 +112,9 @@ router.get('/stats', authenticateToken, (req, res) => {
 });
 
 // POST /api/bottles - Create bottle(s) from a purchase
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const {
       medicine_id,
@@ -126,44 +133,48 @@ router.post('/', authenticateToken, (req, res) => {
     const totalUnits = quantity * units_per_box;
     const costPerMl = purchase_cost_per_unit > 0 ? purchase_cost_per_unit / volume_ml : 0;
 
-    const insertBottle = db.prepare(`
-      INSERT INTO medicine_bottles (medicine_id, user_id, volume_ml, remaining_ml, purchase_cost, cost_per_ml, status, purchased_at, batch_number)
-      VALUES (?, ?, ?, ?, ?, ?, 'sealed', ?, ?)
-    `);
+    // Insert bottles
+    const bottleRows = [];
+    for (let i = 0; i < totalUnits; i++) {
+      bottleRows.push({
+        medicine_id,
+        user_id: userId,
+        volume_ml,
+        remaining_ml: volume_ml,
+        purchase_cost: purchase_cost_per_unit,
+        cost_per_ml: costPerMl,
+        status: 'sealed',
+        purchased_at: purchased_at || new Date().toISOString().split('T')[0],
+        batch_number: batch_number || null,
+      });
+    }
 
-    const insertMany = db.transaction(() => {
-      const created = [];
-      for (let i = 0; i < totalUnits; i++) {
-        const result = insertBottle.run(
-          medicine_id, userId, volume_ml, volume_ml,
-          purchase_cost_per_unit, costPerMl,
-          purchased_at || new Date().toISOString().split('T')[0],
-          batch_number || null
-        );
-        created.push(result.lastInsertRowid);
-      }
+    const { data: createdBottles, error: bottleError } = await supabase
+      .from('medicine_bottles')
+      .insert(bottleRows)
+      .select();
 
-      // Create stock_movement record
-      db.prepare(`
-        INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, notes, created_at)
-        VALUES (?, ?, 'purchase', ?, ?, ?, ?, datetime('now'))
-      `).run(
-        medicine_id, userId, totalUnits,
-        purchase_cost_per_unit,
-        purchase_cost_per_unit * totalUnits,
-        `Compra de ${totalUnits} frasco(s)`
-      );
+    if (bottleError) throw bottleError;
 
-      return created;
+    // Create stock_movement record
+    await supabase.from('stock_movements').insert({
+      medicine_id,
+      user_id: userId,
+      type: 'purchase',
+      quantity: totalUnits,
+      unit_cost: purchase_cost_per_unit,
+      total_cost: purchase_cost_per_unit * totalUnits,
+      notes: `Compra de ${totalUnits} frasco(s)`,
     });
 
-    const createdIds = insertMany();
-    const bottles = db.prepare(`
+    // Fetch bottles with medicine name
+    const createdIds = createdBottles.map(b => b.id);
+    const bottles = await queryRows(`
       SELECT mb.*, m.name as medicine_name
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.id IN (${createdIds.map(() => '?').join(',')})
-    `).all(...createdIds);
+      WHERE mb.id = ANY($1)
+    `, [createdIds]);
 
     res.status(201).json({ bottles, count: bottles.length });
   } catch (err) {
@@ -173,13 +184,19 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // PUT /api/bottles/:id/open - Mark bottle as opened
-router.put('/:id/open', authenticateToken, (req, res) => {
+router.put('/:id/open', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const bottleId = req.params.id;
 
-    const bottle = db.prepare('SELECT * FROM medicine_bottles WHERE id = ? AND user_id = ?').get(bottleId, userId);
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', bottleId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!bottle) {
       return res.status(404).json({ error: 'Frasco não encontrado' });
     }
@@ -187,20 +204,27 @@ router.put('/:id/open', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Apenas frascos lacrados podem ser abertos' });
     }
 
-    db.prepare(`
-      UPDATE medicine_bottles
-      SET status = 'opened', opened_at = datetime('now'), expires_at = datetime('now', '+14 days')
-      WHERE id = ? AND user_id = ?
-    `).run(bottleId, userId);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 14 * 86400000).toISOString();
 
-    const updated = db.prepare(`
+    await supabase
+      .from('medicine_bottles')
+      .update({
+        status: 'opened',
+        opened_at: now.toISOString(),
+        expires_at: expiresAt,
+      })
+      .eq('id', bottleId)
+      .eq('user_id', userId);
+
+    const rows = await queryRows(`
       SELECT mb.*, m.name as medicine_name
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.id = ?
-    `).get(bottleId);
+      WHERE mb.id = $1
+    `, [bottleId]);
 
-    res.json({ bottle: updated });
+    res.json({ bottle: rows[0] });
   } catch (err) {
     console.error('Open bottle error:', err);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -208,9 +232,9 @@ router.put('/:id/open', authenticateToken, (req, res) => {
 });
 
 // POST /api/bottles/:id/use - Record usage
-router.post('/:id/use', authenticateToken, (req, res) => {
+router.post('/:id/use', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const bottleId = req.params.id;
     const { ml_used, surgery_id, notes } = req.body;
@@ -219,7 +243,13 @@ router.post('/:id/use', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'ml_used deve ser maior que zero' });
     }
 
-    const bottle = db.prepare('SELECT * FROM medicine_bottles WHERE id = ? AND user_id = ?').get(bottleId, userId);
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', bottleId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!bottle) {
       return res.status(404).json({ error: 'Frasco não encontrado' });
     }
@@ -231,29 +261,30 @@ router.post('/:id/use', authenticateToken, (req, res) => {
     const newRemaining = Math.max(0, bottle.remaining_ml - ml_used);
     const newStatus = newRemaining <= 0 ? 'empty' : 'opened';
 
-    const doUse = db.transaction(() => {
-      db.prepare(`
-        UPDATE medicine_bottles
-        SET remaining_ml = ?, status = ?
-        WHERE id = ?
-      `).run(newRemaining, newStatus, bottleId);
+    // Update bottle
+    await supabase
+      .from('medicine_bottles')
+      .update({ remaining_ml: newRemaining, status: newStatus })
+      .eq('id', bottleId);
 
-      db.prepare(`
-        INSERT INTO bottle_usages (bottle_id, surgery_id, user_id, ml_used, cost, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(bottleId, surgery_id || null, userId, ml_used, cost, notes || null);
+    // Insert usage
+    await supabase.from('bottle_usages').insert({
+      bottle_id: bottleId,
+      surgery_id: surgery_id || null,
+      user_id: userId,
+      ml_used,
+      cost,
+      notes: notes || null,
     });
 
-    doUse();
-
-    const updated = db.prepare(`
+    const rows = await queryRows(`
       SELECT mb.*, m.name as medicine_name
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.id = ?
-    `).get(bottleId);
+      WHERE mb.id = $1
+    `, [bottleId]);
 
-    res.json({ bottle: updated, cost });
+    res.json({ bottle: rows[0], cost });
   } catch (err) {
     console.error('Use bottle error:', err);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -261,20 +292,28 @@ router.post('/:id/use', authenticateToken, (req, res) => {
 });
 
 // PUT /api/bottles/:id/discard - Discard bottle
-router.put('/:id/discard', authenticateToken, (req, res) => {
+router.put('/:id/discard', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const bottleId = req.params.id;
 
-    const bottle = db.prepare('SELECT * FROM medicine_bottles WHERE id = ? AND user_id = ?').get(bottleId, userId);
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', bottleId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!bottle) {
       return res.status(404).json({ error: 'Frasco não encontrado' });
     }
 
-    db.prepare(`
-      UPDATE medicine_bottles SET status = 'discarded' WHERE id = ? AND user_id = ?
-    `).run(bottleId, userId);
+    await supabase
+      .from('medicine_bottles')
+      .update({ status: 'discarded' })
+      .eq('id', bottleId)
+      .eq('user_id', userId);
 
     res.json({ message: 'Frasco descartado com sucesso' });
   } catch (err) {
@@ -284,24 +323,30 @@ router.put('/:id/discard', authenticateToken, (req, res) => {
 });
 
 // GET /api/bottles/:id/history - Usage history for a bottle
-router.get('/:id/history', authenticateToken, (req, res) => {
+router.get('/:id/history', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const bottleId = req.params.id;
 
-    const bottle = db.prepare('SELECT * FROM medicine_bottles WHERE id = ? AND user_id = ?').get(bottleId, userId);
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', bottleId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!bottle) {
       return res.status(404).json({ error: 'Frasco não encontrado' });
     }
 
-    const usages = db.prepare(`
+    const usages = await queryRows(`
       SELECT bu.*, s.patient_name, s.procedure_name
       FROM bottle_usages bu
       LEFT JOIN surgeries s ON bu.surgery_id = s.id
-      WHERE bu.bottle_id = ? AND bu.user_id = ?
+      WHERE bu.bottle_id = $1 AND bu.user_id = $2
       ORDER BY bu.used_at DESC
-    `).all(bottleId, userId);
+    `, [bottleId, userId]);
 
     res.json({ bottle, usages });
   } catch (err) {

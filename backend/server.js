@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 
-const { getDb } = require('./db/database');
+const { getSupabase, ensurePermanentAdmin } = require('./db/database');
 const { sanitizeBody } = require('./middleware/validate');
 
 // Route imports
@@ -83,14 +83,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(sanitizeBody);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   try {
-    const db = getDb();
-    const result = db.prepare('SELECT 1 as ok').get();
+    const supabase = getSupabase();
+    const { data, error } = await supabase.from('users').select('id').limit(1);
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      database: result.ok === 1 ? 'connected' : 'error',
+      database: error ? 'error' : 'connected',
       version: require('./package.json').version,
     });
   } catch (err) {
@@ -150,14 +150,15 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
-function startServer() {
+async function startServer() {
   try {
-    // Initialize database on startup
-    const db = getDb();
-    console.log('Database initialized successfully');
+    // Initialize Supabase client and ensure admin exists
+    getSupabase();
+    await ensurePermanentAdmin();
+    console.log('Database initialized successfully (Supabase)');
 
     app.listen(PORT, () => {
-      console.log(`\n🐾 Vet Anesthesia API running on http://localhost:${PORT}`);
+      console.log(`\nVet Anesthesia API running on http://localhost:${PORT}`);
       console.log(`   Health check: http://localhost:${PORT}/health`);
       console.log(`   API info:     http://localhost:${PORT}/api`);
       console.log(`   Environment:  ${process.env.NODE_ENV || 'development'}\n`);
@@ -171,15 +172,11 @@ function startServer() {
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 process.on('SIGINT', () => {
   console.log('\nReceived SIGINT. Shutting down gracefully...');
-  const { closeDb } = require('./db/database');
-  closeDb();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('\nReceived SIGTERM. Shutting down gracefully...');
-  const { closeDb } = require('./db/database');
-  closeDb();
   process.exit(0);
 });
 

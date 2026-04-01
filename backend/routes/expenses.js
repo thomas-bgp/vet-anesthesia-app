@@ -1,41 +1,45 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 const VALID_CATEGORIES = ['equipamento', 'material', 'administrativo', 'seguro', 'transporte', 'geral'];
 
 // GET /api/expenses - List expenses
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const { category, start_date, end_date, month } = req.query;
 
-    let sql = 'SELECT * FROM expenses WHERE user_id = ?';
-    const params = [userId];
+    let query = supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', userId);
 
     if (category) {
-      sql += ' AND category = ?';
-      params.push(category);
+      query = query.eq('category', category);
     }
     if (month) {
-      sql += " AND strftime('%Y-%m', date) = ?";
-      params.push(month);
+      // month format: YYYY-MM
+      const startOfMonth = month + '-01';
+      const [y, m] = month.split('-').map(Number);
+      const endOfMonth = new Date(y, m, 0).toISOString().split('T')[0]; // last day of month
+      query = query.gte('date', startOfMonth).lte('date', endOfMonth);
     }
     if (start_date) {
-      sql += ' AND date >= ?';
-      params.push(start_date);
+      query = query.gte('date', start_date);
     }
     if (end_date) {
-      sql += ' AND date <= ?';
-      params.push(end_date);
+      query = query.lte('date', end_date);
     }
 
-    sql += ' ORDER BY date DESC, created_at DESC';
+    query = query.order('date', { ascending: false }).order('created_at', { ascending: false });
 
-    const expenses = db.prepare(sql).all(...params);
-    res.json({ expenses });
+    const { data: expenses, error } = await query;
+    if (error) throw error;
+
+    res.json({ expenses: expenses || [] });
   } catch (err) {
     console.error('List expenses error:', err);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -43,40 +47,43 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/expenses/summary - Totals by category
-router.get('/summary', authenticateToken, (req, res) => {
+router.get('/summary', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const userId = req.user.id;
     const { start_date, end_date, month } = req.query;
 
     let sql = `
       SELECT
         category,
-        COUNT(*) as count,
+        COUNT(*)::int as count,
         COALESCE(SUM(amount), 0) as total
       FROM expenses
-      WHERE user_id = ?
+      WHERE user_id = $1
     `;
     const params = [userId];
+    let paramIdx = 2;
 
     if (month) {
-      sql += " AND strftime('%Y-%m', date) = ?";
+      sql += ` AND to_char(date, 'YYYY-MM') = $${paramIdx}`;
       params.push(month);
+      paramIdx++;
     }
     if (start_date) {
-      sql += ' AND date >= ?';
+      sql += ` AND date >= $${paramIdx}`;
       params.push(start_date);
+      paramIdx++;
     }
     if (end_date) {
-      sql += ' AND date <= ?';
+      sql += ` AND date <= $${paramIdx}`;
       params.push(end_date);
+      paramIdx++;
     }
 
     sql += ' GROUP BY category ORDER BY total DESC';
 
-    const byCategory = db.prepare(sql).all(...params);
+    const byCategory = await queryRows(sql, params);
 
-    const grandTotal = byCategory.reduce((sum, row) => sum + row.total, 0);
+    const grandTotal = byCategory.reduce((sum, row) => sum + parseFloat(row.total), 0);
 
     res.json({ by_category: byCategory, total: grandTotal });
   } catch (err) {
@@ -86,9 +93,9 @@ router.get('/summary', authenticateToken, (req, res) => {
 });
 
 // POST /api/expenses - Create expense
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const { date, description, amount, category, notes } = req.body;
 
@@ -98,12 +105,21 @@ router.post('/', authenticateToken, (req, res) => {
 
     const finalCategory = category && VALID_CATEGORIES.includes(category) ? category : 'geral';
 
-    const result = db.prepare(`
-      INSERT INTO expenses (user_id, date, description, amount, category, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId, date, description, amount, finalCategory, notes || null);
+    const { data: expense, error } = await supabase
+      .from('expenses')
+      .insert({
+        user_id: userId,
+        date,
+        description,
+        amount,
+        category: finalCategory,
+        notes: notes || null,
+      })
+      .select()
+      .single();
 
-    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
+    if (error) throw error;
+
     res.status(201).json({ expense });
   } catch (err) {
     console.error('Create expense error:', err);
@@ -112,34 +128,44 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // PUT /api/expenses/:id - Update expense
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const id = req.params.id;
     const { date, description, amount, category, notes } = req.body;
 
-    const existing = db.prepare('SELECT * FROM expenses WHERE id = ? AND user_id = ?').get(id, userId);
+    const { data: existing } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!existing) {
       return res.status(404).json({ error: 'Despesa não encontrada' });
     }
 
     const finalCategory = category && VALID_CATEGORIES.includes(category) ? category : existing.category;
 
-    db.prepare(`
-      UPDATE expenses
-      SET date = ?, description = ?, amount = ?, category = ?, notes = ?
-      WHERE id = ? AND user_id = ?
-    `).run(
-      date || existing.date,
-      description || existing.description,
-      amount !== undefined ? amount : existing.amount,
-      finalCategory,
-      notes !== undefined ? notes : existing.notes,
-      id, userId
-    );
+    await supabase
+      .from('expenses')
+      .update({
+        date: date || existing.date,
+        description: description || existing.description,
+        amount: amount !== undefined ? amount : existing.amount,
+        category: finalCategory,
+        notes: notes !== undefined ? notes : existing.notes,
+      })
+      .eq('id', id)
+      .eq('user_id', userId);
 
-    const updated = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+    const { data: updated } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('id', id)
+      .single();
+
     res.json({ expense: updated });
   } catch (err) {
     console.error('Update expense error:', err);
@@ -148,18 +174,29 @@ router.put('/:id', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/expenses/:id - Delete expense
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const userId = req.user.id;
     const id = req.params.id;
 
-    const existing = db.prepare('SELECT * FROM expenses WHERE id = ? AND user_id = ?').get(id, userId);
+    const { data: existing } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     if (!existing) {
       return res.status(404).json({ error: 'Despesa não encontrada' });
     }
 
-    db.prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?').run(id, userId);
+    await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
     res.json({ message: 'Despesa excluída com sucesso' });
   } catch (err) {
     console.error('Delete expense error:', err);

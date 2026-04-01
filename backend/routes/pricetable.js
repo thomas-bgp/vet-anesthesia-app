@@ -1,27 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/price-table - list procedures with prices
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const items = db
-      .prepare(`
-        SELECT * FROM price_table
-        WHERE user_id = ? AND is_active = 1
-        ORDER BY procedure_name ASC
-      `)
-      .all(req.user.id);
+    const { data: items, error } = await supabase
+      .from('price_table')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .order('procedure_name', { ascending: true });
 
-    const margin = db
-      .prepare('SELECT profit_margin_percent FROM users WHERE id = ?')
-      .get(req.user.id);
+    if (error) throw error;
+
+    const { data: margin } = await supabase
+      .from('users')
+      .select('profit_margin_percent')
+      .eq('id', req.user.id)
+      .single();
 
     res.json({
-      items,
+      items: items || [],
       profit_margin_percent: margin?.profit_margin_percent ?? 30,
     });
   } catch (err) {
@@ -31,7 +34,7 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // POST /api/price-table - add procedure to price table
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { procedure_name, price_without_drugs, price_with_drugs, notes } = req.body;
 
@@ -39,22 +42,21 @@ router.post('/', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'procedure_name is required' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const result = db
-      .prepare(`
-        INSERT INTO price_table (user_id, procedure_name, price_without_drugs, price_with_drugs, notes)
-        VALUES (?, ?, ?, ?, ?)
-      `)
-      .run(
-        req.user.id,
+    const { data: item, error } = await supabase
+      .from('price_table')
+      .insert({
+        user_id: req.user.id,
         procedure_name,
-        parseFloat(price_without_drugs) || 0,
-        parseFloat(price_with_drugs) || 0,
-        notes || null
-      );
+        price_without_drugs: parseFloat(price_without_drugs) || 0,
+        price_with_drugs: parseFloat(price_with_drugs) || 0,
+        notes: notes || null,
+      })
+      .select()
+      .single();
 
-    const item = db.prepare('SELECT * FROM price_table WHERE id = ?').get(result.lastInsertRowid);
+    if (error) throw error;
 
     res.status(201).json({ message: 'Price table entry created', item });
   } catch (err) {
@@ -64,14 +66,18 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // PUT /api/price-table/:id
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const existing = db
-      .prepare('SELECT * FROM price_table WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(id, req.user.id);
+    const { data: existing } = await supabase
+      .from('price_table')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!existing) {
       return res.status(404).json({ error: 'Price table entry not found' });
@@ -84,24 +90,23 @@ router.put('/:id', authenticateToken, (req, res) => {
       notes = existing.notes,
     } = req.body;
 
-    db.prepare(`
-      UPDATE price_table SET
-        procedure_name = ?,
-        price_without_drugs = ?,
-        price_with_drugs = ?,
-        notes = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ?
-    `).run(
-      procedure_name,
-      parseFloat(price_without_drugs) || 0,
-      parseFloat(price_with_drugs) || 0,
-      notes || null,
-      id,
-      req.user.id
-    );
+    await supabase
+      .from('price_table')
+      .update({
+        procedure_name,
+        price_without_drugs: parseFloat(price_without_drugs) || 0,
+        price_with_drugs: parseFloat(price_with_drugs) || 0,
+        notes: notes || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', req.user.id);
 
-    const item = db.prepare('SELECT * FROM price_table WHERE id = ?').get(id);
+    const { data: item } = await supabase
+      .from('price_table')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.json({ message: 'Price table entry updated', item });
   } catch (err) {
@@ -111,20 +116,26 @@ router.put('/:id', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/price-table/:id
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
 
-    const existing = db
-      .prepare('SELECT * FROM price_table WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(req.params.id, req.user.id);
+    const { data: existing } = await supabase
+      .from('price_table')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!existing) {
       return res.status(404).json({ error: 'Price table entry not found' });
     }
 
-    db.prepare('UPDATE price_table SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(req.params.id);
+    await supabase
+      .from('price_table')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
 
     res.json({ message: 'Price table entry deleted' });
   } catch (err) {
@@ -134,7 +145,7 @@ router.delete('/:id', authenticateToken, (req, res) => {
 });
 
 // PUT /api/price-table/margin - update profit margin
-router.put('/margin', authenticateToken, (req, res) => {
+router.put('/margin', authenticateToken, async (req, res) => {
   try {
     const { profit_margin_percent } = req.body;
 
@@ -142,10 +153,12 @@ router.put('/margin', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'profit_margin_percent must be >= 0' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
-    db.prepare('UPDATE users SET profit_margin_percent = ? WHERE id = ?')
-      .run(parseFloat(profit_margin_percent), req.user.id);
+    await supabase
+      .from('users')
+      .update({ profit_margin_percent: parseFloat(profit_margin_percent) })
+      .eq('id', req.user.id);
 
     res.json({ message: 'Margin updated', profit_margin_percent: parseFloat(profit_margin_percent) });
   } catch (err) {

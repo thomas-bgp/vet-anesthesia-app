@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../db/database');
+const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/medicines - list all medicines with optional filters
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const {
       search,
       low_stock,
@@ -16,71 +15,80 @@ router.get('/', authenticateToken, (req, res) => {
       limit = 50,
     } = req.query;
 
-    // Build WHERE conditions separately for clean COUNT and SELECT queries
-    let whereClause = 'WHERE m.user_id = ? AND m.is_active = 1';
+    let whereClause = 'WHERE m.user_id = $1 AND m.is_active = true';
     const params = [req.user.id];
+    let paramIdx = 2;
 
     if (medicine_type && medicine_type !== 'todos') {
-      whereClause += " AND COALESCE(m.medicine_type, 'farmaco') = ?";
+      whereClause += ` AND COALESCE(m.medicine_type, 'farmaco') = $${paramIdx}`;
       params.push(medicine_type);
+      paramIdx++;
     }
 
     if (search) {
-      whereClause += ` AND (m.name LIKE ? OR m.active_principle LIKE ? OR m.supplier LIKE ?)`;
+      whereClause += ` AND (m.name ILIKE $${paramIdx} OR m.active_principle ILIKE $${paramIdx + 1} OR m.supplier ILIKE $${paramIdx + 2})`;
       const searchParam = `%${search}%`;
       params.push(searchParam, searchParam, searchParam);
+      paramIdx += 3;
     }
 
-    // Handle generic 'filter' param from frontend
     if (low_stock === 'true' || req.query.filter === 'low_stock') {
       whereClause += ` AND m.current_stock <= m.min_stock`;
     }
 
+    const now = new Date().toISOString().split('T')[0];
+    const in30days = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+
     if (expiring_soon === 'true' || req.query.filter === 'expiring') {
-      whereClause += ` AND m.expiry_date <= date('now', '+30 days') AND m.expiry_date >= date('now')`;
+      whereClause += ` AND m.expiry_date <= $${paramIdx} AND m.expiry_date >= $${paramIdx + 1}`;
+      params.push(in30days, now);
+      paramIdx += 2;
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const total = db.prepare(`SELECT COUNT(*) as total FROM medicines m ${whereClause}`).get(...params);
+    // Count
+    const countRows = await queryRows(
+      `SELECT COUNT(*)::int as total FROM medicines m ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
 
-    const selectQuery = `
+    // Select
+    const selectParams = [...params, parseInt(limit), offset];
+    const medicines = await queryRows(`
       SELECT
         m.*,
-        CASE WHEN m.current_stock <= m.min_stock THEN 1 ELSE 0 END as is_low_stock,
-        CASE WHEN m.expiry_date <= date('now', '+30 days') AND m.expiry_date >= date('now') THEN 1 ELSE 0 END as is_expiring_soon,
-        CASE WHEN m.expiry_date < date('now') THEN 1 ELSE 0 END as is_expired,
+        CASE WHEN m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
+        CASE WHEN m.expiry_date <= '${in30days}' AND m.expiry_date >= '${now}' THEN true ELSE false END as is_expiring_soon,
+        CASE WHEN m.expiry_date < '${now}' THEN true ELSE false END as is_expired,
         (m.current_stock * m.cost_per_unit) as stock_value
       FROM medicines m
       ${whereClause}
       ORDER BY m.name ASC
-      LIMIT ? OFFSET ?
-    `;
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, selectParams);
 
-    const medicines = db.prepare(selectQuery).all(...params, parseInt(limit), offset);
-
-    // Calculate total stock value
-    const stockValueQuery = db
-      .prepare(`
-        SELECT
-          SUM(current_stock * cost_per_unit) as total_value,
-          COUNT(*) as total_count,
-          SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END) as low_stock_count,
-          SUM(CASE WHEN expiry_date <= date('now', '+30 days') AND expiry_date >= date('now') THEN 1 ELSE 0 END) as expiring_count
-        FROM medicines
-        WHERE user_id = ? AND is_active = 1
-      `)
-      .get(req.user.id);
+    // Summary
+    const summaryRows = await queryRows(`
+      SELECT
+        SUM(current_stock * cost_per_unit) as total_value,
+        COUNT(*)::int as total_count,
+        SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_count
+      FROM medicines
+      WHERE user_id = $1 AND is_active = true
+    `, [req.user.id, in30days, now]);
 
     res.json({
       medicines,
       pagination: {
-        total: total?.total || medicines.length,
+        total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil((total?.total || medicines.length) / parseInt(limit)),
+        pages: Math.ceil(total / parseInt(limit)),
       },
-      summary: stockValueQuery,
+      summary: summaryRows[0] || {},
     });
   } catch (err) {
     console.error('List medicines error:', err);
@@ -89,23 +97,19 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // GET /api/medicines/low-stock
-router.get('/low-stock', authenticateToken, (req, res) => {
+router.get('/low-stock', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
-
-    const medicines = db
-      .prepare(`
-        SELECT
-          m.*,
-          (m.min_stock - m.current_stock) as deficit,
-          (m.current_stock * m.cost_per_unit) as stock_value
-        FROM medicines m
-        WHERE m.user_id = ?
-          AND m.is_active = 1
-          AND m.current_stock <= m.min_stock
-        ORDER BY (m.current_stock / CASE WHEN m.min_stock = 0 THEN 1 ELSE m.min_stock END) ASC
-      `)
-      .all(req.user.id);
+    const medicines = await queryRows(`
+      SELECT
+        m.*,
+        (m.min_stock - m.current_stock) as deficit,
+        (m.current_stock * m.cost_per_unit) as stock_value
+      FROM medicines m
+      WHERE m.user_id = $1
+        AND m.is_active = true
+        AND m.current_stock <= m.min_stock
+      ORDER BY (m.current_stock / CASE WHEN m.min_stock = 0 THEN 1 ELSE m.min_stock END) ASC
+    `, [req.user.id]);
 
     res.json({ medicines, count: medicines.length });
   } catch (err) {
@@ -115,25 +119,24 @@ router.get('/low-stock', authenticateToken, (req, res) => {
 });
 
 // GET /api/medicines/expiring
-router.get('/expiring', authenticateToken, (req, res) => {
+router.get('/expiring', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
     const days = parseInt(req.query.days) || 30;
 
-    const medicines = db
-      .prepare(`
-        SELECT
-          m.*,
-          CAST(julianday(m.expiry_date) - julianday('now') AS INTEGER) as days_until_expiry,
-          (m.current_stock * m.cost_per_unit) as stock_value
-        FROM medicines m
-        WHERE m.user_id = ?
-          AND m.is_active = 1
-          AND m.expiry_date IS NOT NULL
-          AND m.expiry_date <= date('now', '+' || ? || ' days')
-        ORDER BY m.expiry_date ASC
-      `)
-      .all(req.user.id, days);
+    const thresholdDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+
+    const medicines = await queryRows(`
+      SELECT
+        m.*,
+        (m.expiry_date::date - CURRENT_DATE)::int as days_until_expiry,
+        (m.current_stock * m.cost_per_unit) as stock_value
+      FROM medicines m
+      WHERE m.user_id = $1
+        AND m.is_active = true
+        AND m.expiry_date IS NOT NULL
+        AND m.expiry_date <= $2
+      ORDER BY m.expiry_date ASC
+    `, [req.user.id, thresholdDate]);
 
     res.json({ medicines, count: medicines.length, days_threshold: days });
   } catch (err) {
@@ -143,39 +146,36 @@ router.get('/expiring', authenticateToken, (req, res) => {
 });
 
 // GET /api/medicines/:id
-router.get('/:id', authenticateToken, (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const now = new Date().toISOString().split('T')[0];
+    const in30days = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
-    const medicine = db
-      .prepare(`
-        SELECT
-          m.*,
-          CASE WHEN m.current_stock <= m.min_stock THEN 1 ELSE 0 END as is_low_stock,
-          CASE WHEN m.expiry_date <= date('now', '+30 days') AND m.expiry_date >= date('now') THEN 1 ELSE 0 END as is_expiring_soon,
-          (m.current_stock * m.cost_per_unit) as stock_value
-        FROM medicines m
-        WHERE m.id = ? AND m.user_id = ? AND m.is_active = 1
-      `)
-      .get(req.params.id, req.user.id);
+    const medicineRows = await queryRows(`
+      SELECT
+        m.*,
+        CASE WHEN m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
+        CASE WHEN m.expiry_date <= $3 AND m.expiry_date >= $4 THEN true ELSE false END as is_expiring_soon,
+        (m.current_stock * m.cost_per_unit) as stock_value
+      FROM medicines m
+      WHERE m.id = $1 AND m.user_id = $2 AND m.is_active = true
+    `, [req.params.id, req.user.id, in30days, now]);
 
-    if (!medicine) {
+    if (medicineRows.length === 0) {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
     // Get recent movements
-    const movements = db
-      .prepare(`
-        SELECT sm.*, s.patient_name, s.procedure_name
-        FROM stock_movements sm
-        LEFT JOIN surgeries s ON sm.surgery_id = s.id
-        WHERE sm.medicine_id = ?
-        ORDER BY sm.created_at DESC
-        LIMIT 10
-      `)
-      .all(req.params.id);
+    const movements = await queryRows(`
+      SELECT sm.*, s.patient_name, s.procedure_name
+      FROM stock_movements sm
+      LEFT JOIN surgeries s ON sm.surgery_id = s.id
+      WHERE sm.medicine_id = $1
+      ORDER BY sm.created_at DESC
+      LIMIT 10
+    `, [req.params.id]);
 
-    res.json({ medicine, recent_movements: movements });
+    res.json({ medicine: medicineRows[0], recent_movements: movements });
   } catch (err) {
     console.error('Get medicine error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -183,7 +183,7 @@ router.get('/:id', authenticateToken, (req, res) => {
 });
 
 // POST /api/medicines - add medicine
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const {
       name,
@@ -204,7 +204,6 @@ router.post('/', authenticateToken, (req, res) => {
       presentation_type = 'frasco',
     } = req.body;
 
-    // unit is optional when creating via Compras (volume_ml path)
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
@@ -220,55 +219,49 @@ router.post('/', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Minimum stock cannot be negative' });
     }
 
-    const db = getDb();
+    const supabase = getSupabase();
 
     const effectiveBottleVolume = bottle_volume || (volume_ml ? String(volume_ml) : null);
     const effectiveUnit = unit || 'unidade';
 
-    const result = db
-      .prepare(`
-        INSERT INTO medicines
-          (user_id, name, active_principle, concentration, bottle_volume, unit, current_stock, min_stock,
-           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type, presentation, presentation_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(
-        req.user.id,
+    const { data: medicine, error: insertError } = await supabase
+      .from('medicines')
+      .insert({
+        user_id: req.user.id,
         name,
-        active_principle || null,
-        concentration || null,
-        effectiveBottleVolume,
-        effectiveUnit,
-        parseFloat(current_stock),
-        parseFloat(min_stock),
-        parseFloat(cost_per_unit),
-        supplier || null,
-        batch_number || null,
-        expiry_date || null,
-        parseInt(units_per_box) || 1,
-        volume_ml ? parseFloat(volume_ml) : null,
-        medicine_type || 'farmaco',
-        presentation || null,
-        presentation_type || 'frasco'
-      );
+        active_principle: active_principle || null,
+        concentration: concentration || null,
+        bottle_volume: effectiveBottleVolume,
+        unit: effectiveUnit,
+        current_stock: parseFloat(current_stock),
+        min_stock: parseFloat(min_stock),
+        cost_per_unit: parseFloat(cost_per_unit),
+        supplier: supplier || null,
+        batch_number: batch_number || null,
+        expiry_date: expiry_date || null,
+        units_per_box: parseInt(units_per_box) || 1,
+        volume_per_unit_ml: volume_ml ? parseFloat(volume_ml) : null,
+        medicine_type: medicine_type || 'farmaco',
+        presentation: presentation || null,
+        presentation_type: presentation_type || 'frasco',
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
 
     // Register initial stock as purchase if > 0
     if (parseFloat(current_stock) > 0) {
-      db.prepare(`
-        INSERT INTO stock_movements (medicine_id, user_id, type, quantity, unit_cost, total_cost, notes)
-        VALUES (?, ?, 'purchase', ?, ?, ?, 'Estoque inicial')
-      `).run(
-        result.lastInsertRowid,
-        req.user.id,
-        parseFloat(current_stock),
-        parseFloat(cost_per_unit),
-        parseFloat(current_stock) * parseFloat(cost_per_unit)
-      );
+      await supabase.from('stock_movements').insert({
+        medicine_id: medicine.id,
+        user_id: req.user.id,
+        type: 'purchase',
+        quantity: parseFloat(current_stock),
+        unit_cost: parseFloat(cost_per_unit),
+        total_cost: parseFloat(current_stock) * parseFloat(cost_per_unit),
+        notes: 'Estoque inicial',
+      });
     }
-
-    const medicine = db
-      .prepare('SELECT * FROM medicines WHERE id = ?')
-      .get(result.lastInsertRowid);
 
     res.status(201).json({
       message: 'Medicine added successfully',
@@ -281,14 +274,18 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // PUT /api/medicines/:id - update medicine
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const existing = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(id, req.user.id);
+    const { data: existing } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!existing) {
       return res.status(404).json({ error: 'Medicine not found' });
@@ -313,40 +310,31 @@ router.put('/:id', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Name and unit are required' });
     }
 
-    db.prepare(`
-      UPDATE medicines SET
-        name = ?,
-        active_principle = ?,
-        concentration = ?,
-        bottle_volume = ?,
-        unit = ?,
-        min_stock = ?,
-        cost_per_unit = ?,
-        supplier = ?,
-        batch_number = ?,
-        expiry_date = ?,
-        presentation = ?,
-        presentation_type = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ?
-    `).run(
-      name,
-      active_principle || null,
-      concentration || null,
-      bottle_volume || null,
-      unit,
-      parseFloat(min_stock),
-      parseFloat(cost_per_unit),
-      supplier || null,
-      batch_number || null,
-      expiry_date || null,
-      presentation || null,
-      presentation_type || 'frasco',
-      id,
-      req.user.id
-    );
+    await supabase
+      .from('medicines')
+      .update({
+        name,
+        active_principle: active_principle || null,
+        concentration: concentration || null,
+        bottle_volume: bottle_volume || null,
+        unit,
+        min_stock: parseFloat(min_stock),
+        cost_per_unit: parseFloat(cost_per_unit),
+        supplier: supplier || null,
+        batch_number: batch_number || null,
+        expiry_date: expiry_date || null,
+        presentation: presentation || null,
+        presentation_type: presentation_type || 'frasco',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', req.user.id);
 
-    const medicine = db.prepare('SELECT * FROM medicines WHERE id = ?').get(id);
+    const { data: medicine } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.json({
       message: 'Medicine updated successfully',
@@ -359,20 +347,27 @@ router.put('/:id', authenticateToken, (req, res) => {
 });
 
 // DELETE /api/medicines/:id - soft delete
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const db = getDb();
+    const supabase = getSupabase();
     const { id } = req.params;
 
-    const existing = db
-      .prepare('SELECT * FROM medicines WHERE id = ? AND user_id = ? AND is_active = 1')
-      .get(id, req.user.id);
+    const { data: existing } = await supabase
+      .from('medicines')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (!existing) {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    db.prepare('UPDATE medicines SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    await supabase
+      .from('medicines')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
 
     res.json({ message: 'Medicine deleted successfully' });
   } catch (err) {

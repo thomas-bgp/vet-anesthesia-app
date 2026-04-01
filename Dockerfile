@@ -8,14 +8,13 @@ RUN npm run build
 
 # Stage 2: Build backend + serve everything
 FROM node:20-slim
-RUN apt-get update && apt-get install -y python3 make g++ wget nginx --no-install-recommends && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget nginx --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Backend
 WORKDIR /app/backend
 COPY backend/package.json ./
 RUN npm install --omit=dev
 COPY backend/ .
-RUN mkdir -p /data
 
 # Frontend static files
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
