@@ -1,0 +1,16 @@
+name: Deploy to Coolify
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify Deploy
+        run: |
+          curl -s -X POST \
+            "http://187.77.238.125:8000/api/v1/deploy?uuid=eai9xnrj7wy9hqjxnvgkldbx&force=false" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            -H "Accept: application/json"
