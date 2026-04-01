@@ -358,7 +358,7 @@ function AnaliseTab() {
   }, [])
 
   if (loading) return <div className="flex items-center justify-center h-40"><div className="h-8 w-8 animate-spin rounded-full border-3 border-teal-600 border-t-transparent" /></div>
-  if (!data) return <p className="text-center text-slate-400 text-sm py-8">Sem dados disponíveis</p>
+  if (!data) return <p className="text-center text-slate-400 text-sm py-8">Use um pouco mais o Anestify para nossa inteligência deixar tudo pronto para você!</p>
 
   const { acumulado, break_even: be, cash_needs: cn } = data
 
@@ -389,7 +389,7 @@ function AnaliseTab() {
               <Area type="monotone" dataKey="Acumulado" stroke="#0d9488" fill="#ccfbf1" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
-        ) : <p className="text-center text-slate-400 text-xs py-6">Sem dados</p>}
+        ) : <p className="text-center text-slate-400 text-xs py-6">Use um pouco mais o Anestify para nossa inteligência deixar tudo pronto para você!</p>}
         <div className="flex justify-center gap-4 mt-2 text-[10px]">
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-teal-600" /> Resultado mensal</span>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-teal-100 border border-teal-400" /> Acumulado</span>
@@ -452,7 +452,7 @@ function AnaliseTab() {
             </div>
           </>
         ) : (
-          <p className="text-center text-xs text-slate-400 py-4">Dados insuficientes para calcular break even. Registre cirurgias e despesas.</p>
+          <p className="text-center text-xs text-slate-400 py-4">Use um pouco mais o Anestify para nossa inteligência calcular seu break even!</p>
         )}
       </div>
 
