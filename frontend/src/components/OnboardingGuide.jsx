@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { User, ClipboardList, Package, Calculator } from 'lucide-react'
+import { User, Stethoscope, Package, Calculator } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 
@@ -26,7 +26,7 @@ export default function OnboardingGuide() {
 
   const tips = [
     { icon: User, text: 'Configure seu perfil com logo, assinatura e dados profissionais' },
-    { icon: ClipboardList, text: 'Crie fichas anestesicas completas para cada cirurgia' },
+    { icon: Stethoscope, text: 'Crie fichas anestesicas completas para cada cirurgia' },
     { icon: Package, text: 'Gerencie seu estoque de medicamentos e insumos' },
     { icon: Calculator, text: 'Acompanhe suas financas na aba Financeiro' },
   ]

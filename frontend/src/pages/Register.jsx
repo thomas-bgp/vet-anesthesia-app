@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { PawPrint, Eye, EyeOff, UserPlus, CheckCircle, XCircle } from 'lucide-react'
+import { Eye, EyeOff, UserPlus, CheckCircle, XCircle } from 'lucide-react'
+import AnestifyLogo from '../components/AnestifyLogo'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
@@ -81,7 +82,7 @@ export default function Register() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center bg-teal-600 p-4 rounded-2xl mb-4 shadow-lg">
-            <PawPrint size={32} className="text-white" />
+            <AnestifyLogo size={32} color="white" />
           </div>
           <h1 className="text-3xl font-bold text-white">Anestify</h1>
           <p className="text-teal-200 mt-1">Criar nova conta</p>

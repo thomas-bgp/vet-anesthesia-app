@@ -1,10 +1,11 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { ClipboardList, Package, BarChart3, User, DollarSign, Calculator } from 'lucide-react'
+import { Stethoscope, Package, BarChart3, User, DollarSign, Calculator } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import OnboardingGuide from './OnboardingGuide'
+import AnestifyLogo from './AnestifyLogo'
 
 const tabs = [
-  { to: '/fichas', label: 'Fichas', icon: ClipboardList },
+  { to: '/fichas', label: 'Fichas', icon: Stethoscope },
   { to: '/estoque', label: 'Estoque', icon: Package },
   { to: '/a-receber', label: 'A Receber', icon: DollarSign },
   { to: '/resumo', label: 'Resumo', icon: BarChart3 },
@@ -29,7 +30,7 @@ export default function Layout() {
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: themeColor }}>
-            <ClipboardList size={18} className="text-white" />
+            <AnestifyLogo size={18} color="white" />
           </div>
           <span className="font-bold text-slate-700 text-sm">Anestify</span>
         </div>

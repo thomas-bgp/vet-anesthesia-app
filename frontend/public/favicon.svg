@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <rect width="512" height="512" rx="96" fill="#0d9488"/>
-  <!-- Paw print -->
-  <ellipse cx="200" cy="180" rx="36" ry="44" fill="white" opacity="0.95"/>
-  <ellipse cx="312" cy="180" rx="36" ry="44" fill="white" opacity="0.95"/>
-  <ellipse cx="148" cy="260" rx="32" ry="40" fill="white" opacity="0.95"/>
-  <ellipse cx="364" cy="260" rx="32" ry="40" fill="white" opacity="0.95"/>
-  <!-- Main pad -->
-  <path d="M256 280c-60 0-108 40-108 90s48 82 108 82 108-32 108-82-48-90-108-90z" fill="white" opacity="0.95"/>
-  <!-- Heart in center of pad -->
-  <path d="M256 340c-8-16-28-20-36-8s-4 28 12 40l24 18 24-18c16-12 20-28 12-40s-28-8-36 8z" fill="#0d9488"/>
+  <!-- Heartbeat line going through an A shape -->
+  <path d="M80 320 L160 320 L200 200 L240 360 L280 160 L320 320 L360 320 L400 320"
+        stroke="white" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.3"/>
+  <!-- Stylized A with pulse -->
+  <path d="M256 120 L170 380" stroke="white" stroke-width="32" stroke-linecap="round"/>
+  <path d="M256 120 L342 380" stroke="white" stroke-width="32" stroke-linecap="round"/>
+  <path d="M196 290 L316 290" stroke="white" stroke-width="24" stroke-linecap="round"/>
+  <!-- Small pulse accent on the right -->
+  <path d="M340 290 L360 290 L375 240 L395 340 L410 270 L432 290"
+        stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

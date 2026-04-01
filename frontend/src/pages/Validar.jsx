@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle, XCircle, Search, Shield, Clock, User, Stethoscope } from 'lucide-react'
+import { CheckCircle, XCircle, Search, Clock, User, Stethoscope } from 'lucide-react'
+import AnestifyLogo from '../components/AnestifyLogo'
 
 const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
 const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'
@@ -42,7 +43,7 @@ export default function Validar() {
       <div className="bg-white border-b border-slate-200 px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center gap-3">
           <div className="bg-teal-600 p-2 rounded-lg">
-            <Shield size={20} className="text-white" />
+            <AnestifyLogo size={20} color="white" />
           </div>
           <div>
             <h1 className="font-bold text-slate-800 text-lg">Anestify</h1>
