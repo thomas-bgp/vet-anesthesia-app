@@ -119,9 +119,19 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 
+    // Low stock detail list
+    const lowStockItems = await queryRows(`
+      SELECT m.id, m.name, m.concentration, m.current_stock, m.min_stock
+      FROM medicines m
+      WHERE m.user_id = $1 AND m.is_active = true
+        AND ((m.min_stock > 0 AND m.current_stock <= m.min_stock)
+          OR (m.current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase')))
+      ORDER BY m.current_stock ASC
+    `, [userId]);
+
     res.json({
       surgery_stats: surgeryStats,
-      stock_alerts: stockAlerts,
+      stock_alerts: { ...stockAlerts, items: lowStockItems },
       monthly_revenue: mergedMonthly,
       by_clinic: byClinic,
       monthly_by_clinic: monthlyByClinic,

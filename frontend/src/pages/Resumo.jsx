@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
-import { ClipboardList, AlertTriangle, DollarSign, Clock, CheckCircle, TrendingUp, Building2 } from 'lucide-react'
+import { ClipboardList, AlertTriangle, DollarSign, Clock, CheckCircle, TrendingUp, Building2, ChevronDown, ChevronUp, Package } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 
 const MONTHS = { '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr', '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago', '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez' }
@@ -33,6 +33,7 @@ function CustomTooltip({ active, payload, label }) {
 export default function Resumo() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [alertOpen, setAlertOpen] = useState(false)
 
   useEffect(() => {
     api.get('/dashboard')
@@ -90,6 +91,41 @@ export default function Resumo() {
   return (
     <div className="p-4 space-y-4 max-w-lg mx-auto">
       <h1 className="text-lg font-bold text-slate-800">Dashboard</h1>
+
+      {/* Stock alerts — collapsible frame at top */}
+      {(stockAlerts.low_stock_count > 0 || stockAlerts.expiring_soon_count > 0) && (
+        <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
+          <button onClick={() => setAlertOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 active:bg-red-100 min-h-[48px]">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-600" />
+              <span className="text-sm font-semibold text-red-700">
+                {(stockAlerts.low_stock_count || 0) + (stockAlerts.expiring_soon_count || 0)} alerta{((stockAlerts.low_stock_count || 0) + (stockAlerts.expiring_soon_count || 0)) > 1 ? 's' : ''} de estoque
+              </span>
+            </div>
+            {alertOpen ? <ChevronUp size={16} className="text-red-400" /> : <ChevronDown size={16} className="text-red-400" />}
+          </button>
+          {alertOpen && (stockAlerts.items || []).length > 0 && (
+            <div className="border-t border-red-200 divide-y divide-red-100">
+              {(stockAlerts.items || []).map(m => (
+                <div key={m.id} className="px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Package size={14} className="text-red-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
+                      {m.concentration && <p className="text-[10px] text-slate-400">{m.concentration}</p>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-3">
+                    <p className="text-sm font-bold text-red-700">{m.current_stock || 0} un</p>
+                    {m.min_stock > 0 && <p className="text-[10px] text-slate-400">mín: {m.min_stock}</p>}
+                    {m.current_stock === 0 && m.min_stock === 0 && <p className="text-[10px] text-red-500 font-medium">zerou</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-2">
@@ -265,17 +301,6 @@ export default function Resumo() {
         </Link>
       )}
 
-      {/* Stock alerts */}
-      {(stockAlerts.low_stock_count > 0 || stockAlerts.expiring_soon_count > 0) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle size={16} className="text-amber-600" />
-            <span className="text-sm font-semibold text-amber-700">Alertas de Estoque</span>
-          </div>
-          {stockAlerts.low_stock_count > 0 && <p className="text-sm text-amber-700">{stockAlerts.low_stock_count} fármaco(s) com estoque baixo</p>}
-          {stockAlerts.expiring_soon_count > 0 && <p className="text-sm text-amber-700">{stockAlerts.expiring_soon_count} próximo(s) do vencimento</p>}
-        </div>
-      )}
     </div>
   )
 }
