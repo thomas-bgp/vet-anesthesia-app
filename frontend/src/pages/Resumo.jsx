@@ -57,12 +57,14 @@ export default function Resumo() {
   const totalRevenue = monthlyRevenue.reduce((s, m) => s + parseFloat(m.total_revenue || 0), 0)
   const totalPaid = monthlyRevenue.reduce((s, m) => s + parseFloat(m.paid_revenue || 0), 0)
   const totalPending = monthlyRevenue.reduce((s, m) => s + parseFloat(m.pending_revenue || 0), 0)
+  const totalCost = monthlyRevenue.reduce((s, m) => s + parseFloat(m.stock_cost || 0), 0)
 
   // Chart data: monthly stacked bar
   const barData = monthlyRevenue.map(m => ({
     month: fmtMonth(m.month),
     Recebido: parseFloat(m.paid_revenue || 0),
     Pendente: parseFloat(m.pending_revenue || 0),
+    Custo: parseFloat(m.stock_cost || 0),
   }))
 
   // Pie data: by clinic
@@ -90,27 +92,34 @@ export default function Resumo() {
       <h1 className="text-lg font-bold text-slate-800">Dashboard</h1>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div className="bg-white rounded-xl border border-slate-200 p-3">
           <div className="flex items-center gap-1.5 mb-1">
             <DollarSign size={14} className="text-teal-600" />
             <span className="text-[10px] font-medium text-slate-400">Faturado</span>
           </div>
-          <p className="text-lg font-bold text-slate-800">{fmtShort(totalRevenue)}</p>
+          <p className="text-xl font-bold text-slate-800">{fmtShort(totalRevenue)}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3">
           <div className="flex items-center gap-1.5 mb-1">
             <CheckCircle size={14} className="text-green-600" />
             <span className="text-[10px] font-medium text-slate-400">Recebido</span>
           </div>
-          <p className="text-lg font-bold text-green-700">{fmtShort(totalPaid)}</p>
+          <p className="text-xl font-bold text-green-700">{fmtShort(totalPaid)}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3">
           <div className="flex items-center gap-1.5 mb-1">
             <Clock size={14} className="text-amber-600" />
             <span className="text-[10px] font-medium text-slate-400">Pendente</span>
           </div>
-          <p className="text-lg font-bold text-amber-700">{fmtShort(totalPending)}</p>
+          <p className="text-xl font-bold text-amber-700">{fmtShort(totalPending)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp size={14} className="text-red-500" />
+            <span className="text-[10px] font-medium text-slate-400">Custo (estoque)</span>
+          </div>
+          <p className="text-xl font-bold text-red-600">{fmtShort(totalCost)}</p>
         </div>
       </div>
 
@@ -141,18 +150,20 @@ export default function Resumo() {
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <h3 className="text-sm font-semibold text-slate-700 mb-1">Competência Mensal</h3>
           <p className="text-[10px] text-slate-400 mb-3">Receita por mês de realização</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={barData} barSize={24}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={barData} barGap={2}>
               <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 9 }} tickFormatter={fmtShort} axisLine={false} tickLine={false} width={50} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Recebido" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="Pendente" stackId="a" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Recebido" stackId="receita" fill="#10b981" barSize={22} />
+              <Bar dataKey="Pendente" stackId="receita" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={22} />
+              <Bar dataKey="Custo" fill="#ef4444" radius={[4, 4, 4, 4]} barSize={12} opacity={0.7} />
             </BarChart>
           </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-2 text-[10px]">
+          <div className="flex justify-center gap-3 mt-2 text-[10px]">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" /> Recebido</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Pendente</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 opacity-70" /> Custo</span>
           </div>
         </div>
       )}
@@ -210,6 +221,8 @@ export default function Resumo() {
               const total = parseFloat(c.total_revenue || 0)
               const paid = parseFloat(c.paid_revenue || 0)
               const pending = parseFloat(c.pending_revenue || 0)
+              const cost = parseFloat(c.stock_cost || 0)
+              const margin = total - cost
               const paidPct = total > 0 ? Math.round((paid / total) * 100) : 0
               return (
                 <div key={i} className="px-4 py-3">
@@ -221,11 +234,15 @@ export default function Resumo() {
                     <div className="h-full bg-green-500 rounded-full" style={{ width: `${paidPct}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-[10px]">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-green-600 font-medium">{fmt(paid)} pago</span>
-                      {pending > 0 && <span className="text-amber-600 font-medium">{fmt(pending)} pendente</span>}
+                      {pending > 0 && <span className="text-amber-600 font-medium">{fmt(pending)} pend.</span>}
+                      {cost > 0 && <span className="text-red-500 font-medium">{fmt(cost)} custo</span>}
                     </div>
-                    <span className="text-slate-400">{c.count} fichas</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {total > 0 && <span className={`font-bold ${margin >= 0 ? 'text-teal-700' : 'text-red-600'}`}>{fmt(margin)}</span>}
+                      <span className="text-slate-400">{c.count} fichas</span>
+                    </div>
                   </div>
                 </div>
               )

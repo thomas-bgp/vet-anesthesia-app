@@ -33,6 +33,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const stockAlerts = stockAlertsRows[0];
 
     const sixMonthsAgo = new Date(Date.now() - 6 * 30 * 86400000).toISOString().split('T')[0];
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+
     const monthlyRevenue = await queryRows(`
       SELECT
         to_char(COALESCE(start_time, created_at), 'YYYY-MM') as month,
@@ -50,17 +52,56 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 
-    // Revenue by clinic
+    // Monthly stock costs (usage movements)
+    const monthlyCosts = await queryRows(`
+      SELECT
+        to_char(sm.created_at, 'YYYY-MM') as month,
+        COALESCE(SUM(sm.total_cost), 0)::numeric as stock_cost
+      FROM stock_movements sm
+      WHERE sm.user_id = $1
+        AND sm.type = 'usage'
+        AND sm.created_at >= $2
+      GROUP BY to_char(sm.created_at, 'YYYY-MM')
+      ORDER BY month ASC
+    `, [userId, sixMonthsAgo]);
+
+    // Merge costs into monthly revenue and ensure current month exists
+    const costMap = {};
+    for (const c of monthlyCosts) costMap[c.month] = parseFloat(c.stock_cost || 0);
+
+    const revenueMap = {};
+    for (const r of monthlyRevenue) revenueMap[r.month] = r;
+
+    // Ensure current month is present
+    if (!revenueMap[currentMonth]) {
+      revenueMap[currentMonth] = {
+        month: currentMonth, count: 0, total_revenue: 0, paid_revenue: 0,
+        pending_revenue: 0, paid_count: 0, pending_count: 0,
+      };
+    }
+
+    // Build final array with costs
+    const mergedMonthly = Object.values(revenueMap)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(r => ({
+        ...r,
+        stock_cost: costMap[r.month] || 0,
+        margin: parseFloat(r.total_revenue || 0) - (costMap[r.month] || 0),
+      }));
+
+    // Revenue by clinic (with stock cost from movements linked to surgeries)
     const byClinic = await queryRows(`
       SELECT
-        COALESCE(clinic_name, 'Sem clínica') as clinic,
-        COUNT(*)::int as count,
-        COALESCE(SUM(revenue), 0)::numeric as total_revenue,
-        COALESCE(SUM(CASE WHEN paid = true THEN revenue ELSE 0 END), 0)::numeric as paid_revenue,
-        COALESCE(SUM(CASE WHEN COALESCE(paid, false) = false AND revenue > 0 THEN revenue ELSE 0 END), 0)::numeric as pending_revenue
-      FROM surgeries
-      WHERE user_id = $1 AND status != 'cancelled'
-      GROUP BY COALESCE(clinic_name, 'Sem clínica')
+        COALESCE(s.clinic_name, 'Sem clínica') as clinic,
+        COUNT(DISTINCT s.id)::int as count,
+        COALESCE(SUM(DISTINCT s.revenue), 0)::numeric as total_revenue,
+        COALESCE(SUM(DISTINCT CASE WHEN s.paid = true THEN s.revenue ELSE 0 END), 0)::numeric as paid_revenue,
+        COALESCE(SUM(DISTINCT CASE WHEN COALESCE(s.paid, false) = false AND s.revenue > 0 THEN s.revenue ELSE 0 END), 0)::numeric as pending_revenue,
+        COALESCE(SUM(sm.total_cost), 0)::numeric as stock_cost
+      FROM surgeries s
+      LEFT JOIN stock_movements sm ON sm.surgery_id = s.id AND sm.type = 'usage'
+      WHERE s.user_id = $1 AND s.status != 'cancelled'
+      GROUP BY COALESCE(s.clinic_name, 'Sem clínica')
       ORDER BY total_revenue DESC
     `, [userId]);
 
@@ -79,7 +120,7 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json({
       surgery_stats: surgeryStats,
       stock_alerts: stockAlerts,
-      monthly_revenue: monthlyRevenue,
+      monthly_revenue: mergedMonthly,
       by_clinic: byClinic,
       monthly_by_clinic: monthlyByClinic,
     });
