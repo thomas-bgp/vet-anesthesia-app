@@ -1,58 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Package, Droplets, X, Check } from 'lucide-react'
+import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react'
 import api from '../api/axios'
-import LoadingSpinner from '../components/LoadingSpinner'
-
-const STATUS_CONFIG = {
-  open: { label: 'Aberto', cls: 'bg-green-100 text-green-700' },
-  sealed: { label: 'Selado', cls: 'bg-blue-100 text-blue-700' },
-  expired: { label: 'Vencido', cls: 'bg-red-100 text-red-700' },
-  empty: { label: 'Vazio', cls: 'bg-slate-100 text-slate-500' },
-}
-
-const TABS = [
-  { key: 'open', label: 'Abertos' },
-  { key: 'sealed', label: 'Selados' },
-  { key: '', label: 'Todos' },
-]
-
-const TYPE_TABS = [
-  { key: 'todos', label: 'Todos' },
-  { key: 'farmaco', label: 'Fármacos' },
-  { key: 'descartavel', label: 'Descartáveis' },
-]
-
-function daysSince(dateStr) {
-  if (!dateStr) return null
-  const diff = (new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24)
-  return Math.floor(diff)
-}
-
-function daysUntilExpiry(openedAt, expiryDays = 14) {
-  if (!openedAt) return null
-  const opened = new Date(openedAt)
-  const expires = new Date(opened.getTime() + expiryDays * 24 * 60 * 60 * 1000)
-  return Math.ceil((expires - new Date()) / (1000 * 60 * 60 * 24))
-}
-
-function openDaysColor(days) {
-  if (days === null) return 'text-slate-500'
-  if (days < 10) return 'text-green-600'
-  if (days <= 12) return 'text-amber-600'
-  return 'text-red-600'
-}
-
-function volumePercent(remaining, total) {
-  if (!total || total === 0) return 0
-  return Math.max(0, Math.min(100, (remaining / total) * 100))
-}
-
-function volumeBarColor(pct) {
-  if (pct > 50) return 'bg-teal-500'
-  if (pct > 20) return 'bg-amber-500'
-  return 'bg-red-500'
-}
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
 
@@ -60,294 +9,213 @@ export default function Estoque() {
   const [bottles, setBottles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('open')
-  const [typeFilter, setTypeFilter] = useState('todos')
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState(null)
   const [useBottleId, setUseBottleId] = useState(null)
   const [mlUsed, setMlUsed] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const [expanded, setExpanded] = useState({})
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = {}
-      if (tab) params.status = tab
-      if (typeFilter && typeFilter !== 'todos') params.medicine_type = typeFilter
-      const res = await api.get('/bottles', { params })
+      const res = await api.get('/bottles')
       setBottles(res.data?.bottles || res.data || [])
     } catch {
-      setError('Erro ao carregar frascos.')
+      setError('Erro ao carregar estoque.')
     } finally {
       setLoading(false)
     }
-  }, [tab, typeFilter])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (successMsg) {
-      const t = setTimeout(() => setSuccessMsg(''), 3000)
-      return () => clearTimeout(t)
-    }
+    if (successMsg) { const t = setTimeout(() => setSuccessMsg(''), 3000); return () => clearTimeout(t) }
   }, [successMsg])
 
-  const filtered = bottles.filter((b) =>
-    !search || (b.medicine_name || '').toLowerCase().includes(search.toLowerCase())
-  )
+  // Group bottles by medicine
+  const grouped = {}
+  for (const b of bottles) {
+    const key = b.medicine_id
+    if (!grouped[key]) {
+      grouped[key] = {
+        medicine_id: key,
+        name: b.medicine_name || 'Sem nome',
+        concentration: b.concentration,
+        medicine_type: b.medicine_type || 'farmaco',
+        sealed: [],
+        opened: [],
+        expired: [],
+        empty: [],
+        totalVolume: 0,
+        totalRemaining: 0,
+        totalCost: 0,
+      }
+    }
+    const g = grouped[key]
+    if (b.status === 'sealed') g.sealed.push(b)
+    else if (b.status === 'opened') g.opened.push(b)
+    else if (b.status === 'expired') g.expired.push(b)
+    else if (b.status === 'empty') g.empty.push(b)
+    else g.sealed.push(b)
+
+    if (b.status === 'sealed' || b.status === 'opened') {
+      g.totalVolume += parseFloat(b.volume_ml) || 0
+      g.totalRemaining += parseFloat(b.remaining_ml) || 0
+      g.totalCost += parseFloat(b.purchase_cost) || 0
+    }
+  }
+
+  const groups = Object.values(grouped)
+    .filter(g => !search || g.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }))
 
   const handleOpen = async (id) => {
     setActionLoading(id)
-    try {
-      await api.put(`/bottles/${id}/open`)
-      setSuccessMsg('Frasco aberto com sucesso!')
-      load()
-    } catch {
-      setError('Erro ao abrir frasco.')
-    } finally {
-      setActionLoading(null)
-    }
+    try { await api.put(`/bottles/${id}/open`); setSuccessMsg('Frasco aberto!'); load() }
+    catch { setError('Erro ao abrir.') }
+    finally { setActionLoading(null) }
   }
 
   const handleDiscard = async (id) => {
     setActionLoading(id)
-    try {
-      await api.put(`/bottles/${id}/discard`)
-      setSuccessMsg('Frasco descartado.')
-      load()
-    } catch {
-      setError('Erro ao descartar frasco.')
-    } finally {
-      setActionLoading(null)
-    }
+    try { await api.put(`/bottles/${id}/discard`); setSuccessMsg('Descartado.'); load() }
+    catch { setError('Erro ao descartar.') }
+    finally { setActionLoading(null) }
   }
 
   const handleUse = async (id) => {
     if (!mlUsed || parseFloat(mlUsed) <= 0) return
     setActionLoading(id)
-    try {
-      await api.post(`/bottles/${id}/use`, { ml_used: parseFloat(mlUsed) })
-      setSuccessMsg('Uso registrado com sucesso!')
-      setUseBottleId(null)
-      setMlUsed('')
-      load()
-    } catch {
-      setError('Erro ao registrar uso.')
-    } finally {
-      setActionLoading(null)
-    }
+    try { await api.post(`/bottles/${id}/use`, { ml_used: parseFloat(mlUsed) }); setSuccessMsg('Uso registrado!'); setUseBottleId(null); setMlUsed(''); load() }
+    catch { setError('Erro ao registrar uso.') }
+    finally { setActionLoading(null) }
   }
 
-  const isInactive = (b) => b.status === 'expired' || b.status === 'empty'
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Estoque de Frascos</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Controle individual de frascos e ampolas</p>
+    <div className="p-4 max-w-lg mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-slate-800">Estoque</h1>
+        <Link to="/compras" className="flex items-center gap-1.5 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px]">
+          <ShoppingCart size={16} /> Compras
+        </Link>
       </div>
 
-      {/* Success toast */}
-      {successMsg && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
-          <Check size={16} />
-          {successMsg}
-        </div>
-      )}
+      {successMsg && <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm flex items-center gap-2"><Check size={16} />{successMsg}</div>}
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center justify-between">{error}<button onClick={() => setError('')}><X size={16} /></button></div>}
 
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center justify-between">
-          {error}
-          <button onClick={() => setError('')} className="text-red-400 hover:text-red-600"><X size={16} /></button>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
-        {/* Type filter */}
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl self-start">
-          {TYPE_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTypeFilter(t.key)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition min-h-[34px] ${
-                typeFilter === t.key
-                  ? 'bg-white shadow text-teal-700'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition min-h-[40px] ${
-                tab === t.key
-                  ? 'bg-white shadow text-teal-700'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome do medicamento..."
-            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-          />
-        </div>
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar medicamento..."
+          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[48px]" />
       </div>
 
-      {/* Content */}
       {loading ? (
-        <div className="py-16"><LoadingSpinner size="lg" className="mx-auto" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-16 text-center">
+        <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-3 border-teal-600 border-t-transparent" /></div>
+      ) : groups.length === 0 ? (
+        <div className="text-center py-12">
           <Package size={40} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium">Nenhum frasco encontrado</p>
-          <p className="text-slate-400 text-sm mt-1">
-            Registre uma compra para começar!{' '}
-            <Link to="/compras" className="text-teal-600 hover:underline font-medium">
-              Ir para Compras
-            </Link>
-          </p>
+          <p className="text-slate-500 font-medium">Estoque vazio</p>
+          <Link to="/compras" className="text-teal-600 text-sm font-medium">Registrar compra</Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((b) => {
-            const st = STATUS_CONFIG[b.status] || { label: b.status, cls: 'bg-slate-100 text-slate-500' }
-            const pct = volumePercent(b.remaining_volume_ml, b.total_volume_ml)
-            const daysSinceOpen = b.status === 'open' ? daysSince(b.opened_at) : null
-            const daysLeft = b.status === 'open' ? daysUntilExpiry(b.opened_at, b.expiry_days_after_opening || 14) : null
-            const inactive = isInactive(b)
+        <div className="space-y-3">
+          {groups.map(g => {
+            const activeCount = g.sealed.length + g.opened.length
+            const pct = g.totalVolume > 0 ? Math.round((g.totalRemaining / g.totalVolume) * 100) : 0
+            const isOpen = expanded[g.medicine_id]
 
             return (
-              <div
-                key={b.id}
-                className={`bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3 transition ${
-                  inactive ? 'opacity-50' : ''
-                }`}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-bold text-lg text-slate-800 leading-tight">{b.medicine_name}</h3>
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${st.cls}`}>
-                    {st.label}
-                  </span>
-                </div>
-
-                {/* Volume bar */}
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-slate-600 flex items-center gap-1">
-                      <Droplets size={14} className="text-slate-400" />
-                      {b.remaining_volume_ml != null ? `${b.remaining_volume_ml}` : '?'}/{b.total_volume_ml || '?'} ml restantes
-                    </span>
-                    <span className="text-slate-400 text-xs">{Math.round(pct)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${volumeBarColor(pct)}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Open info */}
-                {b.status === 'open' && daysSinceOpen !== null && (
-                  <p className={`text-sm ${openDaysColor(daysSinceOpen)}`}>
-                    Aberto há {daysSinceOpen} {daysSinceOpen === 1 ? 'dia' : 'dias'}
-                    {daysLeft !== null && (
-                      <span className={daysLeft <= 2 ? 'text-red-600 font-semibold' : ''}>
-                        {' '}&#8226; {daysLeft > 0 ? `Vence em ${daysLeft} dias` : 'Vencido!'}
-                      </span>
-                    )}
-                  </p>
-                )}
-
-                {/* Cost */}
-                {b.cost_per_ml != null && (
-                  <p className="text-sm text-slate-500">{fmt(b.cost_per_ml)}/ml</p>
-                )}
-
-                {/* Batch */}
-                {b.batch_number && (
-                  <p className="text-xs text-slate-400">Lote: {b.batch_number}</p>
-                )}
-
-                {/* Inline use form */}
-                {useBottleId === b.id && (
-                  <div className="bg-slate-50 rounded-lg p-3 space-y-2 border border-slate-200">
-                    <label className="text-sm font-medium text-slate-700">Quantidade usada (ml)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        max={b.remaining_volume_ml || 999}
-                        value={mlUsed}
-                        onChange={(e) => setMlUsed(e.target.value)}
-                        placeholder="Ex: 2.5"
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleUse(b.id)}
-                        disabled={actionLoading === b.id}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 min-h-[40px]"
-                      >
-                        {actionLoading === b.id ? '...' : 'Salvar'}
-                      </button>
-                      <button
-                        onClick={() => { setUseBottleId(null); setMlUsed('') }}
-                        className="border border-slate-300 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm transition min-h-[40px]"
-                      >
-                        <X size={16} />
-                      </button>
+              <div key={g.medicine_id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                {/* Summary row */}
+                <button onClick={() => toggle(g.medicine_id)} className="w-full px-4 py-3 active:bg-slate-50 min-h-[64px]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h3 className="text-sm font-semibold text-slate-800 truncate">{g.name}</h3>
+                      {g.concentration && <span className="text-[10px] text-slate-400 shrink-0">{g.concentration}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex gap-1">
+                        {g.sealed.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">{g.sealed.length} selado{g.sealed.length > 1 ? 's' : ''}</span>}
+                        {g.opened.length > 0 && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{g.opened.length} aberto{g.opened.length > 1 ? 's' : ''}</span>}
+                      </div>
+                      {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                     </div>
                   </div>
-                )}
+                  {/* Volume bar */}
+                  {g.totalVolume > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${pct > 50 ? 'bg-teal-500' : pct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0 w-16 text-right">{g.totalRemaining.toFixed(0)}/{g.totalVolume.toFixed(0)} mL</span>
+                    </div>
+                  )}
+                </button>
 
-                {/* Actions */}
-                {!inactive && useBottleId !== b.id && (
-                  <div className="flex gap-2 pt-1">
-                    {b.status === 'sealed' && (
-                      <button
-                        onClick={() => handleOpen(b.id)}
-                        disabled={actionLoading === b.id}
-                        className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2 px-4 rounded-lg text-sm font-semibold transition disabled:opacity-50 min-h-[44px]"
-                      >
-                        {actionLoading === b.id ? 'Abrindo...' : 'Abrir Frasco'}
-                      </button>
-                    )}
-                    {b.status === 'open' && (
-                      <>
-                        <button
-                          onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-sm font-semibold transition min-h-[44px]"
-                        >
-                          Registrar Uso
-                        </button>
-                        <button
-                          onClick={() => handleDiscard(b.id)}
-                          disabled={actionLoading === b.id}
-                          className="border border-red-300 text-red-600 hover:bg-red-50 py-2 px-3 rounded-lg text-sm font-medium transition disabled:opacity-50 min-h-[44px]"
-                        >
-                          {actionLoading === b.id ? '...' : 'Descartar'}
-                        </button>
-                      </>
-                    )}
+                {/* Expanded: individual bottles */}
+                {isOpen && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-50">
+                    {[...g.opened, ...g.sealed, ...g.expired, ...g.empty].map(b => {
+                      const bPct = b.volume_ml > 0 ? Math.round((b.remaining_ml / b.volume_ml) * 100) : 0
+                      const statusCfg = { sealed: { l: 'Selado', c: 'bg-blue-100 text-blue-700' }, opened: { l: 'Aberto', c: 'bg-green-100 text-green-700' }, expired: { l: 'Vencido', c: 'bg-red-100 text-red-700' }, empty: { l: 'Vazio', c: 'bg-slate-100 text-slate-500' } }
+                      const st = statusCfg[b.status] || statusCfg.sealed
+                      const isInactive = b.status === 'expired' || b.status === 'empty'
+
+                      return (
+                        <div key={b.id} className={`px-4 py-3 ${isInactive ? 'opacity-40' : ''}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
+                              <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
+                              {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                            </div>
+                            <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
+                          </div>
+
+                          {/* Use form */}
+                          {useBottleId === b.id && (
+                            <div className="flex gap-2 mt-2">
+                              <input type="number" step="0.1" min="0.1" max={b.remaining_ml} value={mlUsed}
+                                onChange={e => setMlUsed(e.target.value)} placeholder="mL usados" autoFocus
+                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+                              <button onClick={() => handleUse(b.id)} disabled={actionLoading === b.id}
+                                className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg min-h-[40px]">Salvar</button>
+                              <button onClick={() => { setUseBottleId(null); setMlUsed('') }}
+                                className="px-2 py-2 border border-slate-200 rounded-lg min-h-[40px]"><X size={14} /></button>
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          {!isInactive && useBottleId !== b.id && (
+                            <div className="flex gap-1.5 mt-2">
+                              {b.status === 'sealed' && (
+                                <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
+                                  className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
+                                  Abrir
+                                </button>
+                              )}
+                              {b.status === 'opened' && (
+                                <>
+                                  <button onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
+                                    className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[36px]">
+                                    Registrar uso
+                                  </button>
+                                  <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
+                                    className="py-2 px-3 border border-red-200 text-red-600 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
+                                    Descartar
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
