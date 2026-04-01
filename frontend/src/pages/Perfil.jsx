@@ -168,6 +168,8 @@ export default function Perfil() {
     dragStart.current = { mx: e.clientX, my: e.clientY, bx: cropBox.x, by: cropBox.y, bw: cropBox.w, bh: cropBox.h, rx: rect.left, ry: rect.top }
   }
 
+  const CROP_RATIO = 2 // width / height = 2:1
+
   useEffect(() => {
     if (!dragging) return
     const onMove = (e) => {
@@ -180,11 +182,12 @@ export default function Perfil() {
           y: Math.max(0, Math.min(cropImgSize.h - b.h, dragStart.current.by + dy)),
         }))
       } else {
-        setCropBox(b => ({
-          ...b,
-          w: Math.max(60, Math.min(cropImgSize.w - b.x, dragStart.current.bw + dx)),
-          h: Math.max(30, Math.min(cropImgSize.h - b.y, dragStart.current.bh + dy)),
-        }))
+        // Locked 2:1 ratio — width drives height
+        const newW = Math.max(80, Math.min(cropImgSize.w - dragStart.current.bx, dragStart.current.bw + dx))
+        const newH = newW / CROP_RATIO
+        if (dragStart.current.by + newH <= cropImgSize.h) {
+          setCropBox(b => ({ ...b, w: newW, h: newH }))
+        }
       }
     }
     const onUp = () => setDragging(null)
@@ -403,15 +406,15 @@ export default function Perfil() {
           {rawLogo ? (
             /* ── Crop editor ── */
             <div className="space-y-3">
-              <p className="text-xs text-teal-700 font-medium">Arraste para posicionar, arraste o canto para redimensionar</p>
+              <p className="text-xs text-teal-700 font-medium">Arraste para posicionar. Canto = tamanho (proporção 2:1 fixa)</p>
               <div className="crop-area relative overflow-hidden rounded-lg border border-slate-300 bg-slate-900 select-none touch-none"
                 style={{ maxHeight: '250px' }}>
                 <img src={rawLogo} alt="Crop" className="w-full block" draggable={false}
                   onLoad={e => {
                     const r = e.target.getBoundingClientRect()
                     setCropImgSize({ w: r.width, h: r.height, natW: e.target.naturalWidth, natH: e.target.naturalHeight })
-                    // Init crop box centered, 50% width, 2:1 aspect
-                    const bw = r.width * 0.5, bh = bw / 2
+                    // Init crop box centered, 50% width, locked 2:1 ratio
+                    const bw = r.width * 0.5, bh = bw / CROP_RATIO
                     setCropBox({ x: (r.width - bw) / 2, y: (r.height - bh) / 2, w: bw, h: bh })
                   }} />
                 {/* Dimmed overlay */}
