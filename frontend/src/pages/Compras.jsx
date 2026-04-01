@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ShoppingCart, Plus, Check, X, ChevronDown, Pill, Package } from 'lucide-react'
+import { ShoppingCart, Plus, Check, X, ChevronDown, Pill, Package, Box } from 'lucide-react'
 import api from '../api/axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 
@@ -27,6 +27,12 @@ export default function Compras() {
   const [unitPrice, setUnitPrice] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().split('T')[0])
   const [batchNumber, setBatchNumber] = useState('')
+
+  // Purchase mode state
+  const [purchaseMode, setPurchaseMode] = useState('unidade') // 'unidade' | 'caixa'
+  const [numBoxes, setNumBoxes] = useState('')
+  const [unitsPerBox, setUnitsPerBox] = useState('')
+  const [boxPrice, setBoxPrice] = useState('')
 
   // Farmaco-specific new medicine fields
   const [newMedicineName, setNewMedicineName] = useState('')
@@ -84,18 +90,34 @@ export default function Compras() {
     ? parseFloat(newMedicineVolume) || 0
     : selectedMedicine?.volume_per_unit_ml || selectedMedicine?.volume_ml || 0
 
-  const qty = parseFloat(quantity) || 0
-  const uPrice = parseFloat(unitPrice) || 0
-  const totalPrice = qty * uPrice
-  const costPerMl = volumeMl > 0 && uPrice > 0 ? uPrice / volumeMl : 0
+  // Effective quantity and unit price based on purchase mode
+  const nBoxes = parseFloat(numBoxes) || 0
+  const uPerBox = parseFloat(unitsPerBox) || 0
+  const bxPrice = parseFloat(boxPrice) || 0
+
+  const effectiveQty = purchaseMode === 'caixa' ? nBoxes * uPerBox : (parseFloat(quantity) || 0)
+  const effectiveUnitPrice = purchaseMode === 'caixa' ? (uPerBox > 0 ? bxPrice / uPerBox : 0) : (parseFloat(unitPrice) || 0)
+
+  const qty = effectiveQty
+  const uPrice = effectiveUnitPrice
+  const totalPrice = purchaseMode === 'caixa' ? nBoxes * bxPrice : qty * uPrice
+  const costPerMl = volumeMl > 0 && effectiveUnitPrice > 0 ? effectiveUnitPrice / volumeMl : 0
 
   const handleMedicineChange = (val) => {
     if (val === '__new__') {
       setIsNewMedicine(true)
       setMedicineId('')
+      setUnitsPerBox('')
     } else {
       setIsNewMedicine(false)
       setMedicineId(val)
+      // Pre-fill units per box from medicine data
+      const med = medicines.find((m) => String(m.id) === String(val))
+      if (med?.units_per_box) {
+        setUnitsPerBox(String(med.units_per_box))
+      } else {
+        setUnitsPerBox('')
+      }
     }
   }
 
@@ -113,6 +135,10 @@ export default function Compras() {
     setUnitPrice('')
     setPurchaseDate(new Date().toISOString().split('T')[0])
     setBatchNumber('')
+    setPurchaseMode('unidade')
+    setNumBoxes('')
+    setUnitsPerBox('')
+    setBoxPrice('')
   }
 
   const handleTabChange = (type) => {
@@ -164,14 +190,20 @@ export default function Compras() {
     }
 
     if (!medId) throw new Error('Selecione um medicamento.')
-    if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
-    if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+    if (purchaseMode === 'caixa') {
+      if (!nBoxes || nBoxes <= 0) throw new Error('Informe a quantidade de caixas.')
+      if (!uPerBox || uPerBox <= 0) throw new Error('Informe as unidades por caixa.')
+      if (!bxPrice || bxPrice <= 0) throw new Error('Informe o preco da caixa.')
+    } else {
+      if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
+      if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+    }
 
     await api.post('/bottles', {
       medicine_id: parseInt(medId),
-      quantity: qty,
+      quantity: effectiveQty,
       volume_ml: volumeMl,
-      purchase_cost_per_unit: uPrice,
+      purchase_cost_per_unit: effectiveUnitPrice,
       units_per_box: isNewMedicine ? parseInt(newMedicineUnitsPerBox) || 1 : undefined,
       purchased_at: purchaseDate,
       batch_number: batchNumber || undefined,
@@ -195,20 +227,26 @@ export default function Compras() {
     }
 
     if (!medId) throw new Error('Selecione um descartavel.')
-    if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
-    if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+    if (purchaseMode === 'caixa') {
+      if (!nBoxes || nBoxes <= 0) throw new Error('Informe a quantidade de caixas.')
+      if (!uPerBox || uPerBox <= 0) throw new Error('Informe as unidades por caixa.')
+      if (!bxPrice || bxPrice <= 0) throw new Error('Informe o preco da caixa.')
+    } else {
+      if (!qty || qty <= 0) throw new Error('Informe a quantidade.')
+      if (!uPrice || uPrice <= 0) throw new Error('Informe o valor unitario.')
+    }
 
     await api.post('/stock/purchase', {
       medicine_id: parseInt(medId),
-      quantity: qty,
-      unit_cost: uPrice,
+      quantity: effectiveQty,
+      unit_cost: effectiveUnitPrice,
       supplier: null,
       notes: `Compra de descartavel`,
     })
 
     // Update cost_per_unit on the medicine
     await api.put(`/medicines/${medId}`, {
-      cost_per_unit: uPrice,
+      cost_per_unit: effectiveUnitPrice,
     }).catch(() => {})
   }
 
@@ -403,32 +441,94 @@ export default function Compras() {
               </div>
             )}
 
-            {/* Quantity */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade comprada</label>
-              <input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="Ex: 10"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
+            {/* Purchase mode toggle */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Modo de compra</label>
+              <div className="flex gap-2">
+                {[{ key: 'unidade', label: 'Unidades' }, { key: 'caixa', label: 'Caixas', icon: Box }].map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setPurchaseMode(t.key)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium border transition min-h-[44px] ${
+                      purchaseMode === t.key
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-teal-400'
+                    }`}
+                  >
+                    {t.icon && <t.icon size={16} />}
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Unit price */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Valor unitario (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                placeholder="Ex: 28.00"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
+            {purchaseMode === 'unidade' ? (
+              <>
+                {/* Unidade mode: Quantity + Unit price */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="Ex: 10"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Preco unitario (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(e.target.value)}
+                    placeholder="Ex: 28.00"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Caixa mode: Boxes, Units per box, Box price */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade de caixas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={numBoxes}
+                    onChange={(e) => setNumBoxes(e.target.value)}
+                    placeholder="Ex: 2"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Unidades por caixa</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={unitsPerBox}
+                    onChange={(e) => setUnitsPerBox(e.target.value)}
+                    placeholder="Ex: 5"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Preco da caixa (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={boxPrice}
+                    onChange={(e) => setBoxPrice(e.target.value)}
+                    placeholder="Ex: 120.00"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </>
+            )}
 
             {/* Purchase date */}
             <div>
@@ -457,28 +557,24 @@ export default function Compras() {
           </div>
 
           {/* Auto-calculated summary */}
-          {(qty > 0 || uPrice > 0) && (
-            <div className={`bg-slate-50 rounded-lg p-4 grid grid-cols-1 ${activeType === 'farmaco' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
+          {(effectiveQty > 0 || effectiveUnitPrice > 0 || totalPrice > 0) && (
+            <div className={`bg-slate-50 rounded-lg p-4 grid grid-cols-2 ${activeType === 'farmaco' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-4`}>
               <div>
-                <p className="text-xs text-slate-500 mb-0.5">Valor total</p>
+                <p className="text-xs text-slate-500 mb-0.5">Valor total da compra</p>
                 <p className="text-lg font-bold text-slate-800">{fmt(totalPrice)}</p>
               </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-0.5">Total de unidades</p>
+                <p className="text-lg font-bold text-slate-800">{effectiveQty > 0 ? effectiveQty : '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-0.5">Preco por unidade</p>
+                <p className="text-lg font-bold text-teal-700">{effectiveUnitPrice > 0 ? fmt(effectiveUnitPrice) : '-'}</p>
+              </div>
               {activeType === 'farmaco' && (
-                <>
-                  <div>
-                    <p className="text-xs text-slate-500 mb-0.5">Volume unitario</p>
-                    <p className="text-lg font-bold text-slate-800">{volumeMl > 0 ? `${volumeMl} ml` : '-'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 mb-0.5">Custo por ml</p>
-                    <p className="text-lg font-bold text-teal-700">{costPerMl > 0 ? fmt(costPerMl) + '/ml' : '-'}</p>
-                  </div>
-                </>
-              )}
-              {activeType === 'descartavel' && (
                 <div>
-                  <p className="text-xs text-slate-500 mb-0.5">Custo unitario</p>
-                  <p className="text-lg font-bold text-teal-700">{uPrice > 0 ? fmt(uPrice) : '-'}</p>
+                  <p className="text-xs text-slate-500 mb-0.5">Preco por mL</p>
+                  <p className="text-lg font-bold text-teal-700">{costPerMl > 0 ? fmt(costPerMl) + '/mL' : '-'}</p>
                 </div>
               )}
             </div>
