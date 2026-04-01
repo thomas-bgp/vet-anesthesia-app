@@ -29,28 +29,36 @@ export default function Perfil() {
   }, [user])
 
   // Initialize canvas
+  const canvasInited = useRef(false)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width * 2
-    canvas.height = rect.height * 2
-    ctx.scale(2, 2)
+
+    // Only set dimensions once (resetting clears the canvas)
+    if (!canvasInited.current) {
+      canvas.width = rect.width * 2
+      canvas.height = rect.height * 2
+      ctx.scale(2, 2)
+      canvasInited.current = true
+    }
+
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.lineWidth = 2
     ctx.strokeStyle = '#1e293b'
 
     // Draw existing signature if any
-    if (signatureImage) {
+    if (signatureImage && !hasDrawn) {
+      ctx.clearRect(0, 0, rect.width, rect.height)
       const img = new Image()
       img.onload = () => {
         ctx.drawImage(img, 0, 0, rect.width, rect.height)
       }
       img.src = signatureImage
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [signatureImage, hasDrawn])
 
   const getPos = useCallback((e) => {
     const canvas = canvasRef.current
