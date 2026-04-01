@@ -13,6 +13,7 @@ import Perfil from './pages/Perfil'
 import Compras from './pages/Compras'
 import Financeiro from './pages/Financeiro'
 import AReceber from './pages/AReceber'
+import Controladoria from './pages/Controladoria'
 
 const router = createBrowserRouter([
   {
@@ -38,6 +39,7 @@ const router = createBrowserRouter([
           { path: '/a-receber', element: <AReceber /> },
           { path: '/resumo', element: <Resumo /> },
           { path: '/financeiro', element: <Financeiro /> },
+          { path: '/controladoria', element: <Controladoria /> },
           { path: '/perfil', element: <Perfil /> },
         ],
       },
