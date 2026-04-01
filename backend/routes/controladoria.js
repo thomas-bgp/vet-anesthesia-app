@@ -188,12 +188,16 @@ router.get('/dre', authenticateToken, async (req, res) => {
       [userId, month]
     );
 
-    // 3. Stock purchases (auto cost)
+    // 3. Stock purchases (auto cost) — grouped by medicine+purchased_at from bottles
     const stockPurchases = await queryRows(
-      `SELECT sm.id, m.name, sm.total_cost, sm.created_at
-       FROM stock_movements sm
-       JOIN medicines m ON sm.medicine_id = m.id
-       WHERE sm.user_id = $1 AND sm.type = 'purchase' AND to_char(sm.created_at, 'YYYY-MM') = $2`,
+      `SELECT m.id, m.name, mb.purchased_at as date,
+              COUNT(*)::int as qty,
+              SUM(mb.purchase_cost)::numeric as total_cost
+       FROM medicine_bottles mb
+       JOIN medicines m ON mb.medicine_id = m.id
+       WHERE mb.user_id = $1 AND to_char(mb.purchased_at, 'YYYY-MM') = $2
+       GROUP BY m.id, m.name, mb.purchased_at
+       ORDER BY mb.purchased_at`,
       [userId, month]
     );
 
@@ -222,7 +226,7 @@ router.get('/dre', authenticateToken, async (req, res) => {
         const amt = parseFloat(p.total_cost) || 0;
         dre[medCC].categories.medicamentos_insumos.total += amt;
         dre[medCC].categories.medicamentos_insumos.entries.push({
-          id: p.id, description: p.name, amount: amt, date: p.created_at, source: 'auto',
+          id: p.id, description: `${p.name} (${p.qty}un)`, amount: amt, date: p.date, source: 'auto',
         });
       }
     }
@@ -288,7 +292,7 @@ router.get('/summary', authenticateToken, async (req, res) => {
       const sr = await queryRows(`SELECT COALESCE(SUM(revenue), 0)::numeric as total FROM surgeries WHERE user_id = $1 AND paid = true AND to_char(paid_at, 'YYYY-MM') = $2`, [userId, month]);
       const ar = parseFloat(sr[0]?.total) || 0;
 
-      const sp = await queryRows(`SELECT COALESCE(SUM(total_cost), 0)::numeric as total FROM stock_movements WHERE user_id = $1 AND type = 'purchase' AND to_char(created_at, 'YYYY-MM') = $2`, [userId, month]);
+      const sp = await queryRows(`SELECT COALESCE(SUM(purchase_cost), 0)::numeric as total FROM medicine_bottles WHERE user_id = $1 AND to_char(purchased_at, 'YYYY-MM') = $2`, [userId, month]);
       const ad = parseFloat(sp[0]?.total) || 0;
 
       const receita = mr + ar, despesa = md + ad;
