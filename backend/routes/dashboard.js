@@ -36,9 +36,15 @@ router.get('/', authenticateToken, async (req, res) => {
     const monthlyRevenue = await queryRows(`
       SELECT
         to_char(COALESCE(start_time, created_at), 'YYYY-MM') as month,
-        COUNT(*)::int as count
+        COUNT(*)::int as count,
+        COALESCE(SUM(revenue), 0)::numeric as total_revenue,
+        COALESCE(SUM(CASE WHEN paid = true THEN revenue ELSE 0 END), 0)::numeric as paid_revenue,
+        COALESCE(SUM(CASE WHEN COALESCE(paid, false) = false AND revenue > 0 THEN revenue ELSE 0 END), 0)::numeric as pending_revenue,
+        SUM(CASE WHEN paid = true THEN 1 ELSE 0 END)::int as paid_count,
+        SUM(CASE WHEN COALESCE(paid, false) = false AND revenue > 0 THEN 1 ELSE 0 END)::int as pending_count
       FROM surgeries
       WHERE user_id = $1
+        AND status != 'cancelled'
         AND created_at >= $2
       GROUP BY to_char(COALESCE(start_time, created_at), 'YYYY-MM')
       ORDER BY month ASC
