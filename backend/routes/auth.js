@@ -156,6 +156,12 @@ router.post('/login', async (req, res) => {
         professional_title: user.professional_title,
         crmv_number: user.crmv_number,
         signature_image: user.signature_image,
+        theme_color: user.theme_color,
+        logo_image: user.logo_image,
+        business_address: user.business_address,
+        business_phone: user.business_phone,
+        business_email: user.business_email,
+        onboarding_done: user.onboarding_done,
         created_at: user.created_at,
       },
     });
@@ -171,7 +177,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const supabase = getSupabase();
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -189,22 +195,32 @@ router.get('/me', authenticateToken, async (req, res) => {
 // PUT /api/auth/profile
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { full_name, professional_title, crmv_number, signature_image } = req.body;
+    const { full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done } = req.body;
     const supabase = getSupabase();
+
+    const updateData = {
+      full_name: full_name || null,
+      professional_title: professional_title || 'Médica Veterinária',
+      crmv_number: crmv_number || null,
+      signature_image: signature_image || null,
+    };
+
+    // Only include branding fields if they were explicitly sent
+    if (theme_color !== undefined) updateData.theme_color = theme_color || '#0d9488';
+    if (logo_image !== undefined) updateData.logo_image = logo_image || null;
+    if (business_address !== undefined) updateData.business_address = business_address || null;
+    if (business_phone !== undefined) updateData.business_phone = business_phone || null;
+    if (business_email !== undefined) updateData.business_email = business_email || null;
+    if (onboarding_done !== undefined) updateData.onboarding_done = onboarding_done;
 
     await supabase
       .from('users')
-      .update({
-        full_name: full_name || null,
-        professional_title: professional_title || 'Médica Veterinária',
-        crmv_number: crmv_number || null,
-        signature_image: signature_image || null,
-      })
+      .update(updateData)
       .eq('id', req.user.id);
 
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, created_at')
       .eq('id', req.user.id)
       .single();
 

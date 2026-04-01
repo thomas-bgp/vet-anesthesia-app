@@ -301,8 +301,18 @@ export default function FichaDetail() {
 
       {/* Print-only professional header */}
       <div className="print-only print-header">
-        <h1>Ficha de Anestesia Veterinária</h1>
-        {profile?.clinic_name && <p>{profile.clinic_name}</p>}
+        {profile?.logo_image && (
+          <img src={profile.logo_image} alt="Logo" style={{ maxHeight: '50px', margin: '0 auto 6pt', display: 'block' }} />
+        )}
+        {profile?.full_name && (
+          <p style={{ fontSize: '12pt', fontWeight: 700, margin: '0 0 2pt' }}>{profile.full_name}</p>
+        )}
+        {(profile?.business_address || profile?.business_phone || profile?.business_email) && (
+          <p style={{ fontSize: '8pt', color: '#555', margin: '0 0 4pt' }}>
+            {[profile.business_address, profile.business_phone, profile.business_email].filter(Boolean).join(' | ')}
+          </p>
+        )}
+        <h1>Ficha de Anestesia Veterinaria</h1>
         <p style={{ fontSize: '9pt', color: '#666', marginTop: '2pt' }}>
           Data: {fmtDate(surgery.start_time || surgery.created_at)}
           {surgery.clinic_name ? ` — ${surgery.clinic_name}` : ''}

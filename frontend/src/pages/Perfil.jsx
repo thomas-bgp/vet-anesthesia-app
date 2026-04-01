@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { LogOut, User, Save, Trash2, Check } from 'lucide-react'
+import { LogOut, User, Save, Trash2, Check, Upload, Palette } from 'lucide-react'
 import api from '../api/axios'
+
+const THEME_COLORS = [
+  { name: 'Teal', value: '#0d9488' },
+  { name: 'Azul', value: '#2563eb' },
+  { name: 'Indigo', value: '#4f46e5' },
+  { name: 'Roxo', value: '#7c3aed' },
+  { name: 'Rosa', value: '#e11d48' },
+  { name: 'Cinza', value: '#475569' },
+]
 
 export default function Perfil() {
   const { user, logout, updateUser } = useAuth()
@@ -10,6 +19,11 @@ export default function Perfil() {
   const [professionalTitle, setProfessionalTitle] = useState('Médica Veterinária')
   const [crmvNumber, setCrmvNumber] = useState('')
   const [signatureImage, setSignatureImage] = useState(null)
+  const [themeColor, setThemeColor] = useState('#0d9488')
+  const [logoImage, setLogoImage] = useState(null)
+  const [businessAddress, setBusinessAddress] = useState('')
+  const [businessPhone, setBusinessPhone] = useState('')
+  const [businessEmail, setBusinessEmail] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -25,6 +39,11 @@ export default function Perfil() {
       setProfessionalTitle(user.professional_title || 'Médica Veterinária')
       setCrmvNumber(user.crmv_number || '')
       setSignatureImage(user.signature_image || null)
+      setThemeColor(user.theme_color || '#0d9488')
+      setLogoImage(user.logo_image || null)
+      setBusinessAddress(user.business_address || '')
+      setBusinessPhone(user.business_phone || '')
+      setBusinessEmail(user.business_email || '')
     }
   }, [user])
 
@@ -149,7 +168,12 @@ export default function Perfil() {
         full_name: fullName,
         professional_title: professionalTitle,
         crmv_number: crmvNumber,
-        signature_image: sig
+        signature_image: sig,
+        theme_color: themeColor,
+        logo_image: logoImage,
+        business_address: businessAddress,
+        business_phone: businessPhone,
+        business_email: businessEmail,
       })
       updateUser(res.data.user)
       setSaved(true)
@@ -264,6 +288,7 @@ export default function Perfil() {
               ? 'bg-green-100 text-green-700'
               : 'bg-teal-600 text-white active:bg-teal-700'
           }`}
+          style={!saved ? { backgroundColor: themeColor } : {}}
         >
           {saved ? (
             <>
@@ -274,6 +299,132 @@ export default function Perfil() {
             <>
               <Save size={18} />
               {saving ? 'Salvando...' : 'Salvar perfil'}
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Branding / Personalização */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+          <Palette size={14} />
+          Personalização da Ficha
+        </h2>
+
+        {/* Theme color */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Cor tema</label>
+          <div className="flex gap-3 flex-wrap">
+            {THEME_COLORS.map(c => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setThemeColor(c.value)}
+                className="w-10 h-10 rounded-full border-2 transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
+                style={{
+                  backgroundColor: c.value,
+                  borderColor: themeColor === c.value ? '#1e293b' : 'transparent',
+                  transform: themeColor === c.value ? 'scale(1.15)' : 'scale(1)',
+                }}
+                title={c.name}
+              >
+                {themeColor === c.value && <Check size={18} className="text-white" />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Logo upload */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
+          <p className="text-xs text-slate-400 mb-2">Aparece no cabeçalho da ficha impressa</p>
+          {logoImage ? (
+            <div className="flex items-center gap-3">
+              <img src={logoImage} alt="Logo" className="h-12 max-w-[200px] object-contain rounded border border-slate-200 p-1" />
+              <button
+                type="button"
+                onClick={() => setLogoImage(null)}
+                className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]"
+              >
+                <Trash2 size={14} />
+                Remover
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 text-sm cursor-pointer active:bg-slate-100 min-h-[44px]">
+              <Upload size={16} />
+              Enviar logo
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => setLogoImage(ev.target.result)
+                  reader.readAsDataURL(file)
+                }}
+                className="hidden"
+              />
+            </label>
+          )}
+        </div>
+
+        {/* Business address */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Endereco</label>
+          <input
+            type="text"
+            value={businessAddress}
+            onChange={e => setBusinessAddress(e.target.value)}
+            placeholder="Rua Exemplo, 123 - Cidade/UF"
+            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]"
+          />
+        </div>
+
+        {/* Business phone */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
+          <input
+            type="text"
+            value={businessPhone}
+            onChange={e => setBusinessPhone(e.target.value)}
+            placeholder="(11) 99999-9999"
+            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]"
+          />
+        </div>
+
+        {/* Business email */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">E-mail profissional</label>
+          <input
+            type="email"
+            value={businessEmail}
+            onChange={e => setBusinessEmail(e.target.value)}
+            placeholder="contato@veterinaria.com"
+            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]"
+          />
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={`flex items-center justify-center gap-2 w-full py-3 font-medium rounded-xl text-sm min-h-[48px] transition ${
+            saved
+              ? 'bg-green-100 text-green-700'
+              : 'text-white active:opacity-90'
+          }`}
+          style={!saved ? { backgroundColor: themeColor } : {}}
+        >
+          {saved ? (
+            <>
+              <Check size={18} />
+              Salvo!
+            </>
+          ) : (
+            <>
+              <Save size={18} />
+              {saving ? 'Salvando...' : 'Salvar personalização'}
             </>
           )}
         </button>
