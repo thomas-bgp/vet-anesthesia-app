@@ -130,7 +130,11 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'medicine_id e volume_ml são obrigatórios' });
     }
 
-    const totalUnits = quantity * units_per_box;
+    if (parseInt(quantity) > 200) {
+      return res.status(400).json({ error: 'Máximo de 200 unidades por compra' });
+    }
+
+    const totalUnits = parseInt(quantity) || 1;
     const costPerMl = purchase_cost_per_unit > 0 ? purchase_cost_per_unit / volume_ml : 0;
 
     // Insert bottles
