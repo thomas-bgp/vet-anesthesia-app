@@ -371,6 +371,247 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// ─── GET /analytics ──────────────────────────────────────────────────────────
+router.get('/analytics', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // ── a) Resultado Acumulado (last 12 months) ─────────────────────────────
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    const acumuladoData = [];
+    let acumulado = 0;
+
+    for (const m of months) {
+      // Receita: paid surgeries + manual receita entries
+      const surgRevenueRows = await queryRows(
+        `SELECT COALESCE(SUM(revenue), 0)::numeric AS total FROM surgeries WHERE user_id = $1 AND paid = true AND to_char(paid_at, 'YYYY-MM') = $2`,
+        [userId, m]
+      );
+      const manualReceitaRows = await queryRows(
+        `SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM controladoria WHERE user_id = $1 AND type = 'receita' AND to_char(date, 'YYYY-MM') = $2`,
+        [userId, m]
+      );
+      const receita = (parseFloat(surgRevenueRows[0]?.total) || 0) + (parseFloat(manualReceitaRows[0]?.total) || 0);
+
+      // Despesa: bottle purchases + manual despesa entries
+      const bottleCostRows = await queryRows(
+        `SELECT COALESCE(SUM(purchase_cost), 0)::numeric AS total FROM medicine_bottles WHERE user_id = $1 AND to_char(purchased_at, 'YYYY-MM') = $2`,
+        [userId, m]
+      );
+      const manualDespesaRows = await queryRows(
+        `SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM controladoria WHERE user_id = $1 AND type = 'despesa' AND to_char(date, 'YYYY-MM') = $2`,
+        [userId, m]
+      );
+      const despesa = (parseFloat(bottleCostRows[0]?.total) || 0) + (parseFloat(manualDespesaRows[0]?.total) || 0);
+
+      const resultado = receita - despesa;
+      acumulado += resultado;
+
+      acumuladoData.push({
+        month: m,
+        receita: Math.round(receita * 100) / 100,
+        despesa: Math.round(despesa * 100) / 100,
+        resultado: Math.round(resultado * 100) / 100,
+        acumulado: Math.round(acumulado * 100) / 100,
+      });
+    }
+
+    // ── b) Break Even ───────────────────────────────────────────────────────
+    // Fixed monthly costs: average of last 3 months manual despesa (excluding medicamentos_insumos)
+    const threeMonthsAgo = [];
+    for (let i = 3; i >= 1; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      threeMonthsAgo.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    const fixedCostRows = await queryRows(
+      `SELECT COALESCE(SUM(amount), 0)::numeric AS total
+       FROM controladoria
+       WHERE user_id = $1
+         AND type = 'despesa'
+         AND category != 'medicamentos_insumos'
+         AND to_char(date, 'YYYY-MM') = ANY($2::text[])`,
+      [userId, `{${threeMonthsAgo.join(',')}}`]
+    );
+    const fixedCostsTotal = parseFloat(fixedCostRows[0]?.total) || 0;
+    const fixedCostsMonthly = threeMonthsAgo.length > 0 ? fixedCostsTotal / threeMonthsAgo.length : 0;
+
+    // Avg revenue per surgery (last 6 months)
+    const sixMonthsAgo = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      sixMonthsAgo.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    const surgRevRows = await queryRows(
+      `SELECT COALESCE(SUM(revenue), 0)::numeric AS total_rev, COUNT(*)::int AS cnt
+       FROM surgeries
+       WHERE user_id = $1 AND paid = true AND to_char(paid_at, 'YYYY-MM') = ANY($2::text[])`,
+      [userId, `{${sixMonthsAgo.join(',')}}`]
+    );
+    const totalSurgRevenue = parseFloat(surgRevRows[0]?.total_rev) || 0;
+    const totalSurgCount = parseInt(surgRevRows[0]?.cnt) || 0;
+    const avgRevenuePerSurgery = totalSurgCount > 0 ? totalSurgRevenue / totalSurgCount : 0;
+
+    // Avg variable cost per surgery: bottle_usages cost / surgery count (last 6 months)
+    const usageCostRows = await queryRows(
+      `SELECT COALESCE(SUM(bu.cost), 0)::numeric AS total_cost, COUNT(DISTINCT bu.surgery_id)::int AS surg_count
+       FROM bottle_usages bu
+       JOIN surgeries s ON bu.surgery_id = s.id
+       WHERE bu.user_id = $1 AND to_char(bu.used_at, 'YYYY-MM') = ANY($2::text[])`,
+      [userId, `{${sixMonthsAgo.join(',')}}`]
+    );
+    let avgVariableCostPerSurgery = 0;
+    const usageCost = parseFloat(usageCostRows[0]?.total_cost) || 0;
+    const usageSurgCount = parseInt(usageCostRows[0]?.surg_count) || 0;
+
+    if (usageSurgCount > 0) {
+      avgVariableCostPerSurgery = usageCost / usageSurgCount;
+    } else if (totalSurgCount > 0) {
+      // Fallback: total purchase cost in period / surgery count
+      const purchCostRows = await queryRows(
+        `SELECT COALESCE(SUM(purchase_cost), 0)::numeric AS total
+         FROM medicine_bottles
+         WHERE user_id = $1 AND to_char(purchased_at, 'YYYY-MM') = ANY($2::text[])`,
+        [userId, `{${sixMonthsAgo.join(',')}}`]
+      );
+      avgVariableCostPerSurgery = (parseFloat(purchCostRows[0]?.total) || 0) / totalSurgCount;
+    }
+
+    // Break even calculations
+    let breakEvenSurgeries = null;
+    let breakEvenRevenue = null;
+    const margin = avgRevenuePerSurgery - avgVariableCostPerSurgery;
+    if (margin > 0) {
+      breakEvenSurgeries = Math.ceil(fixedCostsMonthly / margin);
+      breakEvenRevenue = Math.round(fixedCostsMonthly / (1 - avgVariableCostPerSurgery / avgRevenuePerSurgery));
+    }
+
+    // Current month stats
+    const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const curMonthRows = await queryRows(
+      `SELECT COALESCE(SUM(revenue), 0)::numeric AS total_rev, COUNT(*)::int AS cnt
+       FROM surgeries
+       WHERE user_id = $1 AND paid = true AND to_char(paid_at, 'YYYY-MM') = $2`,
+      [userId, curMonth]
+    );
+    const currentMonthSurgeries = parseInt(curMonthRows[0]?.cnt) || 0;
+    const currentMonthRevenue = parseFloat(curMonthRows[0]?.total_rev) || 0;
+
+    const breakEven = {
+      fixed_costs_monthly: Math.round(fixedCostsMonthly * 100) / 100,
+      avg_revenue_per_surgery: Math.round(avgRevenuePerSurgery * 100) / 100,
+      avg_variable_cost_per_surgery: Math.round(avgVariableCostPerSurgery * 100) / 100,
+      break_even_surgeries: breakEvenSurgeries,
+      break_even_revenue: breakEvenRevenue,
+      current_month_surgeries: currentMonthSurgeries,
+      current_month_revenue: Math.round(currentMonthRevenue * 100) / 100,
+      above_break_even: breakEvenSurgeries !== null ? currentMonthSurgeries >= breakEvenSurgeries : null,
+    };
+
+    // ── c) Necessidade de Caixa ─────────────────────────────────────────────
+    const ninetyDaysAgo = new Date(now);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const ninetyDaysStr = ninetyDaysAgo.toISOString().slice(0, 10);
+
+    // Get active medicines with stock info
+    const medicinesRows = await queryRows(
+      `SELECT m.id, m.name, m.concentration, m.cost_per_unit, m.min_stock,
+              COUNT(mb.id) FILTER (WHERE mb.status IN ('sealed', 'opened'))::int AS current_units,
+              COUNT(mb.id) FILTER (WHERE mb.status IN ('empty', 'discarded') AND mb.created_at >= $2::date)::int AS used_90d
+       FROM medicines m
+       LEFT JOIN medicine_bottles mb ON mb.medicine_id = m.id AND mb.user_id = $1
+       WHERE m.user_id = $1 AND m.is_active = 1
+       GROUP BY m.id, m.name, m.concentration, m.cost_per_unit, m.min_stock
+       HAVING COUNT(mb.id) > 0
+       ORDER BY m.name`,
+      [userId, ninetyDaysStr]
+    );
+
+    // Fallback: surgery_medicines usage count for medicines with no bottle usage data
+    const surgMedUsage = await queryRows(
+      `SELECT sm.medicine_id, COUNT(DISTINCT sm.surgery_id)::int AS usage_count
+       FROM surgery_medicines sm
+       JOIN surgeries s ON sm.surgery_id = s.id
+       WHERE s.user_id = $1 AND sm.administered_at >= $2::date
+       GROUP BY sm.medicine_id`,
+      [userId, ninetyDaysStr]
+    );
+    const surgUsageMap = {};
+    for (const r of surgMedUsage) surgUsageMap[r.medicine_id] = parseInt(r.usage_count) || 0;
+
+    const cashItems = [];
+    let minDays = Infinity;
+    let minDaysMedicine = null;
+
+    for (const med of medicinesRows) {
+      const currentUnits = parseInt(med.current_units) || 0;
+      const used90d = parseInt(med.used_90d) || 0;
+      const costPerUnit = parseFloat(med.cost_per_unit) || 0;
+      const minStock = parseFloat(med.min_stock) || 1;
+
+      // Consumption rate: bottles used in 90 days, or fallback to surgery usage
+      let consumptionPer90d = used90d;
+      if (consumptionPer90d === 0 && surgUsageMap[med.id]) {
+        // Estimate: each surgery usage ~ 1 bottle (rough approximation)
+        consumptionPer90d = surgUsageMap[med.id];
+      }
+
+      const consumptionPerMonth = consumptionPer90d > 0 ? (consumptionPer90d / 90) * 30 : 0;
+      const dailyRate = consumptionPer90d / 90;
+      const daysUntilEmpty = dailyRate > 0 ? Math.round(currentUnits / dailyRate) : (currentUnits > 0 ? 999 : 0);
+      const restockCost = Math.round(costPerUnit * Math.max(minStock, 1) * 100) / 100;
+
+      let urgency = 'ok';
+      if (currentUnits === 0) urgency = 'empty';
+      else if (daysUntilEmpty <= 7) urgency = 'critical';
+      else if (daysUntilEmpty <= 30) urgency = 'soon';
+
+      if (daysUntilEmpty < minDays && currentUnits > 0) {
+        minDays = daysUntilEmpty;
+        minDaysMedicine = med.name;
+      }
+
+      cashItems.push({
+        medicine_id: med.id,
+        name: med.name,
+        concentration: med.concentration || '',
+        current_units: currentUnits,
+        consumption_per_month: Math.round(consumptionPerMonth * 10) / 10,
+        days_until_empty: daysUntilEmpty > 999 ? null : daysUntilEmpty,
+        restock_cost: restockCost,
+        urgency,
+      });
+    }
+
+    // Sort: critical first, then soon, then ok, then empty
+    const urgencyOrder = { critical: 0, soon: 1, ok: 2, empty: 3 };
+    cashItems.sort((a, b) => (urgencyOrder[a.urgency] ?? 99) - (urgencyOrder[b.urgency] ?? 99));
+
+    const totalRestockCost = cashItems
+      .filter(i => i.urgency === 'critical' || i.urgency === 'soon')
+      .reduce((s, i) => s + i.restock_cost, 0);
+
+    const cashNeeds = {
+      items: cashItems,
+      total_restock_cost: Math.round(totalRestockCost * 100) / 100,
+      next_restock_days: minDays < Infinity ? minDays : null,
+      next_restock_medicine: minDaysMedicine,
+    };
+
+    res.json({ acumulado: acumuladoData, break_even: breakEven, cash_needs: cashNeeds });
+  } catch (err) {
+    console.error('Analytics error:', err);
+    res.status(500).json({ error: 'Erro ao calcular analytics' });
+  }
+});
+
 // ─── DELETE /:id ─────────────────────────────────────────────────────────────
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, X, Trash2, Zap, Settings, Save } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, X, Trash2, Zap, Settings, Save, TrendingUp, Target, Package, AlertTriangle, CheckCircle } from 'lucide-react'
+import { BarChart, Bar, ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts'
 import api from '../api/axios'
 
 const MONTHS_PT = { '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril', '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto', '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro' }
@@ -31,7 +31,7 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Controladoria() {
-  const [tab, setTab] = useState('dre') // dre | cadastro
+  const [tab, setTab] = useState('dre') // dre | analise | cadastro
   const [month, setMonth] = useState(currentMonth())
   const [dre, setDre] = useState(null)
   const [costCenters, setCostCenters] = useState([])
@@ -104,11 +104,12 @@ export default function Controladoria() {
     <div className="p-4 max-w-lg mx-auto space-y-4 pb-24">
       {/* Tab header */}
       <div className="flex items-center gap-2">
-        <button onClick={() => setTab('dre')} className={`flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'dre' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Financeiro</button>
+        <button onClick={() => setTab('dre')} className={`flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'dre' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>DRE</button>
+        <button onClick={() => setTab('analise')} className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'analise' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}><TrendingUp size={14} /> Analise</button>
         <button onClick={() => setTab('cadastro')} className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'cadastro' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}><Settings size={14} /> Cadastro</button>
       </div>
 
-      {tab === 'cadastro' ? <CadastroTab categories={categories} costCenters={costCenters} onUpdate={() => loadDre(month)} /> : (
+      {tab === 'cadastro' ? <CadastroTab categories={categories} costCenters={costCenters} onUpdate={() => loadDre(month)} /> : tab === 'analise' ? <AnaliseTab /> : (
         <>
           {/* Month nav */}
           <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 px-4 py-3">
@@ -337,6 +338,172 @@ function CategoryRow({ catKey, catData, expanded, toggle, prefix, onDelete }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Analise Tab ─────────────────────────────────────────────────────────────
+function AnaliseTab() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/controladoria/analytics')
+        setData(res.data)
+      } catch {}
+      finally { setLoading(false) }
+    })()
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-40"><div className="h-8 w-8 animate-spin rounded-full border-3 border-teal-600 border-t-transparent" /></div>
+  if (!data) return <p className="text-center text-slate-400 text-sm py-8">Sem dados disponíveis</p>
+
+  const { acumulado, break_even: be, cash_needs: cn } = data
+
+  const chartData = acumulado.map(d => ({
+    month: MONTHS_SHORT[(d.month || '').split('-')[1]] || d.month,
+    Resultado: d.resultado,
+    Acumulado: d.acumulado,
+  }))
+
+  const urgencyColor = { ok: 'text-green-600 bg-green-50', soon: 'text-amber-600 bg-amber-50', critical: 'text-red-600 bg-red-50', empty: 'text-slate-500 bg-slate-100' }
+  const urgencyLabel = { ok: 'OK', soon: 'Em breve', critical: 'Urgente', empty: 'Vazio' }
+
+  return (
+    <div className="space-y-4">
+      {/* a) Resultado Acumulado */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold text-slate-700 mb-1">Resultado Acumulado</h3>
+        <p className="text-[10px] text-slate-400 mb-3">Ultimos 12 meses: receita - despesa</p>
+        {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9 }} tickFormatter={fmtShort} axisLine={false} tickLine={false} width={48} />
+              <Tooltip content={<ChartTooltip />} />
+              <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
+              <Bar dataKey="Resultado" fill="#0d9488" barSize={14} radius={[3, 3, 0, 0]} />
+              <Area type="monotone" dataKey="Acumulado" stroke="#0d9488" fill="#ccfbf1" strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : <p className="text-center text-slate-400 text-xs py-6">Sem dados</p>}
+        <div className="flex justify-center gap-4 mt-2 text-[10px]">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-teal-600" /> Resultado mensal</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-teal-100 border border-teal-400" /> Acumulado</span>
+        </div>
+      </div>
+
+      {/* b) Break Even */}
+      <div className={`rounded-xl border p-4 ${be.above_break_even === true ? 'bg-green-50 border-green-200' : be.above_break_even === false ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+        <div className="flex items-center gap-2 mb-3">
+          <Target size={18} className="text-teal-600" />
+          <h3 className="text-sm font-semibold text-slate-700">Break Even</h3>
+        </div>
+
+        {be.break_even_surgeries !== null ? (
+          <>
+            <div className="text-center mb-3">
+              <p className="text-3xl font-bold text-teal-700">{be.break_even_surgeries}</p>
+              <p className="text-xs text-slate-500">cirurgias/mes para cobrir custos</p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="mb-3">
+              <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                <span>{be.current_month_surgeries} realizadas</span>
+                <span>Meta: {be.break_even_surgeries}</span>
+              </div>
+              <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${be.above_break_even ? 'bg-green-500' : 'bg-amber-500'}`}
+                  style={{ width: `${Math.min(100, be.break_even_surgeries > 0 ? (be.current_month_surgeries / be.break_even_surgeries) * 100 : 0)}%` }}
+                />
+              </div>
+            </div>
+
+            {be.above_break_even ? (
+              <div className="flex items-center gap-2 bg-green-100 rounded-lg px-3 py-2">
+                <CheckCircle size={16} className="text-green-600" />
+                <span className="text-xs font-semibold text-green-700">Acima do break even!</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-red-100 rounded-lg px-3 py-2">
+                <AlertTriangle size={16} className="text-red-600" />
+                <span className="text-xs font-semibold text-red-700">Faltam {be.break_even_surgeries - be.current_month_surgeries} cirurgias</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+              <div className="bg-white/70 rounded-lg p-2">
+                <p className="text-[10px] text-slate-500">Custos fixos</p>
+                <p className="text-xs font-bold text-slate-700">{fmt(be.fixed_costs_monthly)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg p-2">
+                <p className="text-[10px] text-slate-500">Receita/cir.</p>
+                <p className="text-xs font-bold text-slate-700">{fmt(be.avg_revenue_per_surgery)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg p-2">
+                <p className="text-[10px] text-slate-500">Custo var./cir.</p>
+                <p className="text-xs font-bold text-slate-700">{fmt(be.avg_variable_cost_per_surgery)}</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-center text-xs text-slate-400 py-4">Dados insuficientes para calcular break even. Registre cirurgias e despesas.</p>
+        )}
+      </div>
+
+      {/* c) Necessidade de Caixa */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Package size={18} className="text-teal-600" />
+          <h3 className="text-sm font-semibold text-slate-700">Proximas Recompras</h3>
+        </div>
+
+        {cn.items.length > 0 ? (
+          <>
+            {cn.next_restock_medicine && (
+              <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 mb-3 text-xs">
+                <span className="text-teal-700">Proximo: <strong>{cn.next_restock_medicine}</strong> em {cn.next_restock_days} dias</span>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {cn.items.map(item => (
+                <div key={item.medicine_id} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-700 truncate">{item.name}</span>
+                      {item.concentration && <span className="text-[10px] text-slate-400">{item.concentration}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500">
+                      <span>{item.current_units} un.</span>
+                      {item.consumption_per_month > 0 && <span>{item.consumption_per_month}/mes</span>}
+                      {item.days_until_empty !== null && <span>{item.days_until_empty}d restantes</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <span className="text-xs font-semibold text-slate-700">{fmt(item.restock_cost)}</span>
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${urgencyColor[item.urgency]}`}>{urgencyLabel[item.urgency]}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {cn.total_restock_cost > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-xs text-slate-500">Total recompra urgente</span>
+                <span className="text-sm font-bold text-teal-700">{fmt(cn.total_restock_cost)}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-center text-xs text-slate-400 py-4">Nenhum medicamento com estoque cadastrado.</p>
+        )}
+      </div>
     </div>
   )
 }
