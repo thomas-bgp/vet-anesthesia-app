@@ -25,10 +25,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const stockAlertsRows = await queryRows(`
       SELECT
-        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN (min_stock > 0 AND current_stock <= min_stock)
+                   OR (current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase'))
+             THEN 1 ELSE 0 END)::int as low_stock_count,
         SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count
-      FROM medicines
-      WHERE user_id = $1 AND is_active = true
+      FROM medicines m
+      WHERE m.user_id = $1 AND m.is_active = true
     `, [userId, in30days, now]);
     const stockAlerts = stockAlertsRows[0];
 
@@ -182,11 +184,13 @@ router.get('/stats', authenticateToken, async (req, res) => {
       SELECT
         COUNT(*)::int as total_medicines,
         SUM(current_stock * cost_per_unit) as total_stock_value,
-        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN (min_stock > 0 AND current_stock <= min_stock)
+                   OR (current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase'))
+             THEN 1 ELSE 0 END)::int as low_stock_count,
         SUM(CASE WHEN expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count,
         SUM(CASE WHEN expiry_date < $3 THEN 1 ELSE 0 END)::int as expired_count
-      FROM medicines
-      WHERE user_id = $1 AND is_active = true
+      FROM medicines m
+      WHERE m.user_id = $1 AND m.is_active = true
     `, [userId, in30days, now]);
     const stockStats = stockStatsRows[0];
 
@@ -407,12 +411,14 @@ router.get('/stock-alerts', authenticateToken, async (req, res) => {
 
     const lowStock = await queryRows(`
       SELECT
-        id, name, active_principle, unit,
-        current_stock, min_stock,
-        (min_stock - current_stock) as deficit,
+        m.id, m.name, m.active_principle, m.unit,
+        m.current_stock, m.min_stock,
+        (m.min_stock - m.current_stock) as deficit,
         'low_stock' as alert_type
-      FROM medicines
-      WHERE user_id = $1 AND is_active = true AND min_stock > 0 AND current_stock <= min_stock
+      FROM medicines m
+      WHERE m.user_id = $1 AND m.is_active = true
+        AND ((m.min_stock > 0 AND m.current_stock <= m.min_stock)
+          OR (m.current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase')))
       ORDER BY (current_stock / CASE WHEN min_stock = 0 THEN 1 ELSE min_stock END) ASC
     `, [req.user.id]);
 

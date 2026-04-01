@@ -72,12 +72,14 @@ router.get('/', authenticateToken, async (req, res) => {
     // Summary
     const summaryRows = await queryRows(`
       SELECT
-        SUM(current_stock * cost_per_unit) as total_value,
+        SUM(m.current_stock * m.cost_per_unit) as total_value,
         COUNT(*)::int as total_count,
-        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
-        SUM(CASE WHEN expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_count
-      FROM medicines
-      WHERE user_id = $1 AND is_active = true
+        SUM(CASE WHEN (m.min_stock > 0 AND m.current_stock <= m.min_stock)
+                   OR (m.current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase'))
+             THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN m.expiry_date <= $2 AND m.expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_count
+      FROM medicines m
+      WHERE m.user_id = $1 AND m.is_active = true
     `, [req.user.id, in30days, now]);
 
     res.json({
