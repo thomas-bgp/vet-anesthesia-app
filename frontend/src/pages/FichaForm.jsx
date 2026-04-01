@@ -834,8 +834,8 @@ export default function FichaForm() {
 
         <Section title="Transoperatório" open={sections.transoperatorio} onToggle={() => toggle('transoperatorio')} badge={vitals.length || null}>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <Field label="Início anestesia"><input type="time" name="anesthesia_start" value={(form.anesthesia_start || '').slice(-8, -3) || (form.anesthesia_start || '').slice(11, 16) || ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
-            <Field label="Início procedimento"><input type="time" name="procedure_start" value={(form.procedure_start || '').slice(-8, -3) || (form.procedure_start || '').slice(11, 16) || ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            <Field label="Início anestesia"><input type="time" value={(form.anesthesia_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            <Field label="Início procedimento"><input type="time" value={(form.procedure_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
           </div>
 
           <div className="space-y-2 mb-3">
