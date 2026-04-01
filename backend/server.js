@@ -22,6 +22,7 @@ const bottlesRoutes = require('./routes/bottles');
 const receivablesRoutes = require('./routes/receivables');
 const expensesRoutes = require('./routes/expenses');
 const controladoriaRoutes = require('./routes/controladoria');
+const signatureRoutes = require('./routes/signature');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -112,6 +113,7 @@ app.use('/api/bottles', bottlesRoutes);
 app.use('/api/receivables', receivablesRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/controladoria', controladoriaRoutes);
+app.use('/api/signatures', signatureRoutes);
 
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {

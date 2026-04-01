@@ -14,6 +14,7 @@ import Compras from './pages/Compras'
 import Financeiro from './pages/Financeiro'
 import AReceber from './pages/AReceber'
 import Controladoria from './pages/Controladoria'
+import Validar from './pages/Validar'
 
 const router = createBrowserRouter([
   {
@@ -23,6 +24,10 @@ const router = createBrowserRouter([
   {
     path: '/register',
     element: <Register />,
+  },
+  {
+    path: '/validar',
+    element: <Validar />,
   },
   {
     element: <PrivateRoute />,

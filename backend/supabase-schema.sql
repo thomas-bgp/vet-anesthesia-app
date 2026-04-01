@@ -243,6 +243,19 @@ CREATE TABLE IF NOT EXISTS price_table (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS document_signatures (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  surgery_id INTEGER REFERENCES surgeries(id),
+  hash_sha256 TEXT NOT NULL,
+  verification_code TEXT UNIQUE NOT NULL,
+  signer_name TEXT NOT NULL,
+  signer_crmv TEXT,
+  signer_ip TEXT,
+  signed_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================
 -- INDEXES
 -- ============================================================
@@ -257,6 +270,8 @@ CREATE INDEX IF NOT EXISTS idx_bottles_user ON medicine_bottles(user_id);
 CREATE INDEX IF NOT EXISTS idx_bottles_medicine ON medicine_bottles(medicine_id);
 CREATE INDEX IF NOT EXISTS idx_receivables_user ON receivables(user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_document_signatures_surgery ON document_signatures(surgery_id);
+CREATE INDEX IF NOT EXISTS idx_document_signatures_code ON document_signatures(verification_code);
 
 -- ============================================================
 -- ROW LEVEL SECURITY
@@ -302,3 +317,6 @@ CREATE POLICY disposables_user_all ON surgery_disposables FOR ALL
 
 CREATE POLICY price_table_user_all ON price_table FOR ALL USING (user_id = current_setting('app.user_id', true)::int);
 CREATE POLICY referrals_user_all ON referral_links FOR ALL USING (created_by = current_setting('app.user_id', true)::int);
+
+ALTER TABLE document_signatures ENABLE ROW LEVEL SECURITY;
+CREATE POLICY signatures_user_all ON document_signatures FOR ALL USING (user_id = current_setting('app.user_id', true)::int);

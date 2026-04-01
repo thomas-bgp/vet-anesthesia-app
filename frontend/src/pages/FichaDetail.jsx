@@ -191,6 +191,10 @@ export default function FichaDetail() {
   const [summary, setSummary] = useState(null)
   const [profile, setProfile] = useState(null)
 
+  // Electronic signature
+  const [signature, setSignature] = useState(null)
+  const [signing, setSigning] = useState(false)
+
   const load = async () => {
     try {
       const [surgeryRes, profileRes] = await Promise.all([
@@ -203,6 +207,8 @@ export default function FichaDetail() {
       setDisposables(surgeryRes.data.disposables || [])
       setSummary(surgeryRes.data.summary || null)
       setProfile(profileRes.data.user || null)
+      // Load existing signature
+      api.get(`/signatures/surgery/${id}`).then(res => setSignature(res.data.signature)).catch(() => {})
     } catch {
       setError('Erro ao carregar ficha.')
     } finally {
@@ -264,6 +270,16 @@ export default function FichaDetail() {
   }
 
   const handlePrint = () => window.print()
+
+  const handleSign = async () => {
+    setSigning(true)
+    try {
+      const res = await api.post(`/signatures/sign/${id}`)
+      setSignature(res.data.signature)
+      setTimeout(() => window.print(), 500)
+    } catch { setError('Erro ao assinar.') }
+    finally { setSigning(false) }
+  }
 
   const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'
   const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
@@ -380,14 +396,28 @@ export default function FichaDetail() {
                 <Clock size={14} />Concluir
               </button>
             )}
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[40px]"
-              title="Imprimir / Exportar PDF"
-            >
-              <Printer size={14} />
-              <span className="hidden sm:inline">Imprimir</span>
-            </button>
+            {!signature ? (
+              <button
+                onClick={handleSign}
+                disabled={signing}
+                className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[40px]"
+                title="Assinar e Imprimir"
+              >
+                <Printer size={14} />
+                <span className="hidden sm:inline">{signing ? 'Assinando...' : 'Assinar e Imprimir'}</span>
+                <span className="sm:hidden">{signing ? '...' : 'Assinar'}</span>
+              </button>
+            ) : (
+              <button
+                onClick={handlePrint}
+                className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[40px]"
+                title="Imprimir / Exportar PDF"
+              >
+                <Printer size={14} />
+                <span className="hidden sm:inline">Imprimir</span>
+                <span className="text-[9px] ml-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Assinado</span>
+              </button>
+            )}
             <button onClick={() => navigate(`/fichas/${id}/edit`)}
               className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[40px]">
               <Edit2 size={14} />Editar
@@ -713,6 +743,46 @@ export default function FichaDetail() {
           <Card title="Observações">
             <p className="text-sm text-slate-700">{surgery.monitoring_notes}</p>
           </Card>
+        )}
+
+        {/* Electronic Signature Block (print only) */}
+        {signature && (
+          <div className="print-only" style={{
+            display: 'none',
+            marginTop: '24pt',
+            padding: '12pt 16pt',
+            border: '1px solid #cbd5e1',
+            borderRadius: '6pt',
+            fontSize: '8pt',
+            color: '#334155',
+            lineHeight: '1.6',
+            pageBreakInside: 'avoid',
+          }}>
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '6pt', marginBottom: '8pt' }}>
+              <span style={{ fontSize: '8.5pt', fontWeight: 700, color: '#0d9488', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
+                Assinatura Eletronica
+              </span>
+            </div>
+            <p style={{ margin: '0 0 2pt', fontSize: '7.5pt', color: '#64748b' }}>
+              Assinado com Assinatura Eletronica (Art. 4, II da Lei 14.063/2020)
+            </p>
+            <p style={{ margin: '0 0 2pt', fontFamily: 'monospace', fontSize: '7pt', wordBreak: 'break-all' }}>
+              Hash SHA256: {signature.hash_sha256}
+            </p>
+            <p style={{ margin: '0 0 2pt', fontSize: '7.5pt' }}>
+              Codigo de verificacao: <strong>{signature.verification_code}</strong>
+            </p>
+            <p style={{ margin: '0 0 6pt', fontSize: '7.5pt' }}>
+              Validar em: {window.location.origin}/validar?code={signature.verification_code}
+            </p>
+            <p style={{ margin: 0, fontSize: '7.5pt' }}>
+              <strong>{signature.signer_name}</strong>
+              {signature.signer_crmv ? ` (${signature.signer_crmv})` : ''} assinou este documento
+              {' '}em {new Date(signature.signed_at).toLocaleDateString('pt-BR')} as{' '}
+              {new Date(signature.signed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              {signature.signer_ip ? ` via IP ${signature.signer_ip}` : ''}
+            </p>
+          </div>
         )}
 
         {/* Carimbo / Stamp (visible only in print) */}
