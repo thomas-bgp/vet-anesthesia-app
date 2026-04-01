@@ -33,7 +33,7 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     if (low_stock === 'true' || req.query.filter === 'low_stock') {
-      whereClause += ` AND m.current_stock <= m.min_stock`;
+      whereClause += ` AND m.min_stock > 0 AND m.current_stock <= m.min_stock`;
     }
 
     const now = new Date().toISOString().split('T')[0];
@@ -59,7 +59,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const medicines = await queryRows(`
       SELECT
         m.*,
-        CASE WHEN m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
+        CASE WHEN m.min_stock > 0 AND m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
         CASE WHEN m.expiry_date <= '${in30days}' AND m.expiry_date >= '${now}' THEN true ELSE false END as is_expiring_soon,
         CASE WHEN m.expiry_date < '${now}' THEN true ELSE false END as is_expired,
         (m.current_stock * m.cost_per_unit) as stock_value
@@ -74,7 +74,7 @@ router.get('/', authenticateToken, async (req, res) => {
       SELECT
         SUM(current_stock * cost_per_unit) as total_value,
         COUNT(*)::int as total_count,
-        SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
         SUM(CASE WHEN expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_count
       FROM medicines
       WHERE user_id = $1 AND is_active = true
@@ -107,7 +107,7 @@ router.get('/low-stock', authenticateToken, async (req, res) => {
       FROM medicines m
       WHERE m.user_id = $1
         AND m.is_active = true
-        AND m.current_stock <= m.min_stock
+        AND m.min_stock > 0 AND m.current_stock <= m.min_stock
       ORDER BY (m.current_stock / CASE WHEN m.min_stock = 0 THEN 1 ELSE m.min_stock END) ASC
     `, [req.user.id]);
 
@@ -154,7 +154,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const medicineRows = await queryRows(`
       SELECT
         m.*,
-        CASE WHEN m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
+        CASE WHEN m.min_stock > 0 AND m.current_stock <= m.min_stock THEN true ELSE false END as is_low_stock,
         CASE WHEN m.expiry_date <= $3 AND m.expiry_date >= $4 THEN true ELSE false END as is_expiring_soon,
         (m.current_stock * m.cost_per_unit) as stock_value
       FROM medicines m

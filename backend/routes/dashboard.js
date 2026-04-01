@@ -25,7 +25,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const stockAlertsRows = await queryRows(`
       SELECT
-        SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
         SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count
       FROM medicines
       WHERE user_id = $1 AND is_active = true
@@ -182,7 +182,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       SELECT
         COUNT(*)::int as total_medicines,
         SUM(current_stock * cost_per_unit) as total_stock_value,
-        SUM(CASE WHEN current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
+        SUM(CASE WHEN min_stock > 0 AND current_stock <= min_stock THEN 1 ELSE 0 END)::int as low_stock_count,
         SUM(CASE WHEN expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count,
         SUM(CASE WHEN expiry_date < $3 THEN 1 ELSE 0 END)::int as expired_count
       FROM medicines
@@ -412,7 +412,7 @@ router.get('/stock-alerts', authenticateToken, async (req, res) => {
         (min_stock - current_stock) as deficit,
         'low_stock' as alert_type
       FROM medicines
-      WHERE user_id = $1 AND is_active = true AND current_stock <= min_stock
+      WHERE user_id = $1 AND is_active = true AND min_stock > 0 AND current_stock <= min_stock
       ORDER BY (current_stock / CASE WHEN min_stock = 0 THEN 1 ELSE min_stock END) ASC
     `, [req.user.id]);
 
