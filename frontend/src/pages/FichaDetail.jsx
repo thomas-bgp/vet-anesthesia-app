@@ -4,6 +4,7 @@ import {
   ArrowLeft, Edit2, Play, Square, Plus, Trash2, Activity, Heart, Clock, Printer, X, AlertTriangle
 } from 'lucide-react'
 import api from '../api/axios'
+import { QRCodeSVG } from 'qrcode.react'
 
 // ─── Emergency drugs data ────────────────────────────────────────────────────
 const EMERGENCY_DRUGS = [
@@ -753,37 +754,49 @@ export default function FichaDetail() {
             display: 'none',
             marginTop: '24pt',
             padding: '12pt 16pt',
-            border: '1px solid #cbd5e1',
-            borderRadius: '6pt',
+            border: '1.5pt solid var(--print-theme, #0d9488)',
+            borderRadius: '4pt',
             fontSize: '8pt',
             color: '#334155',
             lineHeight: '1.6',
             pageBreakInside: 'avoid',
           }}>
-            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '6pt', marginBottom: '8pt' }}>
-              <span style={{ fontSize: '8.5pt', fontWeight: 700, color: '#0d9488', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
-                Assinatura Eletrônica
-              </span>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12pt' }}>
+              {/* QR Code */}
+              <div style={{ flexShrink: 0 }}>
+                <QRCodeSVG
+                  value={`${window.location.origin}/validar?code=${signature.verification_code}`}
+                  size={72}
+                  level="M"
+                  fgColor={profile?.theme_color || '#0d9488'}
+                />
+              </div>
+              {/* Signature info */}
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: '0 0 3pt', fontSize: '8.5pt', fontWeight: 700, color: 'var(--print-theme, #0d9488)', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
+                  Assinatura Eletrônica
+                </p>
+                <p style={{ margin: '0 0 2pt', fontSize: '7pt', color: '#64748b' }}>
+                  Art. 4°, II da Lei 14.063/2020
+                </p>
+                <p style={{ margin: '0 0 2pt', fontFamily: 'monospace', fontSize: '6.5pt', wordBreak: 'break-all', color: '#64748b' }}>
+                  SHA256: {signature.hash_sha256}
+                </p>
+                <p style={{ margin: '0 0 2pt', fontSize: '7.5pt' }}>
+                  Código: <strong>{signature.verification_code}</strong>
+                </p>
+                <p style={{ margin: '0 0 4pt', fontSize: '7pt', color: '#64748b' }}>
+                  Escaneie o QR code ou acesse: {window.location.origin}/validar?code={signature.verification_code}
+                </p>
+                <p style={{ margin: 0, fontSize: '7.5pt', borderTop: '0.5pt solid #e2e8f0', paddingTop: '3pt' }}>
+                  <strong>{signature.signer_name}</strong>
+                  {signature.signer_crmv ? ` (${signature.signer_crmv})` : ''} assinou em{' '}
+                  {new Date(signature.signed_at).toLocaleDateString('pt-BR')} às{' '}
+                  {new Date(signature.signed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {signature.signer_ip ? ` — IP ${signature.signer_ip}` : ''}
+                </p>
+              </div>
             </div>
-            <p style={{ margin: '0 0 2pt', fontSize: '7.5pt', color: '#64748b' }}>
-              Assinado com Assinatura Eletrônica (Art. 4, II da Lei 14.063/2020)
-            </p>
-            <p style={{ margin: '0 0 2pt', fontFamily: 'monospace', fontSize: '7pt', wordBreak: 'break-all' }}>
-              Hash SHA256: {signature.hash_sha256}
-            </p>
-            <p style={{ margin: '0 0 2pt', fontSize: '7.5pt' }}>
-              Código de verificação: <strong>{signature.verification_code}</strong>
-            </p>
-            <p style={{ margin: '0 0 6pt', fontSize: '7.5pt' }}>
-              Validar em: {window.location.origin}/validar?code={signature.verification_code}
-            </p>
-            <p style={{ margin: 0, fontSize: '7.5pt' }}>
-              <strong>{signature.signer_name}</strong>
-              {signature.signer_crmv ? ` (${signature.signer_crmv})` : ''} assinou este documento
-              {' '}em {new Date(signature.signed_at).toLocaleDateString('pt-BR')} as{' '}
-              {new Date(signature.signed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-              {signature.signer_ip ? ` via IP ${signature.signer_ip}` : ''}
-            </p>
           </div>
         )}
 

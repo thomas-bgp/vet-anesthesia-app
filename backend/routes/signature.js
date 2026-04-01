@@ -143,13 +143,32 @@ router.get('/validate/:code', async (req, res) => {
       return res.json({ valid: false, signature: null, surgery: null });
     }
 
-    // Load basic surgery info (no auth check — public validation)
+    // Load full surgery data for comparison (public validation)
     const surgeryRows = await queryRows(
-      `SELECT id, patient_name, procedure_name, clinic_name, start_time, created_at
+      `SELECT id, patient_name, patient_species, patient_breed, patient_weight, patient_age, patient_sex,
+              owner_name, procedure_name, clinic_name, surgeon_name, asa_classification, pathology,
+              start_time, created_at, anesthesia_start, procedure_start, procedure_end, anesthesia_end,
+              extubation_time, post_operative, recovery_quality, complications,
+              pre_fc, pre_fr, pre_temperature, pre_pas, pre_mucosas, pre_tpc,
+              airway_type, tube_number, breathing_mode, block_type
        FROM surgeries WHERE id = $1`,
       [sig.surgery_id]
     );
     const surgery = surgeryRows[0] || null;
+
+    const medicines = await queryRows(
+      `SELECT sm.dose, sm.dose_unit, sm.route, sm.phase, sm.administered_at, sm.drug_source,
+              COALESCE(m.name, sm.custom_name) as name
+       FROM surgery_medicines sm LEFT JOIN medicines m ON sm.medicine_id = m.id
+       WHERE sm.surgery_id = $1 ORDER BY sm.administered_at`,
+      [sig.surgery_id]
+    );
+
+    const vitals = await queryRows(
+      `SELECT recorded_at, fc, fr, spo2, etco2, pas, pam, pad, temperature, fluid_ml_kg_h, o2_l_min, anesthetic
+       FROM monitoring_vitals WHERE surgery_id = $1 ORDER BY recorded_at`,
+      [sig.surgery_id]
+    );
 
     res.json({
       valid: true,
@@ -160,12 +179,9 @@ router.get('/validate/:code', async (req, res) => {
         signed_at: sig.signed_at,
         verification_code: sig.verification_code,
       },
-      surgery: surgery ? {
-        patient_name: surgery.patient_name,
-        procedure_name: surgery.procedure_name,
-        clinic_name: surgery.clinic_name,
-        date: surgery.start_time || surgery.created_at,
-      } : null,
+      surgery,
+      medicines,
+      vitals,
     });
   } catch (err) {
     console.error('Validate signature error:', err);

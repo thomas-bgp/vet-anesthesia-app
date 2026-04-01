@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { CheckCircle, XCircle, Search, Shield, Clock, User, Stethoscope } from 'lucide-react'
+
+const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
+const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'
+const PHASE_LABELS = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', infusao: 'Infusão', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-op', bloqueio: 'Bloqueio' }
 
 export default function Validar() {
   const [searchParams] = useSearchParams()
@@ -8,265 +13,225 @@ export default function Validar() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Auto-validate if code is in URL
   useEffect(() => {
     const urlCode = searchParams.get('code')
-    if (urlCode) {
-      setCode(urlCode)
-      validate(urlCode)
-    }
+    if (urlCode) { setCode(urlCode); validate(urlCode) }
   }, [])
 
   const validate = async (verificationCode) => {
     const c = verificationCode || code
     if (!c.trim()) return
-
-    setLoading(true)
-    setError('')
-    setResult(null)
-
+    setLoading(true); setError(''); setResult(null)
     try {
       const res = await fetch(`/api/signatures/validate/${encodeURIComponent(c.trim())}`)
       const data = await res.json()
-      if (res.ok) {
-        setResult(data)
-      } else {
-        setError(data.error || 'Erro ao validar.')
-      }
-    } catch {
-      setError('Erro de conexão. Tente novamente.')
-    } finally {
-      setLoading(false)
-    }
+      if (!res.ok) throw new Error(data.error || 'Erro')
+      setResult(data)
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
-  const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
-  const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+  const s = result?.surgery
+  const sig = result?.signature
+  const meds = result?.medicines || []
+  const vitals = result?.vitals || []
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 50%, #f8fafc 100%)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '40px 16px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    }}>
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0d9488', margin: '0 0 4px' }}>
-          VetAnestesia
-        </h1>
-        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-          Validação de Assinatura Eletrônica
-        </p>
+      <div className="bg-white border-b border-slate-200 px-4 py-4">
+        <div className="max-w-2xl mx-auto flex items-center gap-3">
+          <div className="bg-teal-600 p-2 rounded-lg">
+            <Shield size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="font-bold text-slate-800 text-lg">VetAnestesia</h1>
+            <p className="text-xs text-slate-500">Verificação de autenticidade</p>
+          </div>
+        </div>
       </div>
 
-      {/* Card */}
-      <div style={{
-        background: '#fff',
-        borderRadius: '16px',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
-        padding: '32px 24px',
-        width: '100%',
-        maxWidth: '480px',
-      }}>
-        {/* Input */}
-        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
-          Código de verificação
-        </label>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && validate()}
-            placeholder="Digite o código de verificação"
-            style={{
-              flex: 1,
-              padding: '12px 14px',
-              border: '1.5px solid #e2e8f0',
-              borderRadius: '10px',
-              fontSize: '15px',
-              outline: 'none',
-              fontFamily: 'monospace',
-              letterSpacing: '0.5px',
-            }}
-          />
-          <button
-            onClick={() => validate()}
-            disabled={loading || !code.trim()}
-            style={{
-              padding: '12px 20px',
-              background: loading ? '#94a3b8' : '#0d9488',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '10px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: loading ? 'wait' : 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {loading ? 'Verificando...' : 'Verificar'}
-          </button>
+      <div className="max-w-2xl mx-auto p-4 space-y-4">
+        {/* Search */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <label className="block text-sm font-medium text-slate-700 mb-2">Código de verificação</label>
+          <div className="flex gap-2">
+            <input type="text" value={code} onChange={e => setCode(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && validate()}
+              placeholder="Cole o código aqui" className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+            <button onClick={() => validate()} disabled={loading || !code.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg active:bg-teal-700 min-h-[44px] disabled:opacity-50">
+              {loading ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <><Search size={16} /> Verificar</>}
+            </button>
+          </div>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div style={{
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '10px',
-            padding: '14px 16px',
-            color: '#dc2626',
-            fontSize: '14px',
-            marginBottom: '16px',
-          }}>
-            {error}
+        {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+
+        {/* Invalid */}
+        {result && !result.valid && (
+          <div className="bg-white rounded-xl border border-red-200 p-6 text-center">
+            <XCircle size={48} className="mx-auto text-red-500 mb-3" />
+            <h2 className="text-lg font-bold text-red-700 mb-1">Documento não encontrado</h2>
+            <p className="text-sm text-slate-500">O código informado não corresponde a nenhum documento assinado.</p>
           </div>
         )}
 
-        {/* Result: valid */}
-        {result && result.valid && (
-          <div style={{
-            background: '#f0fdf4',
-            border: '1px solid #bbf7d0',
-            borderRadius: '12px',
-            padding: '20px',
-          }}>
-            {/* Checkmark */}
-            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                background: '#22c55e',
-                marginBottom: '8px',
-              }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <p style={{ fontSize: '18px', fontWeight: 700, color: '#166534', margin: '0 0 2px' }}>
-                Documento Válido
-              </p>
-              <p style={{ fontSize: '12px', color: '#16a34a', margin: 0 }}>
-                Assinatura eletrônica verificada com sucesso
-              </p>
-            </div>
-
-            {/* Signer info */}
-            <div style={{
-              background: '#fff',
-              borderRadius: '8px',
-              padding: '14px',
-              marginBottom: '12px',
-            }}>
-              <p style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>
-                Signatário
-              </p>
-              <p style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', margin: '0 0 2px' }}>
-                {result.signature.signer_name}
-              </p>
-              {result.signature.signer_crmv && (
-                <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 2px' }}>
-                  {result.signature.signer_crmv}
-                </p>
-              )}
-              <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>
-                Assinado em {fmtDate(result.signature.signed_at)} às {fmtTime(result.signature.signed_at)}
-              </p>
-            </div>
-
-            {/* Surgery info */}
-            {result.surgery && (
-              <div style={{
-                background: '#fff',
-                borderRadius: '8px',
-                padding: '14px',
-                marginBottom: '12px',
-              }}>
-                <p style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>
-                  Documento
-                </p>
-                <div style={{ fontSize: '13px', color: '#334155' }}>
-                  <p style={{ margin: '0 0 4px' }}>
-                    <strong>Paciente:</strong> {result.surgery.patient_name}
-                  </p>
-                  <p style={{ margin: '0 0 4px' }}>
-                    <strong>Procedimento:</strong> {result.surgery.procedure_name}
-                  </p>
-                  {result.surgery.clinic_name && (
-                    <p style={{ margin: '0 0 4px' }}>
-                      <strong>Clínica:</strong> {result.surgery.clinic_name}
-                    </p>
-                  )}
-                  <p style={{ margin: 0 }}>
-                    <strong>Data:</strong> {fmtDate(result.surgery.date)}
-                  </p>
+        {/* Valid */}
+        {result?.valid && sig && (
+          <>
+            {/* Verified badge */}
+            <div className="bg-green-50 border border-green-200 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <CheckCircle size={32} className="text-green-600" />
+                <div>
+                  <h2 className="text-lg font-bold text-green-800">Documento autêntico</h2>
+                  <p className="text-xs text-green-600">Assinatura eletrônica válida (Lei 14.063/2020)</p>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Assinado por</p>
+                  <p className="font-semibold text-slate-800">{sig.signer_name}</p>
+                  {sig.signer_crmv && <p className="text-xs text-slate-500">{sig.signer_crmv}</p>}
+                </div>
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Data da assinatura</p>
+                  <p className="font-semibold text-slate-800">{fmtDate(sig.signed_at)}</p>
+                  <p className="text-xs text-slate-500">{fmtTime(sig.signed_at)}</p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-green-200">
+                <p className="text-[10px] text-green-700 font-mono break-all">SHA256: {sig.hash_sha256}</p>
+              </div>
+            </div>
+
+            {/* Surgery data — for comparison with the printed PDF */}
+            {s && (
+              <>
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <User size={14} className="text-slate-500" />
+                      <h3 className="text-sm font-semibold text-slate-700">Dados do registro assinado</h3>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Compare com o documento impresso para verificar integridade</p>
+                  </div>
+                  <div className="p-4 space-y-1 text-sm">
+                    <Row label="Paciente" value={s.patient_name} bold />
+                    <Row label="Procedimento" value={s.procedure_name} bold />
+                    <Row label="Espécie / Raça" value={[s.patient_species, s.patient_breed].filter(Boolean).join(' · ')} />
+                    <Row label="Peso" value={s.patient_weight ? `${s.patient_weight} kg` : null} />
+                    <Row label="Idade" value={s.patient_age} />
+                    <Row label="Sexo" value={s.patient_sex} />
+                    <Row label="Tutor" value={s.owner_name} />
+                    <Row label="Clínica" value={s.clinic_name} />
+                    <Row label="Cirurgião" value={s.surgeon_name} />
+                    <Row label="ASA" value={s.asa_classification} />
+                    <Row label="Data" value={fmtDate(s.start_time || s.created_at)} />
+                    {s.pre_fc && <Row label="FC basal" value={`${s.pre_fc} bpm`} />}
+                    {s.pre_fr && <Row label="FR basal" value={`${s.pre_fr} mpm`} />}
+                    {s.pre_temperature && <Row label="T°C basal" value={s.pre_temperature} />}
+                    {s.pre_pas && <Row label="PAS basal" value={`${s.pre_pas} mmHg`} />}
+                    {s.airway_type && <Row label="Via aérea" value={s.airway_type} />}
+                    {s.tube_number && <Row label="Tubo" value={s.tube_number} />}
+                    {s.anesthesia_start && <Row label="Início anestesia" value={fmtTime(s.anesthesia_start)} />}
+                    {s.procedure_start && <Row label="Início procedimento" value={fmtTime(s.procedure_start)} />}
+                    {s.procedure_end && <Row label="Fim procedimento" value={fmtTime(s.procedure_end)} />}
+                    {s.anesthesia_end && <Row label="Fim anestesia" value={fmtTime(s.anesthesia_end)} />}
+                    {s.extubation_time && <Row label="Extubação" value={fmtTime(s.extubation_time)} />}
+                  </div>
+                </div>
+
+                {/* Medicines */}
+                {meds.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <Stethoscope size={14} className="text-slate-500" />
+                        <h3 className="text-sm font-semibold text-slate-700">Fármacos utilizados</h3>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                      {meds.map((m, i) => (
+                        <div key={i} className="px-4 py-2 flex items-center justify-between text-sm">
+                          <div>
+                            <span className="font-medium text-slate-800">{m.name || '-'}</span>
+                            <span className="text-slate-400 text-xs ml-2">{PHASE_LABELS[m.phase] || m.phase}</span>
+                          </div>
+                          <div className="text-right text-xs text-slate-600">
+                            {m.dose} {m.dose_unit} {m.route ? `· ${m.route}` : ''} {m.administered_at ? `· ${fmtTime(m.administered_at)}` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Vitals */}
+                {vitals.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} className="text-slate-500" />
+                        <h3 className="text-sm font-semibold text-slate-700">Monitoração transoperatória</h3>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="text-left px-3 py-2 font-semibold text-slate-500">Hora</th>
+                            {['FC','FR','SpO2','PAS','PAM','PAD','ETCO2','T°C','Fluido','O2','Anest.'].map(h => (
+                              <th key={h} className="text-center px-1.5 py-2 font-semibold text-slate-500">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vitals.map((v, i) => (
+                            <tr key={i} className="border-b border-slate-50">
+                              <td className="px-3 py-1.5 font-mono text-slate-600">{fmtTime(v.recorded_at)}</td>
+                              {['fc','fr','spo2','pas','pam','pad','etco2','temperature','fluid_ml_kg_h','o2_l_min','anesthetic'].map(k => (
+                                <td key={k} className="text-center px-1.5 py-1.5 text-slate-700">{v[k] ?? '-'}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Post-op */}
+                {(s.post_operative || s.recovery_quality || s.complications) && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-700">Pós-operatório</h3>
+                    {s.post_operative && <p className="text-slate-600">{s.post_operative}</p>}
+                    {s.recovery_quality && <Row label="Recuperação" value={s.recovery_quality} />}
+                    {s.complications && <p className="text-slate-600 text-xs bg-amber-50 p-2 rounded">Intercorrências: {s.complications}</p>}
+                  </div>
+                )}
+              </>
             )}
-
-            {/* Hash */}
-            <div style={{
-              background: '#f8fafc',
-              borderRadius: '8px',
-              padding: '12px 14px',
-              fontFamily: 'monospace',
-              fontSize: '10px',
-              color: '#64748b',
-              wordBreak: 'break-all',
-              lineHeight: '1.5',
-            }}>
-              <span style={{ fontWeight: 700 }}>SHA256:</span> {result.signature.hash_sha256}
-            </div>
-          </div>
+          </>
         )}
 
-        {/* Result: invalid */}
-        {result && !result.valid && (
-          <div style={{
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '12px',
-            padding: '20px',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              background: '#ef4444',
-              marginBottom: '8px',
-            }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </div>
-            <p style={{ fontSize: '18px', fontWeight: 700, color: '#991b1b', margin: '0 0 4px' }}>
-              Documento não encontrado
-            </p>
-            <p style={{ fontSize: '13px', color: '#dc2626', margin: 0 }}>
-              Nenhuma assinatura corresponde a este código de verificação.
-            </p>
-          </div>
-        )}
+        {/* Footer */}
+        <div className="text-center py-6 text-xs text-slate-400">
+          <p>VetAnestesia — Sistema de Gestão para Anestesiologistas Veterinários</p>
+          <p className="mt-1">Validação de assinatura eletrônica conforme Lei 14.063/2020</p>
+        </div>
       </div>
+    </div>
+  )
+}
 
-      {/* Footer */}
-      <p style={{ marginTop: '24px', fontSize: '11px', color: '#94a3b8', textAlign: 'center' }}>
-        Validação de assinatura eletrônica conforme Lei 14.063/2020
-      </p>
+function Row({ label, value, bold }) {
+  if (!value) return null
+  return (
+    <div className="flex justify-between py-1 border-b border-slate-50">
+      <span className="text-slate-500">{label}</span>
+      <span className={`text-right ${bold ? 'font-semibold text-slate-800' : 'text-slate-700'}`}>{value}</span>
     </div>
   )
 }
