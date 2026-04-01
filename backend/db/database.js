@@ -1,8 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cjbrlsymcvosexarxlga.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqYnJsc3ltY3Zvc2V4YXJ4bGdhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTA1MTg2MSwiZXhwIjoyMDkwNjI3ODYxfQ.JVouE9YxhD-okKTccTLBbIRAGOGE8IQfi6aLzT3Q7gI';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://sgxobcmzoptayhgctsqg.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneG9iY216b3B0YXloZ2N0c3FnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTA1NDk2MywiZXhwIjoyMDkwNjMwOTYzfQ.1rFtT1n38NaRses-iIYa9PnQU2ZNzgXLW8L-0wDzriw';
 
 let supabase;
 
