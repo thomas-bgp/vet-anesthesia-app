@@ -201,6 +201,7 @@ router.post('/', authenticateToken, (req, res) => {
       units_per_box = 1,
       medicine_type = 'farmaco',
       presentation,
+      presentation_type = 'frasco',
     } = req.body;
 
     // unit is optional when creating via Compras (volume_ml path)
@@ -228,8 +229,8 @@ router.post('/', authenticateToken, (req, res) => {
       .prepare(`
         INSERT INTO medicines
           (user_id, name, active_principle, concentration, bottle_volume, unit, current_stock, min_stock,
-           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type, presentation)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           cost_per_unit, supplier, batch_number, expiry_date, units_per_box, volume_per_unit_ml, medicine_type, presentation, presentation_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         req.user.id,
@@ -247,7 +248,8 @@ router.post('/', authenticateToken, (req, res) => {
         parseInt(units_per_box) || 1,
         volume_ml ? parseFloat(volume_ml) : null,
         medicine_type || 'farmaco',
-        presentation || null
+        presentation || null,
+        presentation_type || 'frasco'
       );
 
     // Register initial stock as purchase if > 0
@@ -304,6 +306,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       batch_number = existing.batch_number,
       expiry_date = existing.expiry_date,
       presentation = existing.presentation,
+      presentation_type = existing.presentation_type,
     } = req.body;
 
     if (!name || !unit) {
@@ -323,6 +326,7 @@ router.put('/:id', authenticateToken, (req, res) => {
         batch_number = ?,
         expiry_date = ?,
         presentation = ?,
+        presentation_type = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
     `).run(
@@ -337,6 +341,7 @@ router.put('/:id', authenticateToken, (req, res) => {
       batch_number || null,
       expiry_date || null,
       presentation || null,
+      presentation_type || 'frasco',
       id,
       req.user.id
     );

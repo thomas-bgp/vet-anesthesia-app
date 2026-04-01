@@ -5,6 +5,7 @@ import api from '../api/axios'
 const EMPTY = {
   name: '', active_principle: '', concentration: '', bottle_volume: '', unit: 'mg/mL',
   current_stock: '', min_stock: '', cost_per_unit: '', supplier: '', expiry_date: '',
+  presentation_type: 'frasco',
 }
 
 export default function MedicineForm({ medicine, onClose, onSaved }) {
@@ -25,6 +26,7 @@ export default function MedicineForm({ medicine, onClose, onSaved }) {
         cost_per_unit: medicine.cost_per_unit ?? '',
         supplier: medicine.supplier || '',
         expiry_date: medicine.expiry_date ? medicine.expiry_date.slice(0, 10) : '',
+        presentation_type: medicine.presentation_type || 'frasco',
       })
     }
   }, [medicine])
@@ -47,6 +49,7 @@ export default function MedicineForm({ medicine, onClose, onSaved }) {
         current_stock: Number(form.current_stock),
         min_stock: Number(form.min_stock),
         cost_per_unit: Number(form.cost_per_unit),
+        presentation_type: form.presentation_type || 'frasco',
       }
       if (medicine?.id) {
         await api.put(`/medicines/${medicine.id}`, payload)
@@ -109,6 +112,19 @@ export default function MedicineForm({ medicine, onClose, onSaved }) {
                 <option>mcg/mL</option>
                 <option>%</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Apresentação</label>
+              <div className="flex gap-1">
+                {[['frasco', 'Frasco (mL)'], ['ampola', 'Ampola (un)']].map(([val, label]) => (
+                  <button key={val} type="button" onClick={() => setForm({ ...form, presentation_type: val })}
+                    className={`flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${form.presentation_type === val ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{label}</button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {form.presentation_type === 'ampola' ? 'Ampola: usada inteira por vez' : 'Frasco: usa mL parcialmente'}
+              </p>
             </div>
 
             <div>

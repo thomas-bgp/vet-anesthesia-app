@@ -92,6 +92,40 @@ router.get('/', authenticateToken, (req, res) => {
   }
 });
 
+// GET /api/surgeries/unpaid - list unpaid surgeries grouped by clinic
+router.get('/unpaid', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const surgeries = db.prepare(`
+      SELECT id, patient_name, procedure_name, clinic_name, surgeon_name,
+             revenue, start_time, created_at, status, paid, paid_at,
+             CAST(julianday('now') - julianday(COALESCE(start_time, created_at)) AS INTEGER) as days_ago
+      FROM surgeries
+      WHERE user_id = ? AND COALESCE(paid, 0) = 0 AND status != 'cancelled' AND revenue > 0
+      ORDER BY clinic_name ASC, start_time DESC
+    `).all(req.user.id);
+
+    const byClinic = {};
+    let totalPending = 0;
+    for (const s of surgeries) {
+      const clinic = s.clinic_name || 'Sem clínica';
+      if (!byClinic[clinic]) byClinic[clinic] = { clinic, surgeries: [], total: 0 };
+      byClinic[clinic].surgeries.push(s);
+      byClinic[clinic].total += s.revenue || 0;
+      totalPending += s.revenue || 0;
+    }
+
+    res.json({
+      clinics: Object.values(byClinic),
+      totalPending,
+      count: surgeries.length,
+    });
+  } catch (err) {
+    console.error('Unpaid surgeries error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/surgeries/:id - single surgery (alias for details)
 router.get('/:id', authenticateToken, (req, res, next) => {
   // Skip if it matches a named sub-route
@@ -918,6 +952,44 @@ router.delete('/:id', authenticateToken, (req, res) => {
     res.json({ message: 'Surgery cancelled successfully' });
   } catch (err) {
     console.error('Cancel surgery error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/surgeries/:id/pay - mark surgery as paid
+router.put('/:id/pay', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    db.prepare(`
+      UPDATE surgeries SET paid = 1, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(id);
+
+    res.json({ message: 'Marcado como pago' });
+  } catch (err) {
+    console.error('Pay surgery error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/surgeries/:id/unpay - unmark payment
+router.put('/:id/unpay', authenticateToken, (req, res) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+    const surgery = db.prepare('SELECT * FROM surgeries WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    db.prepare(`
+      UPDATE surgeries SET paid = 0, paid_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(id);
+
+    res.json({ message: 'Pagamento desmarcado' });
+  } catch (err) {
+    console.error('Unpay surgery error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

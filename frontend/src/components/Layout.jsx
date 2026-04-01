@@ -1,11 +1,12 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { ClipboardList, Package, BarChart3, User, LogOut } from 'lucide-react'
+import { ClipboardList, Package, BarChart3, User, DollarSign } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useState } from 'react'
 
 const tabs = [
   { to: '/fichas', label: 'Fichas', icon: ClipboardList },
   { to: '/estoque', label: 'Estoque', icon: Package },
+  { to: '/a-receber', label: 'A Receber', icon: DollarSign },
   { to: '/resumo', label: 'Resumo', icon: BarChart3 },
   { to: '/perfil', label: 'Perfil', icon: User },
 ]

@@ -124,6 +124,8 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase }) {
   const isAE = med.dose_ae === true
   const isOutroUnit = med.dose_unit === 'Outro'
   const isOutroRoute = med.route === 'Outro'
+  const selectedMed = med.medicine_id ? allMedicines.find(m => String(m.id) === String(med.medicine_id)) : null
+  const presType = selectedMed?.presentation_type
 
   return (
     <div className="bg-slate-50 rounded-lg p-3 space-y-2 relative">
@@ -134,8 +136,11 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase }) {
         <div className="col-span-2">
           <select value={med.medicine_id} onChange={e => onChange({ ...med, medicine_id: e.target.value })} className={sel}>
             <option value="">Selecione fármaco...</option>
-            {allMedicines.map(m => <option key={m.id} value={m.id}>{m.name} {m.concentration || ''}</option>)}
+            {allMedicines.map(m => <option key={m.id} value={m.id}>{m.name} {m.concentration || ''} {m.presentation_type === 'ampola' ? '(amp)' : ''}</option>)}
           </select>
+          {selectedMed && presType === 'ampola' && (
+            <p className="text-[10px] text-purple-600 font-medium mt-1">Ampola — unidade inteira</p>
+          )}
           {!med.medicine_id && (
             <input type="text" value={med.custom_name || ''}
               onChange={e => onChange({ ...med, custom_name: e.target.value })}

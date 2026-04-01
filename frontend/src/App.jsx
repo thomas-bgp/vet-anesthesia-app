@@ -12,6 +12,7 @@ import Resumo from './pages/Resumo'
 import Perfil from './pages/Perfil'
 import Compras from './pages/Compras'
 import Financeiro from './pages/Financeiro'
+import AReceber from './pages/AReceber'
 
 const router = createBrowserRouter([
   {
@@ -34,6 +35,7 @@ const router = createBrowserRouter([
           { path: '/fichas/:id/edit', element: <FichaForm /> },
           { path: '/estoque', element: <Estoque /> },
           { path: '/compras', element: <Compras /> },
+          { path: '/a-receber', element: <AReceber /> },
           { path: '/resumo', element: <Resumo /> },
           { path: '/financeiro', element: <Financeiro /> },
           { path: '/perfil', element: <Perfil /> },

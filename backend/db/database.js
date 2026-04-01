@@ -311,6 +311,18 @@ function initializeSchema() {
   if (!medCols.includes('presentation')) {
     try { db.exec("ALTER TABLE medicines ADD COLUMN presentation TEXT"); } catch {}
   }
+  if (!medCols.includes('presentation_type')) {
+    try { db.exec("ALTER TABLE medicines ADD COLUMN presentation_type TEXT DEFAULT 'frasco'"); } catch {}
+  }
+
+  // Surgeries: payment tracking
+  const surgeryCols2 = db.prepare("PRAGMA table_info(surgeries)").all().map(c => c.name);
+  if (!surgeryCols2.includes('paid')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN paid INTEGER DEFAULT 0'); } catch {}
+  }
+  if (!surgeryCols2.includes('paid_at')) {
+    try { db.exec('ALTER TABLE surgeries ADD COLUMN paid_at DATETIME'); } catch {}
+  }
 
   const smCols = db.prepare("PRAGMA table_info(surgery_medicines)").all().map(c => c.name);
   if (!smCols.includes('dose_mg_kg')) {

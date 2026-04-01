@@ -134,6 +134,7 @@ export default function Medicines() {
                       </div>
                       {m.active_principle && <p className="text-xs text-slate-500 mt-0.5">{m.active_principle}</p>}
                       {m.concentration && <p className="text-xs text-slate-400">{m.concentration} {m.unit || ''}</p>}
+                      {m.presentation_type && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${m.presentation_type === 'ampola' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{m.presentation_type === 'ampola' ? 'Ampola' : 'Frasco'}</span>}
                     </div>
                     {statusBadge(m)}
                   </div>
