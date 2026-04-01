@@ -164,17 +164,27 @@ router.post('/', authenticateToken, async (req, res) => {
       quantity: totalUnits,
       unit_cost: purchase_cost_per_unit,
       total_cost: purchase_cost_per_unit * totalUnits,
-      notes: `Compra de ${totalUnits} frasco(s)`,
+      notes: `Compra de ${totalUnits} unidade(s)`,
     });
 
-    // Fetch bottles with medicine name
+    // Update medicine stock count and cost
+    await queryRows(
+      `UPDATE medicines SET current_stock = current_stock + $1, cost_per_unit = $2, updated_at = NOW() WHERE id = $3`,
+      [totalUnits, purchase_cost_per_unit, medicine_id]
+    ).catch(() => {});
+
+    // Fetch bottles with medicine name using Supabase client
     const createdIds = createdBottles.map(b => b.id);
-    const bottles = await queryRows(`
-      SELECT mb.*, m.name as medicine_name
-      FROM medicine_bottles mb
-      JOIN medicines m ON mb.medicine_id = m.id
-      WHERE mb.id = ANY($1)
-    `, [createdIds]);
+    let bottles = createdBottles;
+    if (createdIds.length > 0) {
+      const idList = createdIds.join(',');
+      bottles = await queryRows(`
+        SELECT mb.*, m.name as medicine_name
+        FROM medicine_bottles mb
+        JOIN medicines m ON mb.medicine_id = m.id
+        WHERE mb.id IN (${idList})
+      `, []);
+    }
 
     res.status(201).json({ bottles, count: bottles.length });
   } catch (err) {
