@@ -153,6 +153,25 @@ export default function Perfil() {
     reader.readAsDataURL(file)
   }
 
+  // Compress image to max ~200KB
+  const compressImage = (dataUrl, maxWidth = 400) => {
+    return new Promise((resolve) => {
+      if (!dataUrl) return resolve(null)
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const scale = Math.min(1, maxWidth / img.width)
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      img.onerror = () => resolve(dataUrl)
+      img.src = dataUrl
+    })
+  }
+
   const handleSave = async () => {
     setSaving(true)
     setError('')
@@ -164,22 +183,27 @@ export default function Perfil() {
         sig = canvasRef.current.toDataURL('image/png')
       }
 
+      // Compress logo if present
+      const compressedLogo = await compressImage(logoImage)
+
       const res = await api.put('/auth/profile', {
         full_name: fullName,
         professional_title: professionalTitle,
         crmv_number: crmvNumber,
         signature_image: sig,
         theme_color: themeColor,
-        logo_image: logoImage,
+        logo_image: compressedLogo,
         business_address: businessAddress,
         business_phone: businessPhone,
         business_email: businessEmail,
       })
-      updateUser(res.data.user)
+      if (res.data?.user) {
+        updateUser(res.data.user)
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } catch {
-      setError('Erro ao salvar perfil.')
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao salvar perfil.')
     } finally {
       setSaving(false)
     }

@@ -198,20 +198,25 @@ router.put('/profile', authenticateToken, async (req, res) => {
     const { full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done } = req.body;
     const supabase = getSupabase();
 
-    const updateData = {
-      full_name: full_name || null,
-      professional_title: professional_title || 'Médica Veterinária',
-      crmv_number: crmv_number || null,
-      signature_image: signature_image || null,
-    };
+    const updateData = {};
 
-    // Only include branding fields if they were explicitly sent
+    // Core fields — only update if explicitly sent
+    if (full_name !== undefined) updateData.full_name = full_name || null;
+    if (professional_title !== undefined) updateData.professional_title = professional_title || 'Médica Veterinária';
+    if (crmv_number !== undefined) updateData.crmv_number = crmv_number || null;
+    if (signature_image !== undefined) updateData.signature_image = signature_image || null;
+
+    // Branding fields
     if (theme_color !== undefined) updateData.theme_color = theme_color || '#0d9488';
     if (logo_image !== undefined) updateData.logo_image = logo_image || null;
     if (business_address !== undefined) updateData.business_address = business_address || null;
     if (business_phone !== undefined) updateData.business_phone = business_phone || null;
     if (business_email !== undefined) updateData.business_email = business_email || null;
     if (onboarding_done !== undefined) updateData.onboarding_done = onboarding_done;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
 
     await supabase
       .from('users')
