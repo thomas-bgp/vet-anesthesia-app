@@ -162,6 +162,7 @@ router.post('/login', async (req, res) => {
         business_phone: user.business_phone,
         business_email: user.business_email,
         onboarding_done: user.onboarding_done,
+        plan: user.plan || 'free',
         created_at: user.created_at,
       },
     });
@@ -177,7 +178,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const supabase = getSupabase();
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -225,7 +226,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
 
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, created_at')
       .eq('id', req.user.id)
       .single();
 
