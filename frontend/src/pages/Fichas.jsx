@@ -44,8 +44,8 @@ export default function Fichas() {
 
   const fmtDate = (v) => {
     if (!v) return ''
-    const d = new Date(v)
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return m ? `${m[3]}/${m[2]}` : ''
   }
 
   return (

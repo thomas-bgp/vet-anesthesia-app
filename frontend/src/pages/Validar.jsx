@@ -3,8 +3,16 @@ import { useSearchParams } from 'react-router-dom'
 import { CheckCircle, XCircle, Search, Clock, User, Stethoscope } from 'lucide-react'
 import AnestifyLogo from '../components/AnestifyLogo'
 
-const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
-const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'
+const fmtDate = (v) => {
+  if (!v) return '-'
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '-'
+}
+const fmtTime = (v) => {
+  if (!v) return '-'
+  const m = String(v).match(/T(\d{2}:\d{2})/)
+  return m ? m[1] : '-'
+}
 const PHASE_LABELS = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', infusao: 'Infusão', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-op', bloqueio: 'Bloqueio' }
 
 export default function Validar() {

@@ -979,7 +979,7 @@ export default function FichaForm() {
                   <tbody>{vitals.map((v, i) => (
                     <tr key={v.id || i} className={`border-b border-slate-50 ${v.edited ? 'bg-amber-50' : ''}`}>
                       <td className="py-1 font-mono text-slate-600">
-                        <input type="time" value={v.recorded_at ? new Date(v.recorded_at).toTimeString().slice(0, 5) : ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); updateVital(i, 'recorded_at', date + 'T' + e.target.value + ':00') }} className="w-[70px] px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] bg-transparent" />
+                        <input type="time" value={v.recorded_at ? String(v.recorded_at).slice(11, 16) : ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); updateVital(i, 'recorded_at', date + 'T' + e.target.value + ':00') }} className="w-[70px] px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] bg-transparent" />
                       </td>
                       {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min'].map(k => (
                         <td key={k} className="py-1 text-center">

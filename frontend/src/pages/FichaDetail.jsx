@@ -296,8 +296,23 @@ export default function FichaDetail() {
     finally { setSigning(false) }
   }
 
-  const fmtTime = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'
-  const fmtDate = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '-'
+  // Extract time/date directly from ISO string — avoids UTC→local conversion
+  const fmtTime = (v) => {
+    if (!v) return '-'
+    const s = String(v)
+    // "2026-04-02T15:50:00+00:00" → extract "15:50" directly from the string
+    const match = s.match(/T(\d{2}:\d{2})/)
+    if (match) return match[1]
+    return '-'
+  }
+  const fmtDate = (v) => {
+    if (!v) return '-'
+    const s = String(v)
+    // "2026-04-02T..." → "02/04/2026"
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) return `${match[3]}/${match[2]}/${match[1]}`
+    return '-'
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -809,8 +824,7 @@ export default function FichaDetail() {
                 <p style={{ margin: 0, fontSize: '7.5pt', borderTop: '0.5pt solid #e2e8f0', paddingTop: '3pt' }}>
                   <strong>{signature.signer_name}</strong>
                   {signature.signer_crmv ? ` (${signature.signer_crmv})` : ''} assinou em{' '}
-                  {new Date(signature.signed_at).toLocaleDateString('pt-BR')} às{' '}
-                  {new Date(signature.signed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {fmtDate(signature.signed_at)} às {fmtTime(signature.signed_at)}
                   {signature.signer_ip ? ` — IP ${signature.signer_ip}` : ''}
                 </p>
               </div>
