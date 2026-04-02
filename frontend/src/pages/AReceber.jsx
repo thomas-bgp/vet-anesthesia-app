@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DollarSign, Check, ChevronDown, ChevronUp, Clock } from 'lucide-react'
+import { DollarSign, Check, ChevronDown, ChevronUp, Clock, Undo2, X } from 'lucide-react'
 import api from '../api/axios'
 
 function daysBadge(days) {
@@ -12,9 +12,16 @@ export default function AReceber() {
   const [clinics, setClinics] = useState([])
   const [totalPending, setTotalPending] = useState(0)
   const [count, setCount] = useState(0)
+  const [recentlyPaid, setRecentlyPaid] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState({})
+  const [showRecent, setShowRecent] = useState(false)
   const [paying, setPaying] = useState(null)
+  const [unpaying, setUnpaying] = useState(null)
+
+  // Pay modal
+  const [payModal, setPayModal] = useState(null) // surgery object or null
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10))
 
   const load = () => {
     api.get('/surgeries/unpaid')
@@ -22,7 +29,7 @@ export default function AReceber() {
         setClinics(res.data.clinics || [])
         setTotalPending(res.data.totalPending || 0)
         setCount(res.data.count || 0)
-        // Expand all by default
+        setRecentlyPaid(res.data.recently_paid || [])
         const exp = {}
         for (const c of res.data.clinics || []) exp[c.clinic] = true
         setExpanded(exp)
@@ -35,13 +42,29 @@ export default function AReceber() {
 
   const toggle = (clinic) => setExpanded(e => ({ ...e, [clinic]: !e[clinic] }))
 
-  const markPaid = async (surgeryId) => {
-    setPaying(surgeryId)
+  const openPayModal = (surgery) => {
+    setPayModal(surgery)
+    setPayDate(new Date().toISOString().slice(0, 10))
+  }
+
+  const confirmPay = async () => {
+    if (!payModal) return
+    setPaying(payModal.id)
     try {
-      await api.put(`/surgeries/${surgeryId}/pay`)
+      await api.put(`/surgeries/${payModal.id}/pay`, { paid_at: payDate + 'T12:00:00' })
+      setPayModal(null)
       load()
     } catch {}
     finally { setPaying(null) }
+  }
+
+  const markUnpaid = async (surgeryId) => {
+    setUnpaying(surgeryId)
+    try {
+      await api.put(`/surgeries/${surgeryId}/unpay`)
+      load()
+    } catch {}
+    finally { setUnpaying(null) }
   }
 
   const fmtDate = (v) => {
@@ -87,7 +110,6 @@ export default function AReceber() {
         <div className="space-y-3">
           {clinics.map(group => (
             <div key={group.clinic} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              {/* Clinic header */}
               <button type="button" onClick={() => toggle(group.clinic)}
                 className="w-full flex items-center justify-between px-4 py-3 active:bg-slate-50 transition min-h-[52px]">
                 <div className="flex items-center gap-2 min-w-0">
@@ -102,7 +124,6 @@ export default function AReceber() {
                 </div>
               </button>
 
-              {/* Surgery list */}
               {expanded[group.clinic] && (
                 <div className="divide-y divide-slate-100 border-t border-slate-100">
                   {group.surgeries.map(s => (
@@ -122,15 +143,10 @@ export default function AReceber() {
                         <p className="text-sm font-bold text-slate-800">{fmtMoney(s.revenue)}</p>
                       </div>
                       <button
-                        onClick={() => markPaid(s.id)}
-                        disabled={paying === s.id}
-                        className="shrink-0 flex items-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[40px] disabled:opacity-50"
+                        onClick={() => openPayModal(s)}
+                        className="shrink-0 flex items-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[40px]"
                       >
-                        {paying === s.id ? (
-                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        ) : (
-                          <><Check size={14} /> Pago</>
-                        )}
+                        <Check size={14} /> Pago
                       </button>
                     </div>
                   ))}
@@ -138,6 +154,77 @@ export default function AReceber() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Recently paid — collapsible */}
+      {recentlyPaid.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <button onClick={() => setShowRecent(r => !r)}
+            className="w-full flex items-center justify-between px-4 py-3 active:bg-slate-50 min-h-[48px]">
+            <div className="flex items-center gap-2">
+              <Check size={14} className="text-green-500" />
+              <span className="text-sm font-medium text-slate-600">Recebidos recentemente</span>
+              <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{recentlyPaid.length}</span>
+            </div>
+            {showRecent ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+          {showRecent && (
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              {recentlyPaid.map(s => (
+                <div key={s.id} className="px-4 py-2.5 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700 truncate">{s.patient_name}</p>
+                    <p className="text-[10px] text-slate-400">{s.clinic_name} — pago em {fmtDate(s.paid_at)}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-green-700 shrink-0">{fmtMoney(s.revenue)}</span>
+                  <button
+                    onClick={() => markUnpaid(s.id)}
+                    disabled={unpaying === s.id}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 border border-slate-200 text-slate-500 text-[10px] font-medium rounded-lg active:bg-slate-50 min-h-[32px] disabled:opacity-50"
+                  >
+                    {unpaying === s.id ? '...' : <><Undo2 size={11} /> Desfazer</>}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pay modal — asks for date */}
+      {payModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPayModal(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800">Confirmar recebimento</h3>
+              <button onClick={() => setPayModal(null)} className="p-1 text-slate-400"><X size={20} /></button>
+            </div>
+
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-sm font-semibold text-slate-800">{payModal.patient_name}</p>
+              <p className="text-xs text-slate-500">{payModal.procedure_name} — {payModal.clinic_name}</p>
+              <p className="text-lg font-bold text-green-700 mt-1">{fmtMoney(payModal.revenue)}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Quando recebeu?</label>
+              <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+            </div>
+
+            <button
+              onClick={confirmPay}
+              disabled={paying === payModal.id}
+              className="w-full py-3 bg-green-600 text-white font-medium rounded-xl text-sm active:bg-green-700 min-h-[48px] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {paying === payModal.id ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <><Check size={18} /> Confirmar pagamento</>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -121,10 +121,20 @@ router.get('/unpaid', authenticateToken, async (req, res) => {
       totalPending += parseFloat(s.revenue) || 0;
     }
 
+    // Recently paid (last 30 days) for "undo" option
+    const recentlyPaid = await queryRows(`
+      SELECT id, patient_name, procedure_name, clinic_name, revenue, paid_at
+      FROM surgeries
+      WHERE user_id = $1 AND paid = true AND paid_at >= NOW() - INTERVAL '30 days'
+      ORDER BY paid_at DESC
+      LIMIT 20
+    `, [req.user.id]);
+
     res.json({
       clinics: Object.values(byClinic),
       totalPending,
       count: surgeries.length,
+      recently_paid: recentlyPaid,
     });
   } catch (err) {
     console.error('Unpaid surgeries error:', err);
@@ -1136,11 +1146,12 @@ router.put('/:id/pay', authenticateToken, async (req, res) => {
 
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
+    const { paid_at } = req.body || {};
     await supabase
       .from('surgeries')
       .update({
-        paid: 1,
-        paid_at: new Date().toISOString(),
+        paid: true,
+        paid_at: paid_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
