@@ -196,6 +196,16 @@ export default function FichaDetail() {
   const [signature, setSignature] = useState(null)
   const [signing, setSigning] = useState(false)
 
+  // Online status for signature blocking
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const on = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+
   const load = async () => {
     try {
       const [surgeryRes, profileRes] = await Promise.all([
@@ -273,6 +283,10 @@ export default function FichaDetail() {
   const handlePrint = () => window.print()
 
   const handleSign = async () => {
+    if (!navigator.onLine) {
+      setError('A assinatura eletrônica requer conexão com a internet.')
+      return
+    }
     setSigning(true)
     try {
       const res = await api.post(`/signatures/sign/${id}`)
@@ -400,9 +414,13 @@ export default function FichaDetail() {
             {!signature ? (
               <button
                 onClick={handleSign}
-                disabled={signing}
-                className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[40px]"
-                title="Assinar e Imprimir"
+                disabled={signing || !isOnline}
+                className={`flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] ${
+                  !isOnline
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                    : 'bg-teal-600 text-white active:bg-teal-700'
+                }`}
+                title={!isOnline ? 'Requer conexão com a internet' : 'Assinar e Imprimir'}
               >
                 <Printer size={14} />
                 <span className="hidden sm:inline">{signing ? 'Assinando...' : 'Assinar e Imprimir'}</span>

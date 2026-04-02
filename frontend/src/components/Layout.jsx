@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { Stethoscope, Package, BarChart3, User, DollarSign, Calculator } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -18,6 +19,15 @@ export default function Layout() {
   const location = useLocation()
   const themeColor = user?.theme_color || '#0d9488'
 
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const on = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+
   // Hide bottom nav when inside surgery form/detail (full-screen experience)
   const hideNav = /^\/(fichas\/new|fichas\/\d+)/.test(location.pathname)
 
@@ -25,6 +35,11 @@ export default function Layout() {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-slate-50 overflow-hidden">
+      {!isOnline && (
+        <div className="bg-amber-500 text-white text-center text-xs py-1 font-medium">
+          Modo offline — dados salvos localmente
+        </div>
+      )}
       {showOnboarding && <OnboardingGuide />}
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 shrink-0">

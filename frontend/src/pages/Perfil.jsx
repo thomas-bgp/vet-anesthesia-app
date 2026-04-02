@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { LogOut, User, Save, Trash2, Check, Upload, Palette } from 'lucide-react'
 import api from '../api/axios'
+import InstallButton from '../components/InstallButton'
 
 const THEME_COLORS = [
   { name: 'Teal', value: '#0d9488' },
@@ -251,6 +252,7 @@ export default function Perfil() {
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
+      <InstallButton />
       {/* User info header */}
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center gap-4 mb-4">

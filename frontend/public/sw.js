@@ -1,5 +1,6 @@
-const CACHE_NAME = 'vetanestesia-v3';
-const OFFLINE_QUEUE_KEY = 'vetanestesia_offline_queue';
+const CACHE_NAME = 'anestify-v4';
+const API_CACHE = 'anestify-api-v1';
+const OFFLINE_QUEUE_KEY = 'anestify_offline_queue';
 
 // Assets to cache on install
 const PRECACHE = [
@@ -18,11 +19,12 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate - clean old caches
+// Activate - clean old caches (keep only current static + API caches)
 self.addEventListener('activate', (event) => {
+  const keepCaches = [CACHE_NAME, API_CACHE];
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => !keepCaches.includes(k)).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
@@ -31,7 +33,7 @@ self.addEventListener('activate', (event) => {
 // --- Offline Queue helpers (using IndexedDB for reliability) ---
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('vetanestesia_offline', 1);
+    const req = indexedDB.open('anestify_offline', 1);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('queue')) {
@@ -133,6 +135,19 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // --- Signature mutations — NEVER queue, require internet ---
+  if (url.pathname.includes('/signatures/sign') && request.method !== 'GET') {
+    event.respondWith(
+      fetch(request).catch(() => {
+        return new Response(
+          JSON.stringify({ error: 'A assinatura eletrônica requer conexão com a internet.' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        );
+      })
+    );
+    return;
+  }
+
   // --- API mutation requests (POST/PUT/DELETE) - queue if offline ---
   if (url.pathname.startsWith('/api/') && request.method !== 'GET') {
     event.respondWith(
@@ -153,8 +168,22 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // API GET requests - network only (no caching of API data)
-  if (url.pathname.startsWith('/api/')) return;
+  // --- API GET requests — network-first with cache fallback ---
+  if (url.pathname.startsWith('/api/')) {
+    // Never cache signature endpoints
+    if (url.pathname.includes('/signatures/sign')) return;
+
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(API_CACHE).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
 
   // For navigation requests (HTML pages) - network first, fallback to cache
   if (request.mode === 'navigate') {
