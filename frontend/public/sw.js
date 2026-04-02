@@ -123,10 +123,13 @@ async function flushQueue() {
   }
 }
 
-// Flush queue when coming back online
+// Handle messages from clients
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'ONLINE') {
     flushQueue();
+  }
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });
 

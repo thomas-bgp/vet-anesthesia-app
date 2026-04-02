@@ -20,13 +20,47 @@ export default function Layout() {
   const themeColor = user?.theme_color || '#0d9488'
 
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [waitingWorker, setWaitingWorker] = useState(null)
+
   useEffect(() => {
     const on = () => setIsOnline(true)
     const off = () => setIsOnline(false)
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
+
+    // Listen for new service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing
+          if (!newWorker) return
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              setUpdateAvailable(true)
+              setWaitingWorker(newWorker)
+            }
+          })
+        })
+      })
+      // Also check if there's already a waiting worker
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg.waiting) {
+          setUpdateAvailable(true)
+          setWaitingWorker(reg.waiting)
+        }
+      })
+    }
+
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
+
+  const applyUpdate = () => {
+    if (waitingWorker) {
+      waitingWorker.postMessage({ type: 'SKIP_WAITING' })
+      window.location.reload()
+    }
+  }
 
   // Hide bottom nav when inside surgery form/detail (full-screen experience)
   const hideNav = /^\/(fichas\/new|fichas\/\d+)/.test(location.pathname)
@@ -35,6 +69,11 @@ export default function Layout() {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-slate-50 overflow-hidden">
+      {updateAvailable && (
+        <button onClick={applyUpdate} className="bg-teal-600 text-white text-center text-xs py-2 font-medium w-full active:bg-teal-700">
+          Nova versão disponível — toque para atualizar
+        </button>
+      )}
       {!isOnline && (
         <div className="bg-amber-500 text-white text-center text-xs py-1 font-medium">
           Modo offline — dados salvos localmente
