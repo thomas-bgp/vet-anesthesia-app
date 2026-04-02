@@ -25,11 +25,19 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const stockAlertsRows = await queryRows(`
       SELECT
-        SUM(CASE WHEN (min_stock > 0 AND current_stock <= min_stock)
-                   OR (current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase'))
-             THEN 1 ELSE 0 END)::int as low_stock_count,
-        SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= $2 AND expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count
+        SUM(CASE
+          WHEN m.min_stock > 0 AND active_bottles.cnt <= m.min_stock THEN 1
+          WHEN active_bottles.cnt = 0 AND total_bottles.cnt > 0 THEN 1
+          ELSE 0
+        END)::int as low_stock_count,
+        SUM(CASE WHEN m.expiry_date IS NOT NULL AND m.expiry_date <= $2 AND m.expiry_date >= $3 THEN 1 ELSE 0 END)::int as expiring_soon_count
       FROM medicines m
+      LEFT JOIN (
+        SELECT medicine_id, COUNT(*)::int as cnt FROM medicine_bottles WHERE status IN ('sealed','opened') GROUP BY medicine_id
+      ) active_bottles ON active_bottles.medicine_id = m.id
+      LEFT JOIN (
+        SELECT medicine_id, COUNT(*)::int as cnt FROM medicine_bottles GROUP BY medicine_id
+      ) total_bottles ON total_bottles.medicine_id = m.id
       WHERE m.user_id = $1 AND m.is_active = true
     `, [userId, in30days, now]);
     const stockAlerts = stockAlertsRows[0];
@@ -119,14 +127,24 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 
-    // Low stock detail list
+    // Low stock detail list — uses actual bottle count, not current_stock
     const lowStockItems = await queryRows(`
-      SELECT m.id, m.name, m.concentration, m.current_stock, m.min_stock
+      SELECT m.id, m.name, m.concentration, m.min_stock,
+             COALESCE(ab.cnt, 0)::int as current_stock,
+             COALESCE(tb.cnt, 0)::int as total_bottles
       FROM medicines m
+      LEFT JOIN (
+        SELECT medicine_id, COUNT(*)::int as cnt FROM medicine_bottles WHERE status IN ('sealed','opened') GROUP BY medicine_id
+      ) ab ON ab.medicine_id = m.id
+      LEFT JOIN (
+        SELECT medicine_id, COUNT(*)::int as cnt FROM medicine_bottles GROUP BY medicine_id
+      ) tb ON tb.medicine_id = m.id
       WHERE m.user_id = $1 AND m.is_active = true
-        AND ((m.min_stock > 0 AND m.current_stock <= m.min_stock)
-          OR (m.current_stock = 0 AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.medicine_id = m.id AND sm.type = 'purchase')))
-      ORDER BY m.current_stock ASC
+        AND (
+          (m.min_stock > 0 AND COALESCE(ab.cnt, 0) <= m.min_stock)
+          OR (COALESCE(ab.cnt, 0) = 0 AND COALESCE(tb.cnt, 0) > 0)
+        )
+      ORDER BY COALESCE(ab.cnt, 0) ASC
     `, [userId]);
 
     res.json({
