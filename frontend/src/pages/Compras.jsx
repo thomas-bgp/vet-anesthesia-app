@@ -363,16 +363,6 @@ export default function Compras() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Principio ativo</label>
-                  <input
-                    type="text"
-                    value={newMedicineActivePrinciple}
-                    onChange={(e) => setNewMedicineActivePrinciple(e.target.value)}
-                    placeholder="Ex: Propofol"
-                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Concentracao</label>
                   <input
                     type="text"
@@ -412,17 +402,6 @@ export default function Compras() {
                     placeholder="Ex: 20"
                     className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Unidades por caixa</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newMedicineUnitsPerBox}
-                    onChange={(e) => setNewMedicineUnitsPerBox(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Ex: caixa com 5 ampolas = 5</p>
                 </div>
               </>
             )}
