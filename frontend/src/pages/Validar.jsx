@@ -50,8 +50,8 @@ export default function Validar() {
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center gap-3">
-          <div className="bg-teal-600 p-2 rounded-lg">
-            <AnestifyLogo size={20} color="white" />
+          <div className="bg-[#0B3D6B] p-2 rounded-lg">
+            <AnestifyLogo size={20} color="#19B5A0" />
           </div>
           <div>
             <h1 className="font-bold text-slate-800 text-lg">Anestify</h1>
@@ -69,7 +69,7 @@ export default function Validar() {
               onKeyDown={e => e.key === 'Enter' && validate()}
               placeholder="Cole o código aqui" className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
             <button onClick={() => validate()} disabled={loading || !code.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg active:bg-teal-700 min-h-[44px] disabled:opacity-50">
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#19B5A0] text-white text-sm font-medium rounded-lg active:bg-[#14a08d] min-h-[44px] disabled:opacity-50">
               {loading ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <><Search size={16} /> Verificar</>}
             </button>
           </div>

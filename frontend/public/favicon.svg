@@ -1,13 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="96" fill="#0d9488"/>
-  <!-- Heartbeat line going through an A shape -->
-  <path d="M80 320 L160 320 L200 200 L240 360 L280 160 L320 320 L360 320 L400 320"
-        stroke="white" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.3"/>
-  <!-- Stylized A with pulse -->
-  <path d="M256 120 L170 380" stroke="white" stroke-width="32" stroke-linecap="round"/>
-  <path d="M256 120 L342 380" stroke="white" stroke-width="32" stroke-linecap="round"/>
-  <path d="M196 290 L316 290" stroke="white" stroke-width="24" stroke-linecap="round"/>
-  <!-- Small pulse accent on the right -->
-  <path d="M340 290 L360 290 L375 240 L395 340 L410 270 L432 290"
-        stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect width="512" height="512" rx="96" fill="#0B3D6B"/>
+  <g transform="translate(96,140) scale(6.5)">
+    <path d="M5 16 L7.5 9 L11.5 13.5 L15 9 L17 16 C18.5 13.5 21 12 24 12 L27 12 L29 15 L31.5 8 L34 17 L36 12 L38 15 C40 17.5 43 19 47 18" stroke="#19B5A0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 16 C3.5 20 3.5 24 5.5 27 C8 30 13.5 31 20 31 C26 31 31.5 30 36 27.5" stroke="#19B5A0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 19.5 C10.8 20.3 11.8 20.3 12.5 19.5" stroke="#19B5A0" stroke-width="0.9" stroke-linecap="round"/>
+    <path d="M14 19 C14.8 19.8 15.8 19.8 16.5 19" stroke="#19B5A0" stroke-width="0.9" stroke-linecap="round"/>
+  </g>
 </svg>

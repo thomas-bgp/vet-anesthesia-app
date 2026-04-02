@@ -749,7 +749,7 @@ function SummaryTab() {
                   contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
                 />
                 <Legend wrapperStyle={{ fontSize: '13px' }} />
-                <Bar dataKey="Receita" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Receita" fill="#19B5A0" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

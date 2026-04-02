@@ -33,15 +33,15 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-800 to-teal-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#0B3D6B] to-[#072C4E] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center bg-teal-600 p-4 rounded-2xl mb-4 shadow-lg">
+          <div className="inline-flex items-center justify-center bg-[#19B5A0] p-4 rounded-2xl mb-4 shadow-lg">
             <AnestifyLogo size={32} color="white" />
           </div>
           <h1 className="text-3xl font-bold text-white">Anestify</h1>
-          <p className="text-teal-200 mt-1">Sistema de Gestão Veterinária</p>
+          <p className="text-teal-200 mt-1">Anestesia veterinária inteligente</p>
         </div>
 
         {/* Card */}
@@ -97,7 +97,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-semibold py-2.5 px-4 rounded-lg transition mt-2"
+              className="w-full flex items-center justify-center gap-2 bg-[#19B5A0] hover:bg-[#14a08d] disabled:bg-teal-400 text-white font-semibold py-2.5 px-4 rounded-lg transition mt-2"
             >
               {loading ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />

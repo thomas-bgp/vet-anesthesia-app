@@ -5,7 +5,7 @@ import { ClipboardList, AlertTriangle, DollarSign, Clock, CheckCircle, TrendingU
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 
 const MONTHS = { '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr', '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago', '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez' }
-const COLORS = ['#0d9488', '#f59e0b', '#6366f1', '#ec4899', '#84cc16', '#f97316', '#06b6d4', '#8b5cf6', '#ef4444', '#14b8a6']
+const COLORS = ['#19B5A0', '#f59e0b', '#6366f1', '#ec4899', '#84cc16', '#f97316', '#06b6d4', '#8b5cf6', '#ef4444', '#14b8a6']
 
 const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmtShort = (v) => {

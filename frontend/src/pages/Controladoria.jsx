@@ -184,7 +184,7 @@ export default function Controladoria() {
                   <Tooltip content={<ChartTooltip />} />
                   <Bar dataKey="Receita" fill="#10b981" barSize={16} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="Despesa" fill="#ef4444" barSize={16} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Resultado" fill="#0d9488" barSize={16} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Resultado" fill="#19B5A0" barSize={16} radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               <div className="flex justify-center gap-4 mt-2 text-[10px]">
@@ -385,8 +385,8 @@ function AnaliseTab() {
               <YAxis tick={{ fontSize: 9 }} tickFormatter={fmtShort} axisLine={false} tickLine={false} width={48} />
               <Tooltip content={<ChartTooltip />} />
               <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
-              <Bar dataKey="Resultado" fill="#0d9488" barSize={14} radius={[3, 3, 0, 0]} />
-              <Area type="monotone" dataKey="Acumulado" stroke="#0d9488" fill="#ccfbf1" strokeWidth={2} dot={false} />
+              <Bar dataKey="Resultado" fill="#19B5A0" barSize={14} radius={[3, 3, 0, 0]} />
+              <Area type="monotone" dataKey="Acumulado" stroke="#19B5A0" fill="#ccfbf1" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         ) : <p className="text-center text-slate-400 text-xs py-6">Use um pouco mais o Anestify para nossa inteligência deixar tudo pronto para você!</p>}

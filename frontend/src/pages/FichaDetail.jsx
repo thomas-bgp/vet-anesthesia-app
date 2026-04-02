@@ -347,7 +347,7 @@ export default function FichaDetail() {
 
       {/* Inject theme color as CSS variable for print */}
       <style>{`
-        :root { --print-theme: ${profile?.theme_color || '#0d9488'}; }
+        :root { --print-theme: ${profile?.theme_color || '#19B5A0'}; }
       `}</style>
 
       {/* Print-only professional header */}
@@ -359,7 +359,7 @@ export default function FichaDetail() {
         {/* Left-aligned professional info */}
         <div style={{ textAlign: 'left', paddingRight: profile?.logo_image ? '70pt' : 0 }}>
           {profile?.full_name && (
-            <p style={{ fontSize: '11pt', fontWeight: 700, margin: '0 0 1pt', color: profile?.theme_color || '#0d9488' }}>{profile.full_name}</p>
+            <p style={{ fontSize: '11pt', fontWeight: 700, margin: '0 0 1pt', color: profile?.theme_color || '#19B5A0' }}>{profile.full_name}</p>
           )}
           {profile?.professional_title && (
             <p style={{ fontSize: '8pt', color: '#555', margin: 0 }}>{profile.professional_title}{profile?.crmv_number ? ` — ${profile.crmv_number}` : ''}</p>
@@ -787,7 +787,7 @@ export default function FichaDetail() {
             display: 'none',
             marginTop: '24pt',
             padding: '12pt 16pt',
-            border: '1.5pt solid var(--print-theme, #0d9488)',
+            border: '1.5pt solid var(--print-theme, #19B5A0)',
             borderRadius: '4pt',
             fontSize: '8pt',
             color: '#334155',
@@ -801,12 +801,12 @@ export default function FichaDetail() {
                   value={`${window.location.origin}/validar?code=${signature.verification_code}`}
                   size={72}
                   level="M"
-                  fgColor={profile?.theme_color || '#0d9488'}
+                  fgColor={profile?.theme_color || '#19B5A0'}
                 />
               </div>
               {/* Signature info */}
               <div style={{ flex: 1 }}>
-                <p style={{ margin: '0 0 3pt', fontSize: '8.5pt', fontWeight: 700, color: 'var(--print-theme, #0d9488)', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
+                <p style={{ margin: '0 0 3pt', fontSize: '8.5pt', fontWeight: 700, color: 'var(--print-theme, #19B5A0)', letterSpacing: '0.5pt', textTransform: 'uppercase' }}>
                   Assinatura Eletrônica
                 </p>
                 <p style={{ margin: '0 0 2pt', fontSize: '7pt', color: '#64748b' }}>

@@ -5,7 +5,7 @@ import api from '../api/axios'
 import InstallButton from '../components/InstallButton'
 
 const THEME_COLORS = [
-  { name: 'Teal', value: '#0d9488' },
+  { name: 'Teal', value: '#19B5A0' },
   { name: 'Azul', value: '#2563eb' },
   { name: 'Indigo', value: '#4f46e5' },
   { name: 'Roxo', value: '#7c3aed' },
@@ -20,7 +20,7 @@ export default function Perfil() {
   const [professionalTitle, setProfessionalTitle] = useState('Médica Veterinária')
   const [crmvNumber, setCrmvNumber] = useState('')
   const [signatureImage, setSignatureImage] = useState(null)
-  const [themeColor, setThemeColor] = useState('#0d9488')
+  const [themeColor, setThemeColor] = useState('#19B5A0')
   const [logoImage, setLogoImage] = useState(null)
   const [businessAddress, setBusinessAddress] = useState('')
   const [businessPhone, setBusinessPhone] = useState('')
@@ -40,7 +40,7 @@ export default function Perfil() {
       setProfessionalTitle(user.professional_title || 'Médica Veterinária')
       setCrmvNumber(user.crmv_number || '')
       setSignatureImage(user.signature_image || null)
-      setThemeColor(user.theme_color || '#0d9488')
+      setThemeColor(user.theme_color || '#19B5A0')
       setLogoImage(user.logo_image || null)
       setBusinessAddress(user.business_address || '')
       setBusinessPhone(user.business_phone || '')

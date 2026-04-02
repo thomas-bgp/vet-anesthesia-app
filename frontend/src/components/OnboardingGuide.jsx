@@ -31,7 +31,7 @@ export default function OnboardingGuide() {
     { icon: Calculator, text: 'Acompanhe suas financas na aba Financeiro' },
   ]
 
-  const themeColor = user?.theme_color || '#0d9488'
+  const themeColor = user?.theme_color || '#19B5A0'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -39,7 +39,7 @@ export default function OnboardingGuide() {
         {/* Header */}
         <div className="px-6 pt-6 pb-4 text-center">
           <p className="text-3xl mb-2">👋</p>
-          <h2 className="text-xl font-bold text-slate-800">Bem-vinda ao Anestify!</h2>
+          <h2 className="text-xl font-bold text-[#0B3D6B]">Bem-vinda ao Anestify!</h2>
           <p className="text-sm text-slate-500 mt-1">Aqui vai um resumo rapido do que voce pode fazer:</p>
         </div>
 
