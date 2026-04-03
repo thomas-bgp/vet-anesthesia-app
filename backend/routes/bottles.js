@@ -197,6 +197,61 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
+// PUT /api/bottles/:id - Edit bottle details
+router.put('/:id', authenticateToken, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { id } = req.params;
+
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (!bottle) return res.status(404).json({ error: 'Frasco não encontrado' });
+
+    const { volume_ml, remaining_ml, purchase_cost, batch_number } = req.body;
+    const updateData = {};
+
+    if (volume_ml !== undefined) {
+      updateData.volume_ml = parseFloat(volume_ml);
+      updateData.cost_per_ml = purchase_cost !== undefined
+        ? (parseFloat(purchase_cost) / parseFloat(volume_ml)) || 0
+        : (bottle.purchase_cost / parseFloat(volume_ml)) || 0;
+    }
+    if (remaining_ml !== undefined) updateData.remaining_ml = parseFloat(remaining_ml);
+    if (purchase_cost !== undefined) {
+      updateData.purchase_cost = parseFloat(purchase_cost);
+      const vol = volume_ml !== undefined ? parseFloat(volume_ml) : bottle.volume_ml;
+      updateData.cost_per_ml = vol > 0 ? parseFloat(purchase_cost) / vol : 0;
+    }
+    if (batch_number !== undefined) updateData.batch_number = batch_number || null;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    await supabase
+      .from('medicine_bottles')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', req.user.id);
+
+    const { data: updated } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    res.json({ bottle: updated });
+  } catch (err) {
+    console.error('Update bottle error:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 // PUT /api/bottles/:id/open - Mark bottle as opened
 router.put('/:id/open', authenticateToken, async (req, res) => {
   try {

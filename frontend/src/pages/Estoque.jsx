@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2 } from 'lucide-react'
+import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil } from 'lucide-react'
 import api from '../api/axios'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
@@ -96,7 +96,29 @@ export default function Estoque() {
     finally { setActionLoading(null) }
   }
 
-  const [confirmDelete, setConfirmDelete] = useState(null) // medicine_id
+  const [editBottle, setEditBottle] = useState(null) // { id, volume_ml, remaining_ml, purchase_cost, batch_number }
+  const [editSaving, setEditSaving] = useState(false)
+
+  const startEdit = (b) => setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '' })
+
+  const saveEdit = async () => {
+    if (!editBottle) return
+    setEditSaving(true)
+    try {
+      await api.put(`/bottles/${editBottle.id}`, {
+        volume_ml: parseFloat(editBottle.volume_ml),
+        remaining_ml: parseFloat(editBottle.remaining_ml),
+        purchase_cost: parseFloat(editBottle.purchase_cost),
+        batch_number: editBottle.batch_number,
+      })
+      setSuccessMsg('Frasco atualizado!')
+      setEditBottle(null)
+      load()
+    } catch { setError('Erro ao atualizar.') }
+    finally { setEditSaving(false) }
+  }
+
+  const [confirmDelete, setConfirmDelete] = useState(null)
 
   const handleDeleteMedicine = async (medicineId) => {
     try {
@@ -180,48 +202,91 @@ export default function Estoque() {
 
                         return (
                           <div key={b.id} className={`px-4 py-3 ${isInactive ? 'opacity-40' : ''}`}>
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
-                                <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
-                                {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                            {/* Edit mode */}
+                            {editBottle?.id === b.id ? (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[10px] text-slate-500">Volume total (mL)</label>
+                                    <input type="number" step="0.1" value={editBottle.volume_ml}
+                                      onChange={e => setEditBottle(v => ({ ...v, volume_ml: e.target.value }))}
+                                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-slate-500">Restante (mL)</label>
+                                    <input type="number" step="0.1" value={editBottle.remaining_ml}
+                                      onChange={e => setEditBottle(v => ({ ...v, remaining_ml: e.target.value }))}
+                                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-slate-500">Custo (R$)</label>
+                                    <input type="number" step="0.01" value={editBottle.purchase_cost}
+                                      onChange={e => setEditBottle(v => ({ ...v, purchase_cost: e.target.value }))}
+                                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-slate-500">Lote</label>
+                                    <input type="text" value={editBottle.batch_number}
+                                      onChange={e => setEditBottle(v => ({ ...v, batch_number: e.target.value }))}
+                                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={saveEdit} disabled={editSaving}
+                                    className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg min-h-[36px]">{editSaving ? '...' : 'Salvar'}</button>
+                                  <button onClick={() => setEditBottle(null)}
+                                    className="py-2 px-3 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[36px]">Cancelar</button>
+                                </div>
                               </div>
-                              <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
-                            </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
+                                    <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
+                                    {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
+                                    <button onClick={() => startEdit(b)} className="p-1 text-slate-400 active:text-teal-600"><Pencil size={12} /></button>
+                                  </div>
+                                </div>
 
-                            {useBottleId === b.id && (
-                              <div className="flex gap-2 mt-2">
-                                <input type="number" step="0.1" min="0.1" max={b.remaining_ml} value={mlUsed}
-                                  onChange={e => setMlUsed(e.target.value)} placeholder="mL usados" autoFocus
-                                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-                                <button onClick={() => handleUse(b.id)} disabled={actionLoading === b.id}
-                                  className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg min-h-[40px]">Salvar</button>
-                                <button onClick={() => { setUseBottleId(null); setMlUsed('') }}
-                                  className="px-2 py-2 border border-slate-200 rounded-lg min-h-[40px]"><X size={14} /></button>
-                              </div>
-                            )}
+                                {useBottleId === b.id && (
+                                  <div className="flex gap-2 mt-2">
+                                    <input type="number" step="0.1" min="0.1" max={b.remaining_ml} value={mlUsed}
+                                      onChange={e => setMlUsed(e.target.value)} placeholder="mL usados" autoFocus
+                                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+                                    <button onClick={() => handleUse(b.id)} disabled={actionLoading === b.id}
+                                      className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg min-h-[40px]">Salvar</button>
+                                    <button onClick={() => { setUseBottleId(null); setMlUsed('') }}
+                                      className="px-2 py-2 border border-slate-200 rounded-lg min-h-[40px]"><X size={14} /></button>
+                                  </div>
+                                )}
 
-                            {!isInactive && useBottleId !== b.id && (
-                              <div className="flex gap-1.5 mt-2">
-                                {b.status === 'sealed' && (
-                                  <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
-                                    className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
-                                    Abrir
-                                  </button>
+                                {!isInactive && useBottleId !== b.id && (
+                                  <div className="flex gap-1.5 mt-2">
+                                    {b.status === 'sealed' && (
+                                      <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
+                                        className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
+                                        Abrir
+                                      </button>
+                                    )}
+                                    {b.status === 'opened' && (
+                                      <>
+                                        <button onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
+                                          className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[36px]">
+                                          Registrar uso
+                                        </button>
+                                        <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
+                                          className="py-2 px-3 border border-red-200 text-red-600 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
+                                          Descartar
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 )}
-                                {b.status === 'opened' && (
-                                  <>
-                                    <button onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
-                                      className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[36px]">
-                                      Registrar uso
-                                    </button>
-                                    <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
-                                      className="py-2 px-3 border border-red-200 text-red-600 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
-                                      Descartar
-                                    </button>
-                                  </>
-                                )}
-                              </div>
+                              </>
                             )}
                           </div>
                         )
