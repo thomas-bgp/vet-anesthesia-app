@@ -557,6 +557,30 @@ export default function FichaDetail() {
           </Card>
         )}
 
+        {/* Exames complementares */}
+        {(surgery.exam_raiox || surgery.exam_ultrassom || surgery.exam_eco_ecg || surgery.exam_outros || surgery.exam_ht) && (
+          <Card title="Exames Complementares">
+            <div className="grid grid-cols-3 gap-x-4">
+              <InfoRow label="Ht%" value={surgery.exam_ht} />
+              <InfoRow label="Hb" value={surgery.exam_hb} />
+              <InfoRow label="Eritr" value={surgery.exam_eritr} />
+              <InfoRow label="PPT" value={surgery.exam_ppt} />
+              <InfoRow label="Plaquetas" value={surgery.exam_plaquetas} />
+              <InfoRow label="Leuc" value={surgery.exam_leuc} />
+              <InfoRow label="Creat" value={surgery.exam_creat} />
+              <InfoRow label="ALT" value={surgery.exam_alt} />
+              <InfoRow label="FA" value={surgery.exam_fa} />
+              <InfoRow label="Ureia" value={surgery.exam_ureia} />
+              <InfoRow label="Alb" value={surgery.exam_alb} />
+              <InfoRow label="Glic" value={surgery.exam_glic} />
+            </div>
+            <InfoRow label="Raio-X" value={surgery.exam_raiox} />
+            <InfoRow label="Ultrassom" value={surgery.exam_ultrassom} />
+            <InfoRow label="Eco/ECG" value={surgery.exam_eco_ecg} />
+            <InfoRow label="Outros exames" value={surgery.exam_outros} />
+          </Card>
+        )}
+
         {/* Vias aéreas */}
         {(surgery.airway_type || surgery.breathing_mode) && (
           <Card title="Vias Aéreas">
