@@ -83,10 +83,10 @@ export default function Layout() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg" style={{ backgroundColor: '#0B3D6B' }}>
-            <AnestifyLogo size={18} color="#19B5A0" />
+          <div className="p-1.5 rounded-lg" style={{ backgroundColor: themeColor }}>
+            <AnestifyLogo size={20} color="white" />
           </div>
-          <span className="font-bold text-[#0B3D6B] text-sm">Anestify</span>
+          <span className="font-bold text-slate-800 text-sm">Anestify</span>
         </div>
         <span className="text-xs text-slate-400 truncate max-w-[150px]">{user?.name}</span>
       </header>
