@@ -124,6 +124,7 @@ export default function Estoque() {
   const [purchaseSearch, setPurchaseSearch] = useState('')
   const [purchaseDateFrom, setPurchaseDateFrom] = useState('')
   const [purchaseDateTo, setPurchaseDateTo] = useState('')
+  const [purchaseSort, setPurchaseSort] = useState('date') // 'date' | 'name'
   const [editBottle, setEditBottle] = useState(null) // { id, volume_ml, remaining_ml, purchase_cost, batch_number }
   const [editSaving, setEditSaving] = useState(false)
 
@@ -455,7 +456,10 @@ export default function Estoque() {
           if (purchaseDateFrom && p.purchased_at < purchaseDateFrom) return false
           if (purchaseDateTo && p.purchased_at > purchaseDateTo) return false
           return true
-        })
+        }).sort((a, b) => purchaseSort === 'name'
+          ? (a.medicine_name || '').localeCompare(b.medicine_name || '')
+          : (b.purchased_at || '').localeCompare(a.purchased_at || '')
+        )
         return (
         /* Compras tab */
         <>
@@ -465,6 +469,16 @@ export default function Estoque() {
               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={purchaseSearch} onChange={e => setPurchaseSearch(e.target.value)} placeholder="Buscar fármaco..."
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[44px]" />
+            </div>
+            <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg self-start">
+              <button onClick={() => setPurchaseSort('date')}
+                className={`px-3 py-1.5 rounded text-[11px] font-medium min-h-[32px] ${purchaseSort === 'date' ? 'bg-white shadow text-teal-700' : 'text-slate-500'}`}>
+                Data
+              </button>
+              <button onClick={() => setPurchaseSort('name')}
+                className={`px-3 py-1.5 rounded text-[11px] font-medium min-h-[32px] ${purchaseSort === 'name' ? 'bg-white shadow text-teal-700' : 'text-slate-500'}`}>
+                A-Z
+              </button>
             </div>
             <div className="flex gap-2">
               <div className="flex-1 relative">
