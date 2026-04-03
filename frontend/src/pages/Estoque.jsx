@@ -173,7 +173,7 @@ export default function Estoque() {
                 {isOpen && (
                   <div className="border-t border-slate-100">
                     <div className="divide-y divide-slate-50">
-                      {[...g.opened, ...g.sealed, ...g.expired, ...g.empty].map(b => {
+                      {[...g.opened, ...g.sealed].map(b => {
                         const statusCfg = { sealed: { l: 'Selado', c: 'bg-blue-100 text-blue-700' }, opened: { l: 'Aberto', c: 'bg-green-100 text-green-700' }, expired: { l: 'Vencido', c: 'bg-red-100 text-red-700' }, empty: { l: 'Vazio', c: 'bg-slate-100 text-slate-500' } }
                         const st = statusCfg[b.status] || statusCfg.sealed
                         const isInactive = b.status === 'expired' || b.status === 'empty'
