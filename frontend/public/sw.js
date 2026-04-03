@@ -1,4 +1,4 @@
-const CACHE_NAME = 'anestify-v4';
+const CACHE_NAME = 'anestify-v5';
 const API_CACHE = 'anestify-api-v1';
 const OFFLINE_QUEUE_KEY = 'anestify_offline_queue';
 
