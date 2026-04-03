@@ -148,7 +148,13 @@ const VITAL_FIELDS = [
 
 function InfoRow({ label, value }) {
   if (!value) return null
-  return (
+  const isMultiline = typeof value === 'string' && value.includes('\n')
+  return isMultiline ? (
+    <div className="text-sm py-1.5">
+      <span className="text-slate-500">{label}</span>
+      <p className="font-medium text-slate-800 mt-0.5 whitespace-pre-line">{value}</p>
+    </div>
+  ) : (
     <div className="flex justify-between text-sm py-1.5">
       <span className="text-slate-500">{label}</span>
       <span className="font-medium text-slate-800 text-right max-w-[60%]">{value}</span>
@@ -599,33 +605,67 @@ export default function FichaDetail() {
           {medicines.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-4">Nenhum fármaco registrado.</p>
           ) : (
-            Object.entries(groupedMeds).map(([phase, meds]) => (
-              <div key={phase} className="mb-3 last:mb-0">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{phaseLabels[phase] || phase}</p>
-                {meds.map(m => (
-                  <div key={m.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-800 truncate">{m.medicine_name}</p>
-                      <p className="text-xs text-slate-500">
-                        {m.dose} {m.dose_unit} · {m.route || '-'} · {fmtTime(m.administered_at)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        m.drug_source === 'clinica' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'
-                      }`} data-no-print>
-                        {m.drug_source === 'clinica' ? 'Clínica' : 'Próprio'}
-                      </span>
-                      {surgery.status !== 'completed' && (
-                        <button onClick={() => removeMedicine(m.id)} className="p-1.5 text-slate-400 active:text-red-500 min-h-[36px] min-w-[36px] flex items-center justify-center" data-no-print>
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
+            <>
+              {/* Screen: cards */}
+              <div className="print-hide">
+                {Object.entries(groupedMeds).map(([phase, meds]) => (
+                  <div key={phase} className="mb-3 last:mb-0">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{phaseLabels[phase] || phase}</p>
+                    {meds.map(m => (
+                      <div key={m.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-800 truncate">{m.medicine_name}</p>
+                          <p className="text-xs text-slate-500">
+                            {m.dose} {m.dose_unit} · {m.route || '-'} · {fmtTime(m.administered_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                            m.drug_source === 'clinica' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'
+                          }`}>
+                            {m.drug_source === 'clinica' ? 'Clínica' : 'Próprio'}
+                          </span>
+                          {surgery.status !== 'completed' && (
+                            <button onClick={() => removeMedicine(m.id)} className="p-1.5 text-slate-400 active:text-red-500 min-h-[36px] min-w-[36px] flex items-center justify-center">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
-            ))
+              {/* Print: compact table */}
+              <div className="print-only" style={{ display: 'none' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1pt solid #999' }}>
+                      <th style={{ textAlign: 'left', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Fase</th>
+                      <th style={{ textAlign: 'left', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Fármaco</th>
+                      <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Dose</th>
+                      <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Via</th>
+                      <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Hora</th>
+                      <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Origem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(groupedMeds).flatMap(([phase, meds]) =>
+                      meds.map((m, i) => (
+                        <tr key={m.id} style={{ borderBottom: '0.5pt solid #ddd' }}>
+                          {i === 0 ? <td style={{ padding: '2.5pt 4pt', fontWeight: 600, verticalAlign: 'top' }} rowSpan={meds.length}>{phaseLabels[phase]}</td> : null}
+                          <td style={{ padding: '2.5pt 4pt' }}>{m.medicine_name}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{m.dose} {m.dose_unit}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{m.route || '-'}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{fmtTime(m.administered_at)}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'center', fontSize: '8pt' }}>{m.drug_source === 'clinica' ? 'Clínica' : 'Próprio'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Card>
 
@@ -740,7 +780,7 @@ export default function FichaDetail() {
         {(surgery.post_operative || surgery.complications || surgery.recovery_quality) && (
           <Card title="Pós-operatório">
             {surgery.post_operative && (
-              <p className="text-sm text-slate-700">{surgery.post_operative}</p>
+              <p className="text-sm text-slate-700 whitespace-pre-line">{surgery.post_operative}</p>
             )}
             {surgery.recovery_quality && (
               <div className={`${surgery.post_operative ? 'mt-2' : ''}`}>
@@ -777,7 +817,7 @@ export default function FichaDetail() {
         {/* Observações */}
         {surgery.monitoring_notes && (
           <Card title="Observações">
-            <p className="text-sm text-slate-700">{surgery.monitoring_notes}</p>
+            <p className="text-sm text-slate-700 whitespace-pre-line">{surgery.monitoring_notes}</p>
           </Card>
         )}
 
