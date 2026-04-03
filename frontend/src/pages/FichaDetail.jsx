@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowLeft, Edit2, Play, Square, Plus, Trash2, Activity, Heart, Clock, Printer, X, AlertTriangle
+  ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle
 } from 'lucide-react'
 import api from '../api/axios'
 import { QRCodeSVG } from 'qrcode.react'
@@ -185,7 +185,6 @@ export default function FichaDetail() {
   const [vitals, setVitals] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [actionLoading, setActionLoading] = useState(false)
 
   // Vitals quick-add
   const [showVitals, setShowVitals] = useState(false)
@@ -234,33 +233,6 @@ export default function FichaDetail() {
   }
 
   useEffect(() => { load() }, [id])
-
-  const startSurgery = async () => {
-    setActionLoading(true)
-    try {
-      await api.put(`/surgeries/${id}/start`)
-      await load()
-    } catch { setError('Erro ao iniciar.') }
-    finally { setActionLoading(false) }
-  }
-
-  const endSurgery = async () => {
-    setActionLoading(true)
-    try {
-      await api.put(`/surgeries/${id}/end`)
-      await load()
-    } catch { setError('Erro ao finalizar.') }
-    finally { setActionLoading(false) }
-  }
-
-  const markCompleted = async () => {
-    setActionLoading(true)
-    try {
-      await api.put(`/surgeries/${id}`, { status: 'completed' })
-      await load()
-    } catch { setError('Erro ao concluir ficha.') }
-    finally { setActionLoading(false) }
-  }
 
   const addVitals = async () => {
     try {
@@ -414,24 +386,6 @@ export default function FichaDetail() {
               <span className="sm:hidden">SOS</span>
             </button>
 
-            {surgery.status === 'scheduled' && (
-              <button onClick={startSurgery} disabled={actionLoading}
-                className="flex items-center gap-1 px-3 py-2 bg-amber-500 text-white text-xs font-medium rounded-lg active:bg-amber-600 min-h-[40px]">
-                <Play size={14} />Iniciar
-              </button>
-            )}
-            {surgery.status === 'in_progress' && (
-              <button onClick={endSurgery} disabled={actionLoading}
-                className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[40px]">
-                <Square size={14} />Finalizar
-              </button>
-            )}
-            {(surgery.status === 'scheduled' || surgery.status === 'in_progress') && (
-              <button onClick={markCompleted} disabled={actionLoading}
-                className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[40px]">
-                <Clock size={14} />Concluir
-              </button>
-            )}
             {!signature ? (
               <button
                 onClick={handleSign}
