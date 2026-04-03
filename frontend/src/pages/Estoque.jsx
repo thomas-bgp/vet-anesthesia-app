@@ -121,6 +121,9 @@ export default function Estoque() {
     finally { setActionLoading(null) }
   }
 
+  const [purchaseSearch, setPurchaseSearch] = useState('')
+  const [purchaseDateFrom, setPurchaseDateFrom] = useState('')
+  const [purchaseDateTo, setPurchaseDateTo] = useState('')
   const [editBottle, setEditBottle] = useState(null) // { id, volume_ml, remaining_ml, purchase_cost, batch_number }
   const [editSaving, setEditSaving] = useState(false)
 
@@ -446,20 +449,52 @@ export default function Estoque() {
             </div>
           )}
         </>
-      ) : (
+      ) : (() => {
+        const filteredPurchases = purchases.filter(p => {
+          if (purchaseSearch && !(p.medicine_name || '').toLowerCase().includes(purchaseSearch.toLowerCase())) return false
+          if (purchaseDateFrom && p.purchased_at < purchaseDateFrom) return false
+          if (purchaseDateTo && p.purchased_at > purchaseDateTo) return false
+          return true
+        })
+        return (
         /* Compras tab */
         <>
+          {/* Search + date filter */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={purchaseSearch} onChange={e => setPurchaseSearch(e.target.value)} placeholder="Buscar fármaco..."
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[44px]" />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input type="date" value={purchaseDateFrom} onChange={e => setPurchaseDateFrom(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 min-h-[40px]" placeholder="De" />
+              </div>
+              <div className="flex-1 relative">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input type="date" value={purchaseDateTo} onChange={e => setPurchaseDateTo(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 min-h-[40px]" placeholder="Até" />
+              </div>
+              {(purchaseDateFrom || purchaseDateTo) && (
+                <button onClick={() => { setPurchaseDateFrom(''); setPurchaseDateTo('') }}
+                  className="px-2 py-2 text-slate-400 active:text-slate-600 min-h-[40px]"><X size={16} /></button>
+              )}
+            </div>
+          </div>
+
           {purchasesLoading ? (
             <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-3 border-teal-600 border-t-transparent" /></div>
-          ) : purchases.length === 0 ? (
+          ) : filteredPurchases.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingCart size={40} className="mx-auto text-slate-300 mb-3" />
-              <p className="text-slate-500 font-medium">Nenhuma compra registrada</p>
-              <Link to="/compras" className="text-teal-600 text-sm font-medium">Registrar compra</Link>
+              <p className="text-slate-500 font-medium">{purchases.length === 0 ? 'Nenhuma compra registrada' : 'Nenhuma compra encontrada'}</p>
+              {purchases.length === 0 && <Link to="/compras" className="text-teal-600 text-sm font-medium">Registrar compra</Link>}
             </div>
           ) : (
             <div className="space-y-3">
-              {purchases.map((p, idx) => {
+              {filteredPurchases.map((p, idx) => {
                 const pKey = `${p.medicine_id}_${p.purchased_at}_${p.volume_ml}_${p.purchase_cost}`
                 const isEditing = editingPurchase?.key === pKey
 
@@ -568,7 +603,8 @@ export default function Estoque() {
             </div>
           )}
         </>
-      )}
+        )
+      })()}
     </div>
   )
 }
