@@ -670,19 +670,17 @@ export default function FichaDetail() {
                       <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Dose</th>
                       <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Via</th>
                       <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Hora</th>
-                      <th style={{ textAlign: 'center', padding: '3pt 4pt', fontSize: '7.5pt', fontWeight: 700, textTransform: 'uppercase', color: '#555' }}>Origem</th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.entries(groupedMeds).flatMap(([phase, meds]) =>
-                      meds.map((m, i) => (
+                      meds.map((m) => (
                         <tr key={m.id} style={{ borderBottom: '0.5pt solid #ddd' }}>
-                          {i === 0 ? <td style={{ padding: '2.5pt 4pt', fontWeight: 600, verticalAlign: 'top' }} rowSpan={meds.length}>{phaseLabels[phase]}</td> : null}
-                          <td style={{ padding: '2.5pt 4pt' }}>{m.medicine_name}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'left' }}>{phaseLabels[phase]}</td>
+                          <td style={{ padding: '2.5pt 4pt', textAlign: 'left' }}>{m.medicine_name}</td>
                           <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{m.dose} {m.dose_unit}</td>
                           <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{m.route || '-'}</td>
                           <td style={{ padding: '2.5pt 4pt', textAlign: 'center' }}>{fmtTime(m.administered_at)}</td>
-                          <td style={{ padding: '2.5pt 4pt', textAlign: 'center', fontSize: '8pt' }}>{m.drug_source === 'clinica' ? 'Clínica' : 'Próprio'}</td>
                         </tr>
                       ))
                     )}
