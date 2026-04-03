@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DollarSign, Check, ChevronDown, ChevronUp, Clock, Undo2, X } from 'lucide-react'
+import { DollarSign, Check, ChevronDown, ChevronUp, Clock, Undo2, X, Plus } from 'lucide-react'
 import api from '../api/axios'
 
 function daysBadge(days) {
@@ -18,6 +18,17 @@ export default function AReceber() {
   const [showRecent, setShowRecent] = useState(false)
   const [paying, setPaying] = useState(null)
   const [unpaying, setUnpaying] = useState(null)
+
+  // Quick add modal
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickSaving, setQuickSaving] = useState(false)
+  const [quickForm, setQuickForm] = useState({
+    patient_name: '',
+    procedure_name: '',
+    clinic_name: '',
+    revenue: '',
+    start_time: new Date().toISOString().slice(0, 10),
+  })
 
   // Pay modal
   const [payModal, setPayModal] = useState(null) // surgery object or null
@@ -67,6 +78,26 @@ export default function AReceber() {
     finally { setUnpaying(null) }
   }
 
+  const submitQuickAdd = async () => {
+    if (!quickForm.patient_name.trim() || !quickForm.procedure_name.trim()) return
+    setQuickSaving(true)
+    try {
+      await api.post('/surgeries', {
+        patient_name: quickForm.patient_name.trim(),
+        procedure_name: quickForm.procedure_name.trim(),
+        clinic_name: quickForm.clinic_name.trim() || null,
+        revenue: parseFloat(quickForm.revenue) || 0,
+        start_time: quickForm.start_time ? quickForm.start_time + 'T12:00:00' : null,
+        patient_species: 'Canino',
+        status: 'completed',
+      })
+      setShowQuickAdd(false)
+      setQuickForm({ patient_name: '', procedure_name: '', clinic_name: '', revenue: '', start_time: new Date().toISOString().slice(0, 10) })
+      load()
+    } catch {}
+    finally { setQuickSaving(false) }
+  }
+
   const fmtDate = (v) => {
     if (!v) return ''
     return new Date(v).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
@@ -81,6 +112,10 @@ export default function AReceber() {
     <div className="p-4 max-w-lg mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">A Receber</h1>
+        <button onClick={() => setShowQuickAdd(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px]">
+          <Plus size={16} /> Receita
+        </button>
       </div>
 
       {/* Summary */}
@@ -222,6 +257,68 @@ export default function AReceber() {
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : (
                 <><Check size={18} /> Confirmar pagamento</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Quick add modal */}
+      {showQuickAdd && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowQuickAdd(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800">Adicionar receita</h3>
+              <button onClick={() => setShowQuickAdd(false)} className="p-1 text-slate-400"><X size={20} /></button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Paciente</label>
+                <input type="text" value={quickForm.patient_name}
+                  onChange={e => setQuickForm(f => ({ ...f, patient_name: e.target.value }))}
+                  placeholder="Nome do paciente"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Procedimento</label>
+                <input type="text" value={quickForm.procedure_name}
+                  onChange={e => setQuickForm(f => ({ ...f, procedure_name: e.target.value }))}
+                  placeholder="Ex: OSH, Orquiectomia"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Clinica</label>
+                <input type="text" value={quickForm.clinic_name}
+                  onChange={e => setQuickForm(f => ({ ...f, clinic_name: e.target.value }))}
+                  placeholder="Nome da clinica"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
+                  <input type="number" step="0.01" min="0" value={quickForm.revenue}
+                    onChange={e => setQuickForm(f => ({ ...f, revenue: e.target.value }))}
+                    placeholder="0,00"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data</label>
+                  <input type="date" value={quickForm.start_time}
+                    onChange={e => setQuickForm(f => ({ ...f, start_time: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={submitQuickAdd}
+              disabled={quickSaving || !quickForm.patient_name.trim() || !quickForm.procedure_name.trim()}
+              className="w-full py-3 bg-teal-600 text-white font-medium rounded-xl text-sm active:bg-teal-700 min-h-[48px] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {quickSaving ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <><Plus size={18} /> Salvar receita</>
               )}
             </button>
           </div>

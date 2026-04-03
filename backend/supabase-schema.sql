@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS medicine_bottles (
   opened_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
   batch_number TEXT,
+  expiry_date DATE,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

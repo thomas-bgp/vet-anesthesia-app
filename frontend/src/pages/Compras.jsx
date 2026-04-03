@@ -43,6 +43,7 @@ export default function Compras() {
   const [newMedicineConcentrationCustom, setNewMedicineConcentrationCustom] = useState('')
   const [newMedicineActivePrinciple, setNewMedicineActivePrinciple] = useState('')
   const [newMedicinePresentation, setNewMedicinePresentation] = useState('ampola')
+  const [newMedicineExpiry, setNewMedicineExpiry] = useState('')
 
   // Descartavel-specific new medicine fields
   const [newDescName, setNewDescName] = useState('')
@@ -134,6 +135,7 @@ export default function Compras() {
     setNewMedicineConcentrationCustom('')
     setNewMedicineActivePrinciple('')
     setNewMedicinePresentation('ampola')
+    setNewMedicineExpiry('')
     setNewDescName('')
     setQuantity('')
     setUnitPrice('')
@@ -188,6 +190,7 @@ export default function Compras() {
         active_principle: newMedicineActivePrinciple || null,
         presentation: newMedicinePresentation,
         unit: newMedicinePresentation === 'ampola' ? 'ampola' : 'frasco',
+        expiry_date: newMedicineExpiry || null,
       })
       medId = medRes.data?.id || medRes.data?.medicine?.id
       if (!medId) throw new Error('Erro ao cadastrar medicamento.')
@@ -211,6 +214,7 @@ export default function Compras() {
       units_per_box: isNewMedicine ? parseInt(newMedicineUnitsPerBox) || 1 : undefined,
       purchased_at: purchaseDate,
       batch_number: batchNumber || undefined,
+      expiry_date: newMedicineExpiry || undefined,
     })
   }
 
@@ -435,6 +439,15 @@ export default function Compras() {
                     onChange={(e) => setNewMedicineVolume(e.target.value)}
                     placeholder="Ex: 20"
                     className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data de validade <span className="text-slate-400 font-normal">(opcional)</span></label>
+                  <input
+                    type="date"
+                    value={newMedicineExpiry}
+                    onChange={(e) => setNewMedicineExpiry(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[44px]"
                   />
                 </div>
               </>

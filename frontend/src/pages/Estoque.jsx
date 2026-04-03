@@ -128,7 +128,7 @@ export default function Estoque() {
   const [editBottle, setEditBottle] = useState(null) // { id, volume_ml, remaining_ml, purchase_cost, batch_number }
   const [editSaving, setEditSaving] = useState(false)
 
-  const startEdit = (b) => setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '' })
+  const startEdit = (b) => setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '', expiry_date: b.expiry_date ? b.expiry_date.split('T')[0] : '' })
 
   const saveEdit = async () => {
     if (!editBottle) return
@@ -139,6 +139,7 @@ export default function Estoque() {
         remaining_ml: parseFloat(editBottle.remaining_ml),
         purchase_cost: parseFloat(editBottle.purchase_cost),
         batch_number: editBottle.batch_number,
+        expiry_date: editBottle.expiry_date || null,
       })
       setSuccessMsg('Frasco atualizado!')
       setEditBottle(null)
@@ -363,6 +364,12 @@ export default function Estoque() {
                                           onChange={e => setEditBottle(v => ({ ...v, batch_number: e.target.value }))}
                                           className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
                                       </div>
+                                      <div className="col-span-2">
+                                        <label className="text-[10px] text-slate-500">Validade</label>
+                                        <input type="date" value={editBottle.expiry_date}
+                                          onChange={e => setEditBottle(v => ({ ...v, expiry_date: e.target.value }))}
+                                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                      </div>
                                     </div>
                                     <div className="flex gap-2">
                                       <button onClick={saveEdit} disabled={editSaving}
@@ -378,6 +385,7 @@ export default function Estoque() {
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
                                         <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
                                         {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                                        {b.expiry_date && <span className="text-[10px] text-amber-500">Val: {new Date(b.expiry_date).toLocaleDateString('pt-BR')}</span>}
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>

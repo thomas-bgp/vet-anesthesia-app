@@ -28,10 +28,15 @@ router.get('/', authenticateToken, async (req, res) => {
     const params = [userId];
     let paramIdx = 2;
 
-    if (status && status !== 'all') {
+    if (status === 'all') {
+      // show everything
+    } else if (status) {
       sql += ` AND mb.status = $${paramIdx}`;
       params.push(status);
       paramIdx++;
+    } else {
+      // Default: only active bottles
+      sql += ` AND mb.status IN ('sealed', 'opened')`;
     }
 
     if (medicine_id) {
@@ -150,7 +155,8 @@ router.post('/', authenticateToken, async (req, res) => {
       purchase_cost_per_unit = 0,
       units_per_box = 1,
       purchased_at,
-      batch_number
+      batch_number,
+      expiry_date
     } = req.body;
 
     if (!medicine_id || !volume_ml) {
@@ -177,6 +183,7 @@ router.post('/', authenticateToken, async (req, res) => {
         status: 'sealed',
         purchased_at: purchased_at || new Date().toISOString().split('T')[0],
         batch_number: batch_number || null,
+        expiry_date: expiry_date || null,
       });
     }
 
@@ -239,7 +246,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     if (!bottle) return res.status(404).json({ error: 'Frasco não encontrado' });
 
-    const { volume_ml, remaining_ml, purchase_cost, batch_number } = req.body;
+    const { volume_ml, remaining_ml, purchase_cost, batch_number, expiry_date } = req.body;
     const updateData = {};
 
     if (volume_ml !== undefined) {
@@ -255,6 +262,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       updateData.cost_per_ml = vol > 0 ? parseFloat(purchase_cost) / vol : 0;
     }
     if (batch_number !== undefined) updateData.batch_number = batch_number || null;
+    if (expiry_date !== undefined) updateData.expiry_date = expiry_date || null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
