@@ -269,17 +269,17 @@ html {
     -webkit-appearance: none !important;
   }
 
-  /* Delete column */
-  table th:last-child,
-  table td:last-child {
+  /* Delete column — only in vitals table (has inputs), not in print farmacos table */
+  .overflow-x-auto table th:last-child,
+  .overflow-x-auto table td:last-child {
     width: 0 !important;
     padding: 0 !important;
     border: none !important;
     overflow: hidden !important;
   }
 
-  table td:last-child button,
-  table td:last-child svg {
+  .overflow-x-auto table td:last-child button,
+  .overflow-x-auto table td:last-child svg {
     display: none !important;
   }
 
