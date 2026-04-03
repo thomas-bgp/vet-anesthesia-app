@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react'
+import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2 } from 'lucide-react'
 import api from '../api/axios'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
@@ -95,6 +95,17 @@ export default function Estoque() {
     finally { setActionLoading(null) }
   }
 
+  const [confirmDelete, setConfirmDelete] = useState(null) // medicine_id
+
+  const handleDeleteMedicine = async (medicineId) => {
+    try {
+      await api.delete(`/medicines/${medicineId}`)
+      setSuccessMsg('Fármaco descadastrado.')
+      setConfirmDelete(null)
+      load()
+    } catch { setError('Erro ao descadastrar.') }
+  }
+
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
       <div className="flex items-center justify-between">
@@ -159,63 +170,79 @@ export default function Estoque() {
 
                 {/* Expanded: individual bottles */}
                 {isOpen && (
-                  <div className="border-t border-slate-100 divide-y divide-slate-50">
-                    {[...g.opened, ...g.sealed, ...g.expired, ...g.empty].map(b => {
-                      const bPct = b.volume_ml > 0 ? Math.round((b.remaining_ml / b.volume_ml) * 100) : 0
-                      const statusCfg = { sealed: { l: 'Selado', c: 'bg-blue-100 text-blue-700' }, opened: { l: 'Aberto', c: 'bg-green-100 text-green-700' }, expired: { l: 'Vencido', c: 'bg-red-100 text-red-700' }, empty: { l: 'Vazio', c: 'bg-slate-100 text-slate-500' } }
-                      const st = statusCfg[b.status] || statusCfg.sealed
-                      const isInactive = b.status === 'expired' || b.status === 'empty'
+                  <div className="border-t border-slate-100">
+                    <div className="divide-y divide-slate-50">
+                      {[...g.opened, ...g.sealed, ...g.expired, ...g.empty].map(b => {
+                        const statusCfg = { sealed: { l: 'Selado', c: 'bg-blue-100 text-blue-700' }, opened: { l: 'Aberto', c: 'bg-green-100 text-green-700' }, expired: { l: 'Vencido', c: 'bg-red-100 text-red-700' }, empty: { l: 'Vazio', c: 'bg-slate-100 text-slate-500' } }
+                        const st = statusCfg[b.status] || statusCfg.sealed
+                        const isInactive = b.status === 'expired' || b.status === 'empty'
 
-                      return (
-                        <div key={b.id} className={`px-4 py-3 ${isInactive ? 'opacity-40' : ''}`}>
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
-                              <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
-                              {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                        return (
+                          <div key={b.id} className={`px-4 py-3 ${isInactive ? 'opacity-40' : ''}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.c}`}>{st.l}</span>
+                                <span className="text-xs text-slate-600">{b.remaining_ml}/{b.volume_ml} mL</span>
+                                {b.batch_number && <span className="text-[10px] text-slate-400">Lote: {b.batch_number}</span>}
+                              </div>
+                              <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
                             </div>
-                            <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
+
+                            {useBottleId === b.id && (
+                              <div className="flex gap-2 mt-2">
+                                <input type="number" step="0.1" min="0.1" max={b.remaining_ml} value={mlUsed}
+                                  onChange={e => setMlUsed(e.target.value)} placeholder="mL usados" autoFocus
+                                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+                                <button onClick={() => handleUse(b.id)} disabled={actionLoading === b.id}
+                                  className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg min-h-[40px]">Salvar</button>
+                                <button onClick={() => { setUseBottleId(null); setMlUsed('') }}
+                                  className="px-2 py-2 border border-slate-200 rounded-lg min-h-[40px]"><X size={14} /></button>
+                              </div>
+                            )}
+
+                            {!isInactive && useBottleId !== b.id && (
+                              <div className="flex gap-1.5 mt-2">
+                                {b.status === 'sealed' && (
+                                  <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
+                                    className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
+                                    Abrir
+                                  </button>
+                                )}
+                                {b.status === 'opened' && (
+                                  <>
+                                    <button onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
+                                      className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[36px]">
+                                      Registrar uso
+                                    </button>
+                                    <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
+                                      className="py-2 px-3 border border-red-200 text-red-600 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
+                                      Descartar
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
-
-                          {/* Use form */}
-                          {useBottleId === b.id && (
-                            <div className="flex gap-2 mt-2">
-                              <input type="number" step="0.1" min="0.1" max={b.remaining_ml} value={mlUsed}
-                                onChange={e => setMlUsed(e.target.value)} placeholder="mL usados" autoFocus
-                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-                              <button onClick={() => handleUse(b.id)} disabled={actionLoading === b.id}
-                                className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg min-h-[40px]">Salvar</button>
-                              <button onClick={() => { setUseBottleId(null); setMlUsed('') }}
-                                className="px-2 py-2 border border-slate-200 rounded-lg min-h-[40px]"><X size={14} /></button>
-                            </div>
-                          )}
-
-                          {/* Actions */}
-                          {!isInactive && useBottleId !== b.id && (
-                            <div className="flex gap-1.5 mt-2">
-                              {b.status === 'sealed' && (
-                                <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
-                                  className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
-                                  Abrir
-                                </button>
-                              )}
-                              {b.status === 'opened' && (
-                                <>
-                                  <button onClick={() => { setUseBottleId(b.id); setMlUsed('') }}
-                                    className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[36px]">
-                                    Registrar uso
-                                  </button>
-                                  <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
-                                    className="py-2 px-3 border border-red-200 text-red-600 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
-                                    Descartar
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
+                        )
+                      })}
+                    </div>
+                    {/* Descadastrar fármaco */}
+                    <div className="px-4 py-3 border-t border-slate-100">
+                      {confirmDelete === g.medicine_id ? (
+                        <div className="flex items-center gap-2">
+                          <p className="flex-1 text-xs text-red-600">Descadastrar {g.name}? Os frascos serão mantidos.</p>
+                          <button onClick={() => handleDeleteMedicine(g.medicine_id)}
+                            className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg min-h-[32px]">Confirmar</button>
+                          <button onClick={() => setConfirmDelete(null)}
+                            className="px-3 py-1.5 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[32px]">Cancelar</button>
                         </div>
-                      )
-                    })}
+                      ) : (
+                        <button onClick={() => setConfirmDelete(g.medicine_id)}
+                          className="flex items-center gap-1.5 text-xs text-slate-400 active:text-red-500">
+                          <Trash2 size={12} /> Descadastrar fármaco
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
