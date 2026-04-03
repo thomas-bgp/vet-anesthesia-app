@@ -357,66 +357,38 @@ export default function FichaDetail() {
       </div>
 
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 px-4 py-3" data-no-print>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => navigate('/fichas')}
-              className="no-print p-2 -ml-2 rounded-lg active:bg-slate-200 min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
-            >
-              <ArrowLeft size={20} className="text-slate-600" />
+      <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 px-4 py-2.5" data-no-print>
+        {/* Row 1: back + name + status */}
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={() => navigate('/fichas')}
+            className="p-1.5 -ml-1.5 rounded-lg active:bg-slate-200 min-h-[36px] min-w-[36px] flex items-center justify-center shrink-0">
+            <ArrowLeft size={18} className="text-slate-600" />
+          </button>
+          <h1 className="text-sm font-bold text-slate-800 truncate flex-1">{surgery.patient_name}</h1>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${st.cls}`}>{st.label}</span>
+        </div>
+        {/* Row 2: action buttons, evenly spaced */}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowEmergency(true)}
+            className="flex items-center justify-center gap-1 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg active:bg-red-700 min-h-[38px]">
+            <AlertTriangle size={13} /> SOS
+          </button>
+          {!signature ? (
+            <button onClick={handleSign} disabled={signing || !isOnline}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg min-h-[38px] ${!isOnline ? 'bg-slate-300 text-slate-500' : 'bg-teal-600 text-white active:bg-teal-700'}`}>
+              <Printer size={13} /> {signing ? 'Assinando...' : 'Assinar e Imprimir'}
             </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-800 truncate">{surgery.patient_name}</h1>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${st.cls}`}>{st.label}</span>
-              </div>
-              <p className="text-xs text-slate-500 truncate">{surgery.procedure_name}</p>
-            </div>
-          </div>
-          <div className="no-print flex items-center gap-1.5 shrink-0">
-            {/* Emergency button — always visible */}
-            <button
-              onClick={() => setShowEmergency(true)}
-              className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg active:bg-red-700 min-h-[40px] shadow-sm"
-              title="Drogas de emergência"
-            >
-              <AlertTriangle size={14} />
-              <span className="hidden sm:inline">Emergência</span>
-              <span className="sm:hidden">SOS</span>
+          ) : (
+            <button onClick={handlePrint}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
+              <Printer size={13} /> Imprimir
+              <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold ml-1">Assinado</span>
             </button>
-
-            {!signature ? (
-              <button
-                onClick={handleSign}
-                disabled={signing || !isOnline}
-                className={`flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] ${
-                  !isOnline
-                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                    : 'bg-teal-600 text-white active:bg-teal-700'
-                }`}
-                title={!isOnline ? 'Requer conexão com a internet' : 'Assinar e Imprimir'}
-              >
-                <Printer size={14} />
-                <span className="hidden sm:inline">{signing ? 'Assinando...' : 'Assinar e Imprimir'}</span>
-                <span className="sm:hidden">{signing ? '...' : 'Assinar'}</span>
-              </button>
-            ) : (
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[40px]"
-                title="Imprimir / Exportar PDF"
-              >
-                <Printer size={14} />
-                <span className="hidden sm:inline">Imprimir</span>
-                <span className="text-[9px] ml-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Assinado</span>
-              </button>
-            )}
-            <button onClick={() => navigate(`/fichas/${id}/edit`)}
-              className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[40px]">
-              <Edit2 size={14} />Editar
-            </button>
-          </div>
+          )}
+          <button onClick={() => navigate(`/fichas/${id}/edit`)}
+            className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
+            <Edit2 size={13} /> Editar
+          </button>
         </div>
       </div>
 
