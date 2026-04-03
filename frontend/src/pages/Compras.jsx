@@ -40,6 +40,7 @@ export default function Compras() {
   const [newMedicineUnitsPerBox, setNewMedicineUnitsPerBox] = useState('1')
   const [newMedicineConcentrationValue, setNewMedicineConcentrationValue] = useState('')
   const [newMedicineConcentrationUnit, setNewMedicineConcentrationUnit] = useState('mg/mL')
+  const [newMedicineConcentrationCustom, setNewMedicineConcentrationCustom] = useState('')
   const [newMedicineActivePrinciple, setNewMedicineActivePrinciple] = useState('')
   const [newMedicinePresentation, setNewMedicinePresentation] = useState('ampola')
 
@@ -130,6 +131,7 @@ export default function Compras() {
     setNewMedicineUnitsPerBox('1')
     setNewMedicineConcentrationValue('')
     setNewMedicineConcentrationUnit('mg/mL')
+    setNewMedicineConcentrationCustom('')
     setNewMedicineActivePrinciple('')
     setNewMedicinePresentation('ampola')
     setNewDescName('')
@@ -182,7 +184,7 @@ export default function Compras() {
         volume_ml: parseFloat(newMedicineVolume),
         units_per_box: parseInt(newMedicineUnitsPerBox) || 1,
         medicine_type: 'farmaco',
-        concentration: newMedicineConcentrationValue ? newMedicineConcentrationValue + ' ' + newMedicineConcentrationUnit : null,
+        concentration: newMedicineConcentrationValue ? newMedicineConcentrationValue + ' ' + (newMedicineConcentrationUnit === '__custom__' ? newMedicineConcentrationCustom : newMedicineConcentrationUnit) : null,
         active_principle: newMedicineActivePrinciple || null,
         presentation: newMedicinePresentation,
         unit: newMedicinePresentation === 'ampola' ? 'ampola' : 'frasco',
@@ -375,15 +377,33 @@ export default function Compras() {
                       placeholder="Ex: 10"
                       className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />
-                    <select
-                      value={newMedicineConcentrationUnit}
-                      onChange={(e) => setNewMedicineConcentrationUnit(e.target.value)}
-                      className="w-24 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
-                    >
-                      <option>mg/mL</option>
-                      <option>mcg/mL</option>
-                      <option>%</option>
-                    </select>
+                    {newMedicineConcentrationUnit === '__custom__' ? (
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          value={newMedicineConcentrationCustom}
+                          onChange={(e) => setNewMedicineConcentrationCustom(e.target.value)}
+                          placeholder="Unidade"
+                          className="w-24 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => { setNewMedicineConcentrationUnit('mg/mL'); setNewMedicineConcentrationCustom('') }}
+                          className="px-1.5 text-slate-400 active:text-slate-600"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <select
+                        value={newMedicineConcentrationUnit}
+                        onChange={(e) => setNewMedicineConcentrationUnit(e.target.value)}
+                        className="w-28 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                      >
+                        <option>mg/mL</option>
+                        <option>mcg/mL</option>
+                        <option>UI/mL</option>
+                        <option>mg/g</option>
+                        <option>%</option>
+                        <option value="__custom__">Outra...</option>
+                      </select>
+                    )}
                   </div>
                 </div>
                 <div>
