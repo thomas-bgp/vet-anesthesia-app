@@ -359,11 +359,15 @@ html {
   .text-slate-500 { color: #666 !important; }
   .bg-slate-50 { background: transparent !important; }
 
-  /* ── Truncate off ── */
+  /* ── Truncate off + remove max-width limits ── */
   .truncate {
     overflow: visible !important;
     text-overflow: unset !important;
     white-space: normal !important;
+  }
+
+  .max-w-\[60\%\] {
+    max-width: 100% !important;
   }
 
   /* ── Section spacing ── */

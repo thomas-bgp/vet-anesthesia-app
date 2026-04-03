@@ -131,19 +131,16 @@ function parseConcentration(str) {
   return null
 }
 
-function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, phase, anesthesiaStart, anesthesiaEnd }) {
+function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, phase, infusionMinutes }) {
   if (!dose || !patientWeight || !concentrationMgMl || concentrationMgMl <= 0) return null
 
   const doseNum = parseFloat(dose)
   if (isNaN(doseNum) || doseNum <= 0) return null
 
   if (phase === 'infusao') {
-    // Need duration
-    if (!anesthesiaStart || !anesthesiaEnd) return 'need_times'
-    const start = new Date(anesthesiaStart)
-    const end = new Date(anesthesiaEnd)
-    const durationHours = (end - start) / (1000 * 60 * 60)
-    if (durationHours <= 0) return null
+    const mins = parseFloat(infusionMinutes)
+    if (!mins || mins <= 0) return 'need_times'
+    const durationHours = mins / 60
 
     let mgKgH
     if (doseUnit === 'mg/kg/h') {
@@ -172,7 +169,7 @@ function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, pha
   return (mgKg * patientWeight) / concentrationMgMl
 }
 
-function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, anesthesiaStart, anesthesiaEnd }) {
+function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight }) {
   const isInfusion = phase === 'infusao'
   const isMaintenance = phase === 'manutencao'
   const unitOptions = isInfusion ? INFUSION_UNITS : BOLUS_UNITS
@@ -191,8 +188,7 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, 
         patientWeight,
         concentrationMgMl,
         phase,
-        anesthesiaStart,
-        anesthesiaEnd,
+        infusionMinutes: med.infusion_minutes,
       })
     : null
 
@@ -276,15 +272,26 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, 
           <input type="time" value={med.time} onChange={e => onChange({ ...med, time: e.target.value })} className={inp} />
         </div>
       </div>
+      {/* Infusion duration field */}
+      {isInfusion && (
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-slate-500 shrink-0">Tempo infusão</label>
+          <input type="number" inputMode="numeric" min="1" step="1" value={med.infusion_minutes || ''}
+            onChange={e => onChange({ ...med, infusion_minutes: e.target.value })}
+            placeholder="min" className="w-20 px-2 py-1.5 border border-slate-200 rounded text-sm text-center min-h-[36px]" />
+          <span className="text-[10px] text-slate-400">min</span>
+          {med.infusion_minutes && <span className="text-[10px] text-slate-400">({(parseFloat(med.infusion_minutes) / 60).toFixed(1)}h)</span>}
+        </div>
+      )}
       {/* Calculated volume display */}
       {typeof calculatedVolume === 'number' && (
         <p className="text-[10px] text-teal-600 font-medium">
-          Volume: {calculatedVolume.toFixed(2)} mL {isInfusion ? '(total da infusao)' : '(dose x peso / concentracao)'}
+          Volume: {calculatedVolume.toFixed(2)} mL {isInfusion ? `(${med.infusion_minutes}min)` : ''}
         </p>
       )}
       {calculatedVolume === 'need_times' && (
         <p className="text-[10px] text-amber-600 font-medium">
-          Preencha os horarios para calcular volume
+          Preencha o tempo de infusão para calcular volume
         </p>
       )}
       <div className="flex items-center gap-1 pt-1">
@@ -821,7 +828,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Medicação Pré-Anestésica (MPA)</p>
               <button type="button" onClick={() => addDrug('mpa')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.mpa.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="mpa" onChange={(m) => updateDrug('mpa', i, m)} onRemove={() => removeDrug('mpa', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {drugs.mpa.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="mpa" onChange={(m) => updateDrug('mpa', i, m)} onRemove={() => removeDrug('mpa', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -829,7 +836,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Indução</p>
               <button type="button" onClick={() => addDrug('inducao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.inducao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="inducao" onChange={(m) => updateDrug('inducao', i, m)} onRemove={() => removeDrug('inducao', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {drugs.inducao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="inducao" onChange={(m) => updateDrug('inducao', i, m)} onRemove={() => removeDrug('inducao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -837,7 +844,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção</p>
               <button type="button" onClick={() => addDrug('manutencao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.manutencao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao" onChange={(m) => updateDrug('manutencao', i, m)} onRemove={() => removeDrug('manutencao', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {drugs.manutencao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao" onChange={(m) => updateDrug('manutencao', i, m)} onRemove={() => removeDrug('manutencao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -845,7 +852,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Infusões Contínuas</p>
               <button type="button" onClick={() => addDrug('infusao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.infusao || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="infusao" onChange={(m) => updateDrug('infusao', i, m)} onRemove={() => removeDrug('infusao', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {(drugs.infusao || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="infusao" onChange={(m) => updateDrug('infusao', i, m)} onRemove={() => removeDrug('infusao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
         </Section>
 
@@ -1022,7 +1029,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Trans-operatório</p>
               <button type="button" onClick={() => addDrug('transoperatorio')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.transoperatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="transoperatorio" onChange={(m) => updateDrug('transoperatorio', i, m)} onRemove={() => removeDrug('transoperatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {(drugs.transoperatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="transoperatorio" onChange={(m) => updateDrug('transoperatorio', i, m)} onRemove={() => removeDrug('transoperatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
 
           <div className="space-y-2 mb-3">
@@ -1058,7 +1065,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Pós-operatório</p>
               <button type="button" onClick={() => addDrug('pos_operatorio')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.pos_operatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="pos_operatorio" onChange={(m) => updateDrug('pos_operatorio', i, m)} onRemove={() => removeDrug('pos_operatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} anesthesiaStart={form.anesthesia_start} anesthesiaEnd={form.anesthesia_end || form.procedure_end} />)}
+            {(drugs.pos_operatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="pos_operatorio" onChange={(m) => updateDrug('pos_operatorio', i, m)} onRemove={() => removeDrug('pos_operatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
         </Section>
 
