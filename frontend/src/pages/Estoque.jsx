@@ -68,6 +68,7 @@ export default function Estoque() {
   }
 
   const groups = Object.values(grouped)
+    .filter(g => (g.sealed.length + g.opened.length) > 0) // hide if only discarded/empty/expired
     .filter(g => !search || g.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name))
 
