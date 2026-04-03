@@ -111,6 +111,33 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/bottles/purchases - Purchases grouped by date + medicine
+router.get('/purchases', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const purchases = await queryRows(`
+      SELECT
+        mb.medicine_id,
+        m.name as medicine_name,
+        m.concentration,
+        mb.purchased_at,
+        COUNT(*)::int as quantity,
+        mb.volume_ml,
+        mb.purchase_cost,
+        SUM(mb.purchase_cost)::numeric as total_cost
+      FROM medicine_bottles mb
+      JOIN medicines m ON mb.medicine_id = m.id
+      WHERE mb.user_id = $1
+      GROUP BY mb.medicine_id, m.name, m.concentration, mb.purchased_at, mb.volume_ml, mb.purchase_cost
+      ORDER BY mb.purchased_at DESC
+    `, [userId]);
+    res.json({ purchases });
+  } catch (err) {
+    console.error('Purchases error:', err);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // POST /api/bottles - Create bottle(s) from a purchase
 router.post('/', authenticateToken, async (req, res) => {
   try {
@@ -249,6 +276,36 @@ router.put('/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Update bottle error:', err);
     res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// DELETE /api/bottles/:id - Remove a sealed bottle
+router.delete('/:id', authenticateToken, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { id } = req.params;
+
+    const { data: bottle } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (!bottle) return res.status(404).json({ error: 'Frasco não encontrado' });
+    if (bottle.status !== 'sealed') return res.status(400).json({ error: 'Só frascos selados podem ser removidos' });
+
+    await supabase.from('medicine_bottles').delete().eq('id', id);
+
+    await queryRows(
+      'UPDATE medicines SET current_stock = current_stock - 1 WHERE id = $1',
+      [bottle.medicine_id]
+    ).catch(() => {});
+
+    res.json({ message: 'Frasco removido' });
+  } catch (err) {
+    console.error('Delete bottle error:', err);
+    res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 

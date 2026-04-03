@@ -38,7 +38,8 @@ export default function Compras() {
   const [newMedicineName, setNewMedicineName] = useState('')
   const [newMedicineVolume, setNewMedicineVolume] = useState('')
   const [newMedicineUnitsPerBox, setNewMedicineUnitsPerBox] = useState('1')
-  const [newMedicineConcentration, setNewMedicineConcentration] = useState('')
+  const [newMedicineConcentrationValue, setNewMedicineConcentrationValue] = useState('')
+  const [newMedicineConcentrationUnit, setNewMedicineConcentrationUnit] = useState('mg/mL')
   const [newMedicineActivePrinciple, setNewMedicineActivePrinciple] = useState('')
   const [newMedicinePresentation, setNewMedicinePresentation] = useState('ampola')
 
@@ -127,7 +128,8 @@ export default function Compras() {
     setNewMedicineName('')
     setNewMedicineVolume('')
     setNewMedicineUnitsPerBox('1')
-    setNewMedicineConcentration('')
+    setNewMedicineConcentrationValue('')
+    setNewMedicineConcentrationUnit('mg/mL')
     setNewMedicineActivePrinciple('')
     setNewMedicinePresentation('ampola')
     setNewDescName('')
@@ -180,7 +182,7 @@ export default function Compras() {
         volume_ml: parseFloat(newMedicineVolume),
         units_per_box: parseInt(newMedicineUnitsPerBox) || 1,
         medicine_type: 'farmaco',
-        concentration: newMedicineConcentration || null,
+        concentration: newMedicineConcentrationValue ? newMedicineConcentrationValue + ' ' + newMedicineConcentrationUnit : null,
         active_principle: newMedicineActivePrinciple || null,
         presentation: newMedicinePresentation,
         unit: newMedicinePresentation === 'ampola' ? 'ampola' : 'frasco',
@@ -364,13 +366,25 @@ export default function Compras() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Concentracao</label>
-                  <input
-                    type="text"
-                    value={newMedicineConcentration}
-                    onChange={(e) => setNewMedicineConcentration(e.target.value)}
-                    placeholder="Ex: 10 mg/ml"
-                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      step="any"
+                      value={newMedicineConcentrationValue}
+                      onChange={(e) => setNewMedicineConcentrationValue(e.target.value)}
+                      placeholder="Ex: 10"
+                      className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    />
+                    <select
+                      value={newMedicineConcentrationUnit}
+                      onChange={(e) => setNewMedicineConcentrationUnit(e.target.value)}
+                      className="w-24 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                    >
+                      <option>mg/mL</option>
+                      <option>mcg/mL</option>
+                      <option>%</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Apresentacao</label>
