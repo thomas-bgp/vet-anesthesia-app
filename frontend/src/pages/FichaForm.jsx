@@ -443,7 +443,8 @@ export default function FichaForm() {
   )
 
   const saveDraftToServer = async () => {
-    setSavingDraft(true); setError('')
+    if (savingRef.current) return
+    setSavingDraft(true); savingRef.current = true; setError('')
     try {
       const payload = {
         ...form,
@@ -472,7 +473,7 @@ export default function FichaForm() {
     } catch (err) {
       if (!navigator.onLine) { setError('Sem conexão. Dados salvos localmente no celular.'); doAutoSave() }
       else setError(err.response?.data?.error || 'Erro ao salvar rascunho.')
-    } finally { setSavingDraft(false) }
+    } finally { setSavingDraft(false); savingRef.current = false }
   }
 
   useEffect(() => {
