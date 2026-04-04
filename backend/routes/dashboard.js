@@ -62,16 +62,15 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 
-    // Monthly stock costs (usage movements)
+    // Monthly stock costs (from bottle_usages — actual mL used)
     const monthlyCosts = await queryRows(`
       SELECT
-        to_char(sm.created_at, 'YYYY-MM') as month,
-        COALESCE(SUM(sm.total_cost), 0)::numeric as stock_cost
-      FROM stock_movements sm
-      WHERE sm.user_id = $1
-        AND sm.type = 'usage'
-        AND sm.created_at >= $2
-      GROUP BY to_char(sm.created_at, 'YYYY-MM')
+        to_char(bu.used_at, 'YYYY-MM') as month,
+        COALESCE(SUM(bu.cost), 0)::numeric as stock_cost
+      FROM bottle_usages bu
+      WHERE bu.user_id = $1
+        AND bu.used_at >= $2
+      GROUP BY to_char(bu.used_at, 'YYYY-MM')
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
 

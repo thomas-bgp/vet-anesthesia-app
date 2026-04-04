@@ -314,7 +314,7 @@ export default function FichaDetail() {
     if (!groupedMeds[phase]) groupedMeds[phase] = []
     groupedMeds[phase].push(m)
   })
-  const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
+  const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', manutencao_inalatoria: 'Manut. Inalatória', manutencao_tiva: 'Manut. TIVA', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
 
   return (
     <div className="pb-6">

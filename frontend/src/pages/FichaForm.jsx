@@ -56,7 +56,8 @@ const ROUTES = ['IV', 'IM', 'SC', 'VO', 'Inalatório', 'Epidural', 'Tópico', 'R
 const PHASES = [
   { value: 'mpa', label: 'MPA' },
   { value: 'inducao', label: 'Indução' },
-  { value: 'manutencao', label: 'Manutenção' },
+  { value: 'manutencao_inalatoria', label: 'Manutenção - Inalatória' },
+  { value: 'manutencao_tiva', label: 'Manutenção - TIVA' },
   { value: 'infusao', label: 'Infusão Contínua' },
   { value: 'bloqueio', label: 'Bloqueio' },
   { value: 'transoperatorio', label: 'Trans-op' },
@@ -171,7 +172,7 @@ function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, pha
 
 function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight }) {
   const isInfusion = phase === 'infusao'
-  const isMaintenance = phase === 'manutencao'
+  const isMaintenance = phase === 'manutencao' || phase === 'manutencao_inalatoria' || phase === 'manutencao_tiva'
   const unitOptions = isInfusion ? INFUSION_UNITS : BOLUS_UNITS
   const isAE = med.dose_ae === true
   const isOutroUnit = med.dose_unit === 'Outro'
@@ -320,7 +321,7 @@ export default function FichaForm() {
   const [error, setError] = useState('')
   const [allMedicines, setAllMedicines] = useState([])
 
-  const [drugs, setDrugs] = useState({ mpa: [], inducao: [], manutencao: [], infusao: [], transoperatorio: [], pos_operatorio: [] })
+  const [drugs, setDrugs] = useState({ mpa: [], inducao: [], manutencao_inalatoria: [], manutencao_tiva: [], infusao: [], transoperatorio: [], pos_operatorio: [] })
   const [disposables, setDisposables] = useState([])
   const [allDisposables, setAllDisposables] = useState([])
   const [blocks, setBlocks] = useState([])
@@ -538,7 +539,7 @@ export default function FichaForm() {
         }
 
         const meds = res.data.medicines || []
-        const grouped = { mpa: [], inducao: [], manutencao: [], infusao: [], transoperatorio: [], pos_operatorio: [] }
+        const grouped = { mpa: [], inducao: [], manutencao_inalatoria: [], manutencao_tiva: [], manutencao: [], infusao: [], transoperatorio: [], pos_operatorio: [] }
         meds.forEach(m => {
           const phase = m.phase || 'mpa'
           const key = grouped[phase] !== undefined ? phase : 'mpa'
@@ -629,7 +630,9 @@ export default function FichaForm() {
       const allDrugs = [
         ...drugs.mpa.map(d => ({ ...d, phase: 'mpa' })),
         ...drugs.inducao.map(d => ({ ...d, phase: 'inducao' })),
-        ...drugs.manutencao.map(d => ({ ...d, phase: 'manutencao' })),
+        ...(drugs.manutencao_inalatoria || []).map(d => ({ ...d, phase: 'manutencao_inalatoria' })),
+        ...(drugs.manutencao_tiva || []).map(d => ({ ...d, phase: 'manutencao_tiva' })),
+        ...(drugs.manutencao || []).map(d => ({ ...d, phase: 'manutencao' })),
         ...(drugs.infusao || []).map(d => ({ ...d, phase: 'infusao' })),
         ...(drugs.transoperatorio || []).map(d => ({ ...d, phase: 'transoperatorio' })),
         ...(drugs.pos_operatorio || []).map(d => ({ ...d, phase: 'pos_operatorio' })),
@@ -823,7 +826,7 @@ export default function FichaForm() {
         </Section>
 
         <Section title="Protocolo Anestésico" open={sections.protocolo} onToggle={() => toggle('protocolo')}
-          badge={drugs.mpa.length + drugs.inducao.length + drugs.manutencao.length + (drugs.infusao || []).length + (drugs.transoperatorio || []).length || null}>
+          badge={drugs.mpa.length + drugs.inducao.length + (drugs.manutencao_inalatoria || []).length + (drugs.manutencao_tiva || []).length + (drugs.manutencao || []).length + (drugs.infusao || []).length + (drugs.transoperatorio || []).length || null}>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 uppercase">Medicação Pré-Anestésica (MPA)</p>
@@ -842,10 +845,18 @@ export default function FichaForm() {
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção</p>
-              <button type="button" onClick={() => addDrug('manutencao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
+              <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção — Inalatória</p>
+              <button type="button" onClick={() => addDrug('manutencao_inalatoria')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.manutencao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao" onChange={(m) => updateDrug('manutencao', i, m)} onRemove={() => removeDrug('manutencao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.manutencao_inalatoria || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_inalatoria" onChange={(m) => updateDrug('manutencao_inalatoria', i, m)} onRemove={() => removeDrug('manutencao_inalatoria', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+          </div>
+          <div className="border-t border-slate-100 my-2" />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção — TIVA</p>
+              <button type="button" onClick={() => addDrug('manutencao_tiva')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
+            </div>
+            {(drugs.manutencao_tiva || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_tiva" onChange={(m) => updateDrug('manutencao_tiva', i, m)} onRemove={() => removeDrug('manutencao_tiva', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
