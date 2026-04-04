@@ -404,6 +404,8 @@ export default function Compras() {
                         <option>mcg/mL</option>
                         <option>UI/mL</option>
                         <option>mg/g</option>
+                        <option>mL</option>
+                        <option>mL/kg</option>
                         <option>%</option>
                         <option value="__custom__">Outra...</option>
                       </select>

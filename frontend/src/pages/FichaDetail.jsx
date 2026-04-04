@@ -724,41 +724,41 @@ export default function FichaDetail() {
           )}
         </Card>
 
+        {/* Intercorrências / Anotações — separate section for print visibility */}
+        {surgery.complications && (() => {
+          let entries = []
+          try {
+            const parsed = JSON.parse(surgery.complications)
+            entries = Array.isArray(parsed) ? parsed : [{ time: '', text: surgery.complications }]
+          } catch {
+            entries = [{ time: '', text: surgery.complications }]
+          }
+          if (entries.length === 0 || entries.every(e => !e.text?.trim())) return null
+          return (
+            <Card title="Intercorrências / Anotações">
+              <div className="space-y-1.5">
+                {entries.filter(e => e.text?.trim()).map((entry, i) => (
+                  <div key={i} className="flex items-start gap-2 py-1">
+                    {entry.time && (
+                      <span className="text-xs font-mono font-semibold text-red-600 shrink-0 mt-0.5">{entry.time}</span>
+                    )}
+                    <span className="text-sm text-slate-800 whitespace-pre-line">{entry.text}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )
+        })()}
+
         {/* Pós-operatório */}
-        {(surgery.post_operative || surgery.complications || surgery.recovery_quality) && (
+        {(surgery.post_operative || surgery.recovery_quality) && (
           <Card title="Pós-operatório">
             {surgery.post_operative && (
               <p className="text-sm text-slate-700 whitespace-pre-line">{surgery.post_operative}</p>
             )}
             {surgery.recovery_quality && (
-              <div className={`${surgery.post_operative ? 'mt-2' : ''}`}>
-                <InfoRow label="Qualidade da recuperação" value={surgery.recovery_quality} />
-              </div>
+              <InfoRow label="Qualidade da recuperação" value={surgery.recovery_quality} />
             )}
-            {surgery.complications && (() => {
-              let entries = []
-              try {
-                const parsed = JSON.parse(surgery.complications)
-                entries = Array.isArray(parsed) ? parsed : [{ time: '', text: surgery.complications }]
-              } catch {
-                entries = [{ time: '', text: surgery.complications }]
-              }
-              return (
-                <div className={`bg-red-50 border border-red-200 rounded-lg p-3 ${surgery.post_operative ? 'mt-3' : ''}`}>
-                  <p className="text-[10px] font-bold text-red-600 uppercase mb-2">Intercorrências / Anotações</p>
-                  <div className="space-y-1.5">
-                    {entries.map((entry, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        {entry.time && (
-                          <span className="text-xs font-mono font-semibold text-red-600 shrink-0 mt-0.5">{entry.time}</span>
-                        )}
-                        <span className="text-sm text-red-700">{entry.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
           </Card>
         )}
 
