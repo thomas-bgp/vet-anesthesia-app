@@ -21,18 +21,26 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [refStatus, setRefStatus] = useState(null) // null | 'valid' | 'invalid' | 'checking'
+  const [refGrantPlan, setRefGrantPlan] = useState(null)
 
   // Validate referral code when it changes
   useEffect(() => {
     const code = form.referralCode.trim()
-    if (!code) { setRefStatus(null); return }
+    if (!code) { setRefStatus(null); setRefGrantPlan(null); return }
     setRefStatus('checking')
     const timer = setTimeout(async () => {
       try {
-        await api.get(`/referrals/validate/${code}`)
-        setRefStatus('valid')
+        const res = await api.get(`/referrals/validate/${code}`)
+        if (res.data.valid) {
+          setRefStatus('valid')
+          setRefGrantPlan(res.data.grant_plan || 'free')
+        } else {
+          setRefStatus('invalid')
+          setRefGrantPlan(null)
+        }
       } catch {
         setRefStatus('invalid')
+        setRefGrantPlan(null)
       }
     }, 600)
     return () => clearTimeout(timer)
@@ -175,6 +183,11 @@ export default function Register() {
                 </div>
               </div>
               {refStatus === 'valid' && <p className="text-xs text-green-600 mt-1">Código válido!</p>}
+              {refStatus === 'valid' && refGrantPlan === 'max_legacy' && (
+                <span className="inline-block mt-1.5 px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-semibold rounded-full">
+                  Plano Max vitalício
+                </span>
+              )}
               {refStatus === 'invalid' && <p className="text-xs text-red-500 mt-1">Código inválido ou expirado.</p>}
             </div>
 

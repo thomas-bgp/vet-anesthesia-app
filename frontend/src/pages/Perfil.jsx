@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { LogOut, User, Save, Trash2, Check, Upload, Palette } from 'lucide-react'
+import { LogOut, User, Save, Trash2, Check, Upload, Palette, Plus, Copy, Link2 } from 'lucide-react'
 import api from '../api/axios'
 import InstallButton from '../components/InstallButton'
 
@@ -29,6 +29,12 @@ export default function Perfil() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
+  // Referral codes state (only for max_legacy users)
+  const [referrals, setReferrals] = useState([])
+  const [loadingReferrals, setLoadingReferrals] = useState(false)
+  const [creatingCode, setCreatingCode] = useState(false)
+  const [copiedCode, setCopiedCode] = useState(null)
+
   // Signature pad state
   const canvasRef = useRef(null)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -47,6 +53,41 @@ export default function Perfil() {
       setBusinessEmail(user.business_email || '')
     }
   }, [user])
+
+  // Fetch referral codes for max_legacy users
+  useEffect(() => {
+    if (user?.plan === 'max_legacy') {
+      setLoadingReferrals(true)
+      api.get('/referrals')
+        .then(res => setReferrals(res.data.referrals || []))
+        .catch(() => {})
+        .finally(() => setLoadingReferrals(false))
+    }
+  }, [user?.plan])
+
+  const createReferralCode = async () => {
+    setCreatingCode(true)
+    try {
+      const res = await api.post('/referrals', {
+        grant_plan: 'max_legacy',
+        expires_in_days: 365,
+        max_uses: 1,
+      })
+      if (res.data.referral) {
+        setReferrals(prev => [res.data.referral, ...prev])
+      }
+    } catch (err) {
+      console.error('Create referral error:', err)
+    } finally {
+      setCreatingCode(false)
+    }
+  }
+
+  const copyReferralLink = (code) => {
+    navigator.clipboard.writeText(`https://anestify.com.br/register?ref=${code}`)
+    setCopiedCode(code)
+    setTimeout(() => setCopiedCode(null), 2000)
+  }
 
   // Initialize canvas
   const canvasInited = useRef(false)
@@ -525,6 +566,80 @@ export default function Perfil() {
           )}
         </button>
       </div>
+
+      {/* Referral codes - only for max_legacy users */}
+      {user?.plan === 'max_legacy' && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <Link2 size={14} />
+              Códigos de Indicação
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">Gere códigos para dar acesso vitalício ao Anestify</p>
+          </div>
+
+          <button
+            onClick={createReferralCode}
+            disabled={creatingCode}
+            className="flex items-center justify-center gap-2 w-full py-2.5 bg-teal-50 text-teal-700 font-medium rounded-lg text-sm active:bg-teal-100 transition min-h-[44px] border border-teal-200"
+          >
+            {creatingCode ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
+            ) : (
+              <>
+                <Plus size={16} />
+                Novo código
+              </>
+            )}
+          </button>
+
+          {loadingReferrals ? (
+            <div className="text-center text-sm text-slate-400 py-4">Carregando...</div>
+          ) : referrals.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-2">Nenhum código criado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {referrals.map(ref => {
+                const status = ref.current_status || (
+                  !ref.is_active ? 'inactive' :
+                  new Date(ref.expires_at) <= new Date() ? 'expired' :
+                  ref.uses >= ref.max_uses ? 'exhausted' : 'active'
+                )
+                const statusLabel = status === 'active' ? 'Ativo' : status === 'expired' ? 'Expirado' : status === 'exhausted' ? 'Esgotado' : 'Inativo'
+                const statusColor = status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                const planLabel = ref.grant_plan === 'max_legacy' ? 'Max vitalício' : 'Free'
+
+                return (
+                  <div key={ref.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <code className="text-xs font-mono font-bold text-slate-700">{ref.code}</code>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusColor}`}>{statusLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                        <span>{ref.uses}/{ref.max_uses} usos</span>
+                        <span>{planLabel}</span>
+                        <span>{new Date(ref.created_at).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => copyReferralLink(ref.code)}
+                      className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 active:bg-slate-100 min-h-[36px]"
+                      title="Copiar link"
+                    >
+                      {copiedCode === ref.code ? (
+                        <Check size={14} className="text-green-500" />
+                      ) : (
+                        <Copy size={14} />
+                      )}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Logout */}
       <div className="bg-white rounded-xl border border-slate-200 p-6">

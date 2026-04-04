@@ -22,8 +22,11 @@ router.post('/', authenticateToken, async (req, res) => {
 
     const supabase = getSupabase();
 
+    // Determine grant_plan: only max_legacy users can grant max_legacy
+    const grantPlan = req.user.plan === 'max_legacy' ? (req.body.grant_plan || 'max_legacy') : 'free';
+
     // Generate unique code
-    const code = 'VET-' + uuidv4().toUpperCase().replace(/-/g, '').substring(0, 10);
+    const code = 'ANS-' + uuidv4().toUpperCase().replace(/-/g, '').substring(0, 10);
     const expiresAt = new Date(Date.now() + expiryDays * 86400000).toISOString();
 
     const { data: inserted, error: insertError } = await supabase
@@ -33,6 +36,7 @@ router.post('/', authenticateToken, async (req, res) => {
         created_by: req.user.id,
         expires_at: expiresAt,
         max_uses: maxUses,
+        grant_plan: grantPlan,
       })
       .select()
       .single();
@@ -103,6 +107,7 @@ router.get('/validate/:code', async (req, res) => {
         rl.max_uses,
         rl.uses,
         rl.is_active,
+        rl.grant_plan,
         u.name as created_by_name,
         CASE
           WHEN rl.is_active = false THEN 'inactive'
@@ -129,6 +134,7 @@ router.get('/validate/:code', async (req, res) => {
       created_by: referral.created_by_name,
       expires_at: referral.expires_at,
       uses_remaining: referral.max_uses - referral.uses,
+      grant_plan: referral.grant_plan || 'free',
     });
   } catch (err) {
     console.error('Validate referral error:', err);

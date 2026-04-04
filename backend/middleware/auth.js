@@ -18,7 +18,7 @@ async function authenticateToken(req, res, next) {
     const supabase = getSupabase();
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, name, email, role, is_active')
+      .select('id, name, email, role, is_active, plan')
       .eq('id', decoded.userId)
       .maybeSingle();
 

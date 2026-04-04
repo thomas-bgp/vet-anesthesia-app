@@ -73,6 +73,7 @@ router.post('/register', async (req, res) => {
         email: email.toLowerCase(),
         password: hashedPassword,
         role: userRole,
+        plan: referralLink?.grant_plan || 'free',
       })
       .select()
       .single();
