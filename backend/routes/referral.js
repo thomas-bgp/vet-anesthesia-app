@@ -22,8 +22,9 @@ router.post('/', authenticateToken, async (req, res) => {
 
     const supabase = getSupabase();
 
-    // Determine grant_plan: only max_legacy users can grant max_legacy
-    const grantPlan = req.user.plan === 'max_legacy' ? (req.body.grant_plan || 'max_legacy') : 'free';
+    // Determine grant_plan: only Camila can grant max_legacy
+    const isCamila = req.user.email === 'camilacadibe@gmail.com';
+    const grantPlan = isCamila ? (req.body.grant_plan || 'max_legacy') : 'free';
 
     // Generate unique code
     const code = 'ANS-' + uuidv4().toUpperCase().replace(/-/g, '').substring(0, 10);

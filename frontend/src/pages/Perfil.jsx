@@ -56,7 +56,7 @@ export default function Perfil() {
 
   // Fetch referral codes for max_legacy users
   useEffect(() => {
-    if (user?.plan === 'max_legacy') {
+    if (user?.email === 'camilacadibe@gmail.com') {
       setLoadingReferrals(true)
       api.get('/referrals')
         .then(res => setReferrals(res.data.referrals || []))
@@ -568,7 +568,7 @@ export default function Perfil() {
       </div>
 
       {/* Referral codes - only for max_legacy users */}
-      {user?.plan === 'max_legacy' && (
+      {user?.email === 'camilacadibe@gmail.com' && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
