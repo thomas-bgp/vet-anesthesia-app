@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS surgeries (
   extubation_time TIMESTAMPTZ,
   post_operative TEXT, recovery_quality TEXT,
   custom_vitals_params TEXT,
+  exam_segm TEXT, exam_bast TEXT, exam_linf TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS monitoring_vitals (
   pam REAL, pas REAL, pad REAL, temperature REAL,
   fluid_ml_kg_h REAL, anesthetic TEXT, o2_l_min REAL,
   custom_params TEXT,
+  param_notes JSONB,
   notes TEXT
 );
 

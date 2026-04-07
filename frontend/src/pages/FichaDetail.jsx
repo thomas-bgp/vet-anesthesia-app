@@ -349,7 +349,7 @@ export default function FichaDetail() {
           )}
         </div>
         {/* Title centered */}
-        <h1 style={{ marginTop: '8pt' }}>Ficha de Anestesia Veterinária</h1>
+        <h1 style={{ marginTop: '8pt' }}>Ficha de Registro Anestésico</h1>
         <p style={{ fontSize: '9pt', color: '#666', marginTop: '2pt' }}>
           Data: {fmtDate(surgery.start_time || surgery.created_at)}
           {surgery.clinic_name ? ` — ${surgery.clinic_name}` : ''}
@@ -459,7 +459,28 @@ export default function FichaDetail() {
             <InfoRow label="Jejum hídrico" value={surgery.fasting_liquid ? `Sim (${surgery.fasting_liquid_hours || '?'}h)` : null} />
             <InfoRow label="Doenças" value={surgery.pre_existing_diseases} />
             <InfoRow label="Temperamento" value={surgery.temperament} />
-            <InfoRow label="Medicações prévias" value={surgery.prior_medications} />
+            {(() => {
+              let pmeds = null
+              try { pmeds = JSON.parse(surgery.prior_medications) } catch {}
+              if (Array.isArray(pmeds) && pmeds.length > 0) {
+                return (
+                  <div className="text-sm py-1.5">
+                    <span className="text-slate-500">Medicações prévias</span>
+                    <div className="mt-1 space-y-1">
+                      {pmeds.map((pm, i) => (
+                        <div key={i} className="flex items-center gap-2 text-slate-800 text-sm">
+                          <span className="font-medium">{pm.name}</span>
+                          {pm.dose && <span className="text-slate-500">{pm.dose}</span>}
+                          {pm.route && <span className="text-xs bg-slate-100 px-1.5 py-0.5 rounded">{pm.route}</span>}
+                          {pm.time && <span className="text-xs text-slate-400">{pm.time}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+              return <InfoRow label="Medicações prévias" value={surgery.prior_medications} />
+            })()}
             <InfoRow label="Obs" value={surgery.anamnesis_notes} />
           </Card>
         )}
@@ -493,6 +514,9 @@ export default function FichaDetail() {
               <InfoRow label="PPT" value={surgery.exam_ppt} />
               <InfoRow label="Plaquetas" value={surgery.exam_plaquetas} />
               <InfoRow label="Leuc" value={surgery.exam_leuc} />
+              <InfoRow label="N.Segm" value={surgery.exam_segm} />
+              <InfoRow label="N.Bast" value={surgery.exam_bast} />
+              <InfoRow label="Linfócitos" value={surgery.exam_linf} />
               <InfoRow label="Creat" value={surgery.exam_creat} />
               <InfoRow label="ALT" value={surgery.exam_alt} />
               <InfoRow label="FA" value={surgery.exam_fa} />
@@ -513,7 +537,7 @@ export default function FichaDetail() {
             <InfoRow label="Tipo" value={surgery.airway_type === 'Outro' && surgery.airway_other ? `Outro: ${surgery.airway_other}` : surgery.airway_type} />
             <InfoRow label="Tubo" value={surgery.tube_number} />
             <InfoRow label="Respiração" value={surgery.breathing_mode} />
-            {surgery.breathing_mode === 'Controlada' && surgery.ventilation_type && (
+            {(surgery.breathing_mode || '').includes('Controlada') && surgery.ventilation_type && (
               <InfoRow label="Tipo de ventilação" value={surgery.ventilation_type} />
             )}
             <InfoRow label="Sistema" value={surgery.breathing_system} />
@@ -706,9 +730,18 @@ export default function FichaDetail() {
                   {vitals.map((v, i) => (
                     <tr key={v.id || i} className="border-b border-slate-50">
                       <td className="py-2 font-mono text-slate-600 sticky left-0 bg-white">{fmtTime(v.recorded_at)}</td>
-                      {VITAL_FIELDS.map(f => (
-                        <td key={f.key} className="py-2 text-center text-slate-700 px-1">{v[f.key] ?? '-'}</td>
-                      ))}
+                      {VITAL_FIELDS.map(f => {
+                        const noteKeyMap = { pas: 'pas', fr: 'fr', temperature: 'temperature', o2_l_min: 'o2' }
+                        const noteKey = noteKeyMap[f.key]
+                        let pn = v.param_notes; if (typeof pn === 'string') { try { pn = JSON.parse(pn) } catch { pn = {} } }
+                        const noteVal = noteKey ? (pn || {})[noteKey] : null
+                        return (
+                          <td key={f.key} className="py-2 text-center text-slate-700 px-1">
+                            {v[f.key] ?? '-'}
+                            {noteVal && <div className="text-[8px] text-teal-600 leading-tight">{noteVal}</div>}
+                          </td>
+                        )
+                      })}
                       <td data-no-print>
                         {surgery.status !== 'completed' && (
                           <button onClick={() => deleteVital(v.id)} className="p-1 text-slate-400 active:text-red-500">

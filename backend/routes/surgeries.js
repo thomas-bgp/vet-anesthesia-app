@@ -349,6 +349,7 @@ router.post('/:id/vitals', authenticateToken, async (req, res) => {
       fc, fr, spo2, etco2, pam, pas, pad, temperature, notes,
       fluid_ml_kg_h, anesthetic, o2_l_min,
       custom_params,
+      param_notes,
     } = req.body;
 
     const { data: vital, error } = await supabase
@@ -369,6 +370,7 @@ router.post('/:id/vitals', authenticateToken, async (req, res) => {
         anesthetic: anesthetic || null,
         o2_l_min: o2_l_min || null,
         custom_params: custom_params ? (typeof custom_params === 'string' ? custom_params : JSON.stringify(custom_params)) : null,
+        param_notes: param_notes ? (typeof param_notes === 'string' ? param_notes : JSON.stringify(param_notes)) : null,
       })
       .select()
       .single();
@@ -443,6 +445,7 @@ router.post('/', authenticateToken, async (req, res) => {
       'general_state', 'nutritional_state',
       'exam_ht', 'exam_hb', 'exam_eritr', 'exam_ppt', 'exam_plaquetas', 'exam_leuc',
       'exam_creat', 'exam_alt', 'exam_fa', 'exam_ureia', 'exam_alb', 'exam_glic',
+      'exam_segm', 'exam_bast', 'exam_linf',
       'exam_raiox', 'exam_ultrassom', 'exam_eco_ecg', 'exam_outros',
       'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
       'block_type', 'block_drug', 'block_dose_volume',
@@ -532,6 +535,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       'general_state', 'nutritional_state',
       'exam_ht', 'exam_hb', 'exam_eritr', 'exam_ppt', 'exam_plaquetas', 'exam_leuc',
       'exam_creat', 'exam_alt', 'exam_fa', 'exam_ureia', 'exam_alb', 'exam_glic',
+      'exam_segm', 'exam_bast', 'exam_linf',
       'exam_raiox', 'exam_ultrassom', 'exam_eco_ecg', 'exam_outros',
       'airway_type', 'tube_number', 'breathing_mode', 'breathing_system', 'peep',
       'block_type', 'block_drug', 'block_dose_volume',
@@ -833,6 +837,45 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     console.error('Add surgery medicine error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/surgeries/:id/medicines/:medId - update surgery medicine (drug_source, etc.)
+router.put('/:id/medicines/:medId', authenticateToken, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { id, medId } = req.params;
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (!surgery) {
+      return res.status(404).json({ error: 'Surgery not found' });
+    }
+
+    const updates = {};
+    if (req.body.drug_source !== undefined) updates.drug_source = req.body.drug_source;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const { error } = await supabase
+      .from('surgery_medicines')
+      .update(updates)
+      .eq('id', medId)
+      .eq('surgery_id', id);
+
+    if (error) throw error;
+
+    res.json({ message: 'Surgery medicine updated' });
+  } catch (err) {
+    console.error('Update surgery medicine error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

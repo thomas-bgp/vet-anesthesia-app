@@ -53,6 +53,7 @@ const BOLUS_UNITS = ['mg/kg', 'mcg/kg', 'UI/kg', 'Outro']
 const INFUSION_UNITS = ['mg/kg/h', 'mg/kg/min', 'mcg/kg/h', 'mcg/kg/min', 'Outro']
 const DOSE_UNITS = ['mL', 'mg', 'mg/kg', 'mcg/kg', 'UI'] // legacy fallback
 const ROUTES = ['IV', 'IM', 'SC', 'VO', 'Inalatório', 'Epidural', 'Tópico', 'Retal', 'Outro']
+const PRIOR_MED_ROUTES = ['IV', 'IM', 'SC', 'VO', 'Tópico', 'Outro']
 const PHASES = [
   { value: 'mpa', label: 'MPA' },
   { value: 'inducao', label: 'Indução' },
@@ -80,6 +81,7 @@ const EMPTY = {
   general_state: '', nutritional_state: '',
   exam_ht: '', exam_hb: '', exam_eritr: '', exam_ppt: '', exam_plaquetas: '', exam_leuc: '',
   exam_creat: '', exam_alt: '', exam_fa: '', exam_ureia: '', exam_alb: '', exam_glic: '',
+  exam_segm: '', exam_bast: '', exam_linf: '',
   exam_raiox: '', exam_ultrassom: '', exam_eco_ecg: '', exam_outros: '',
   airway_type: '', airway_other: '', tube_number: '', breathing_mode: '', ventilation_type: '', breathing_system: '', peep: false,
   block_type: '', block_drug: '', block_dose_volume: '',
@@ -330,6 +332,7 @@ export default function FichaForm() {
   const [customParams, setCustomParams] = useState([])
   const [newParamName, setNewParamName] = useState('')
   const [complications, setComplications] = useState([])
+  const [priorMeds, setPriorMeds] = useState([])
 
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [draftData, setDraftData] = useState(null)
@@ -372,6 +375,7 @@ export default function FichaForm() {
   const sectionsRef = useRef(sections)
   const disposablesRef = useRef(disposables)
   const customParamsRef = useRef(customParams)
+  const priorMedsRef = useRef(priorMeds)
 
   useEffect(() => { formRef.current = form }, [form])
   useEffect(() => { drugsRef.current = drugs }, [drugs])
@@ -381,6 +385,7 @@ export default function FichaForm() {
   useEffect(() => { sectionsRef.current = sections }, [sections])
   useEffect(() => { disposablesRef.current = disposables }, [disposables])
   useEffect(() => { customParamsRef.current = customParams }, [customParams])
+  useEffect(() => { priorMedsRef.current = priorMeds }, [priorMeds])
 
   const doAutoSave = useCallback(() => {
     if (!initialLoadDone.current) return
@@ -389,6 +394,7 @@ export default function FichaForm() {
       vitals: vitalsRef.current, complications: complicationsRef.current,
       sections: sectionsRef.current, disposables: disposablesRef.current,
       customParams: customParamsRef.current,
+      priorMeds: priorMedsRef.current,
     }
     saveDraftToStorage(id, data)
     setAutoSaveStatus('saved')
@@ -401,7 +407,7 @@ export default function FichaForm() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(doAutoSave, 2000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [form, drugs, blocks, vitals, complications, disposables, customParams, doAutoSave])
+  }, [form, drugs, blocks, vitals, complications, disposables, customParams, priorMeds, doAutoSave])
 
   useEffect(() => {
     const draft = loadDraftFromStorage(id)
@@ -425,6 +431,7 @@ export default function FichaForm() {
       if (draftData.sections) setSections(draftData.sections)
       if (draftData.disposables) setDisposables(draftData.disposables)
       if (draftData.customParams) setCustomParams(draftData.customParams)
+      if (draftData.priorMeds) setPriorMeds(draftData.priorMeds)
     }
     setShowDraftBanner(false); initialLoadDone.current = true
   }
@@ -460,6 +467,7 @@ export default function FichaForm() {
         block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
         complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
         custom_vitals_params: customParams.length > 0 ? JSON.stringify(customParams) : null,
+        prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
         status: 'scheduled',
       }
       let surgeryId = id
@@ -528,6 +536,19 @@ export default function FichaForm() {
           catch { setComplications([{ time: '', text: s.complications }]) }
         }
 
+        // Load prior medications (structured JSON or legacy text)
+        if (f.prior_medications) {
+          try {
+            const parsed = JSON.parse(f.prior_medications)
+            if (Array.isArray(parsed)) setPriorMeds(parsed)
+            else setPriorMeds([])
+          } catch {
+            // Legacy: plain text → single entry with text as name
+            setPriorMeds(f.prior_medications.trim() ? [{ name: f.prior_medications, dose: '', route: '', time: '' }] : [])
+          }
+          f.prior_medications = '' // clear from form, managed by priorMeds state
+        }
+
         setVitals((res.data.vitals || []).map(v => ({ ...v, fromServer: true })))
 
         if (s.custom_vitals_params) {
@@ -550,7 +571,7 @@ export default function FichaForm() {
             dose_unit: m.dose_unit || 'mg/kg', custom_unit: m.custom_unit || '',
             route: m.route || '', custom_route: m.custom_route || '',
             time: m.administered_at ? m.administered_at.slice(11, 16) : '',
-            drug_source: m.drug_source || 'proprio', existing: true,
+            drug_source: m.drug_source || 'proprio', original_drug_source: m.drug_source || 'proprio', existing: true,
           })
         })
         setDrugs(grouped)
@@ -605,6 +626,7 @@ export default function FichaForm() {
         block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
         complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
         custom_vitals_params: customParams.length > 0 ? JSON.stringify(customParams) : null,
+        prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
       }
 
       let surgeryId = id
@@ -623,7 +645,7 @@ export default function FichaForm() {
           pas: vital.pas || null, pam: vital.pam || null, pad: vital.pad || null,
           temperature: vital.temperature || null, fluid_ml_kg_h: vital.fluid_ml_kg_h || null,
           anesthetic: vital.anesthetic || null, o2_l_min: vital.o2_l_min || null,
-          notes: vital.notes || null, custom_params: vital.custom_params || null,
+          notes: vital.notes || null, custom_params: vital.custom_params || null, param_notes: vital.param_notes || null,
         })
       }
 
@@ -639,6 +661,11 @@ export default function FichaForm() {
       ]
 
       for (const drug of allDrugs) {
+        // Update existing drugs that changed drug_source
+        if (drug.existing && drug.id && drug.drug_source !== drug.original_drug_source) {
+          await api.put(`/surgeries/${surgeryId}/medicines/${drug.id}`, { drug_source: drug.drug_source })
+          continue
+        }
         if (drug.existing) continue
         const hasMed = drug.medicine_id
         const hasCustom = !drug.medicine_id && drug.custom_name
@@ -778,9 +805,28 @@ export default function FichaForm() {
               {form.fasting_liquid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_liquid_hours" value={form.fasting_liquid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
             </div>
             <Field label="Doenças pré-existentes" span2><textarea name="pre_existing_diseases" value={form.pre_existing_diseases} onChange={handle} rows={2} className={inp} /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Temperamento"><input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" /></Field>
-              <Field label="Medicações prévias"><textarea name="prior_medications" value={form.prior_medications} onChange={handle} rows={2} className={inp} /></Field>
+            <Field label="Temperamento"><input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" /></Field>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-500">Medicações prévias</label>
+                <button type="button" onClick={() => { setPriorMeds(p => [...p, { name: '', dose: '', route: '', time: '' }]); hasUnsavedChanges.current = true }}
+                  className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
+              </div>
+              {priorMeds.length === 0 && <p className="text-xs text-slate-400 italic">Nenhuma medicação prévia.</p>}
+              {priorMeds.map((pm, i) => (
+                <div key={i} className="bg-slate-50 rounded-lg p-2 space-y-2 relative">
+                  <button type="button" onClick={() => { setPriorMeds(p => p.filter((_, idx) => idx !== i)); hasUnsavedChanges.current = true }} className="absolute top-1 right-1 p-1 text-slate-400 active:text-red-500"><X size={14} /></button>
+                  <div className="grid grid-cols-2 gap-2 pr-6">
+                    <input type="text" value={pm.name} onChange={e => { setPriorMeds(p => p.map((item, idx) => idx === i ? { ...item, name: e.target.value } : item)); hasUnsavedChanges.current = true }} placeholder="Fármaco" className={inp} />
+                    <input type="text" value={pm.dose} onChange={e => { setPriorMeds(p => p.map((item, idx) => idx === i ? { ...item, dose: e.target.value } : item)); hasUnsavedChanges.current = true }} placeholder="Dose" className={inp} />
+                    <select value={pm.route} onChange={e => { setPriorMeds(p => p.map((item, idx) => idx === i ? { ...item, route: e.target.value } : item)); hasUnsavedChanges.current = true }} className={sel}>
+                      <option value="">Via...</option>
+                      {PRIOR_MED_ROUTES.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                    <input type="time" value={pm.time} onChange={e => { setPriorMeds(p => p.map((item, idx) => idx === i ? { ...item, time: e.target.value } : item)); hasUnsavedChanges.current = true }} className={inp} />
+                  </div>
+                </div>
+              ))}
             </div>
             <Field label="Observações" span2><textarea name="anamnesis_notes" value={form.anamnesis_notes} onChange={handle} rows={2} className={inp} /></Field>
           </div>
@@ -813,7 +859,7 @@ export default function FichaForm() {
 
         <Section title="Exames Complementares" open={sections.exames_comp} onToggle={() => toggle('exames_comp')}>
           <div className="grid grid-cols-3 gap-2">
-            {[['Ht%','exam_ht'],['Hb','exam_hb'],['Eritr','exam_eritr'],['PPT','exam_ppt'],['Plaquetas','exam_plaquetas'],['Leuc','exam_leuc'],['Creat','exam_creat'],['ALT','exam_alt'],['FA','exam_fa'],['Ureia','exam_ureia'],['Alb','exam_alb'],['Glic','exam_glic']].map(([label,name]) => (
+            {[['Ht%','exam_ht'],['Hb','exam_hb'],['Eritr','exam_eritr'],['PPT','exam_ppt'],['Plaquetas','exam_plaquetas'],['Leuc','exam_leuc'],['N.Segm','exam_segm'],['N.Bast','exam_bast'],['Linfócitos','exam_linf'],['Creat','exam_creat'],['ALT','exam_alt'],['FA','exam_fa'],['Ureia','exam_ureia'],['Alb','exam_alb'],['Glic','exam_glic']].map(([label,name]) => (
               <Field key={name} label={label}><input name={name} value={form[name]} onChange={handle} className={inp} /></Field>
             ))}
           </div>
@@ -878,8 +924,19 @@ export default function FichaForm() {
             </Field>
             {form.airway_type === 'Outro' && <Field label="Descrever via aérea" span2><input name="airway_other" value={form.airway_other} onChange={handle} className={inp} placeholder="Ex: Traqueostomia, supraglótico..." /></Field>}
             <Field label="Tubo nº/tipo"><input name="tube_number" value={form.tube_number} onChange={handle} className={inp} placeholder="7.5" /></Field>
-            <Field label="Respiração"><select name="breathing_mode" value={form.breathing_mode} onChange={handle} className={sel}><option value="">-</option>{BREATHING_MODES.map(m => <option key={m}>{m}</option>)}</select></Field>
-            {form.breathing_mode === 'Controlada' && (
+            <Field label="Respiração">
+              <div className="flex gap-1 flex-wrap">
+                {BREATHING_MODES.map(m => {
+                  const modes = (form.breathing_mode || '').split(',').map(s => s.trim()).filter(Boolean)
+                  const isActive = modes.includes(m)
+                  return <button key={m} type="button" onClick={() => {
+                    const next = isActive ? modes.filter(x => x !== m) : [...modes, m]
+                    setForm(f => ({ ...f, breathing_mode: next.join(', ') }))
+                  }} className={`px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] transition ${isActive ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{m}</button>
+                })}
+              </div>
+            </Field>
+            {(form.breathing_mode || '').includes('Controlada') && (
               <Field label="Tipo de ventilação" span2>
                 <div className="flex gap-1 flex-wrap">
                   {VENTILATION_TYPES.map(t => <button key={t} type="button" onClick={() => setForm(f => ({ ...f, ventilation_type: t }))}
@@ -952,12 +1009,19 @@ export default function FichaForm() {
             <p className="text-xs font-semibold text-slate-500 uppercase">Monitoração</p>
             <div className="bg-slate-50 rounded-lg p-3 space-y-2">
               <div className="grid grid-cols-3 gap-2">
-                {[['FC','fc','bpm'],['PAS','pas','mmHg'],['PAM','pam','mmHg'],['PAD','pad','mmHg'],['SpO2','spo2','%'],['FR','fr','mpm'],['ETCO2','etco2','%'],['T°C','temperature','°C'],['Fluido','fluid_ml_kg_h','ml/kg/h']].map(([label,key,unit]) => (
-                  <div key={key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{label}</label>
-                    <input type="number" inputMode="decimal" step="any" value={newVital[key] || ''} onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))} placeholder={unit} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
-                ))}
-                <div><label className="block text-[10px] font-medium text-slate-500 mb-0.5">O2</label>
-                  <input type="number" inputMode="decimal" step="any" value={newVital.o2_l_min || ''} onChange={e => setNewVital(v => ({ ...v, o2_l_min: e.target.value }))} placeholder="L/min" className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
+                {[['FC','fc','bpm'],['PAS','pas','mmHg'],['PAM','pam','mmHg'],['PAD','pad','mmHg'],['SpO2','spo2','%'],['FR','fr','mpm'],['ETCO2','etco2','%'],['T°C','temperature','°C'],['Fluido','fluid_ml_kg_h','ml/kg/h']].map(([label,key,unit]) => {
+                  const hasNote = ['pas','fr','temperature'].includes(key)
+                  return (
+                    <div key={key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{label}</label>
+                      <input type="number" inputMode="decimal" step="any" value={newVital[key] || ''} onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))} placeholder={unit} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
+                      {hasNote && <input type="text" value={(newVital.param_notes || {})[key] || ''} onChange={e => setNewVital(v => ({ ...v, param_notes: { ...(v.param_notes || {}), [key]: e.target.value } }))} placeholder={key === 'fr' ? 'Ex: VA' : key === 'temperature' ? 'Ex: esofágica' : 'Obs'} className="w-full px-2 py-1 border border-slate-100 rounded text-[10px] text-slate-500 mt-0.5" />}
+                    </div>
+                  )
+                })}
+                <div><label className="block text-[10px] font-medium text-slate-500 mb-0.5">O₂</label>
+                  <input type="number" inputMode="decimal" step="any" value={newVital.o2_l_min || ''} onChange={e => setNewVital(v => ({ ...v, o2_l_min: e.target.value }))} placeholder="L/min" className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
+                  <input type="text" value={(newVital.param_notes || {}).o2 || ''} onChange={e => setNewVital(v => ({ ...v, param_notes: { ...(v.param_notes || {}), o2: e.target.value } }))} placeholder="Ex: MF" className="w-full px-2 py-1 border border-slate-100 rounded text-[10px] text-slate-500 mt-0.5" />
+                </div>
                 <div><label className="block text-[10px] font-medium text-slate-500 mb-0.5">Anestésico</label>
                   <input type="text" value={newVital.anesthetic || ''} onChange={e => setNewVital(v => ({ ...v, anesthetic: e.target.value }))} placeholder="ISO 1.5%" className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
                 {customParams.map((param) => (
@@ -1000,11 +1064,18 @@ export default function FichaForm() {
                       <td className="py-1 font-mono text-slate-600">
                         <input type="time" value={v.recorded_at ? String(v.recorded_at).slice(11, 16) : ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); updateVital(i, 'recorded_at', date + 'T' + e.target.value + ':00') }} className="w-[70px] px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] bg-transparent" />
                       </td>
-                      {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min'].map(k => (
-                        <td key={k} className="py-1 text-center">
-                          <input type="number" step="any" inputMode="decimal" value={v[k] ?? ''} onChange={e => updateVital(i, k, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
-                        </td>
-                      ))}
+                      {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min'].map(k => {
+                        const noteKey = k === 'o2_l_min' ? 'o2' : k
+                        const hasNoteField = ['pas','fr','temperature','o2_l_min'].includes(k)
+                        let pn = v.param_notes; if (typeof pn === 'string') { try { pn = JSON.parse(pn) } catch { pn = {} } }
+                        const noteVal = (pn || {})[noteKey] || ''
+                        return (
+                          <td key={k} className="py-1 text-center">
+                            <input type="number" step="any" inputMode="decimal" value={v[k] ?? ''} onChange={e => updateVital(i, k, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                            {hasNoteField && noteVal && <div className="text-[8px] text-teal-600 leading-tight">{noteVal}</div>}
+                          </td>
+                        )
+                      })}
                       <td className="py-1 text-center">
                         <input type="text" value={v.anesthetic ?? ''} onChange={e => updateVital(i, 'anesthetic', e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
                       </td>
