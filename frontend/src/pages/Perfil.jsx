@@ -1,8 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { LogOut, User, Save, Trash2, Check, Upload, Palette, Plus, Copy, Link2 } from 'lucide-react'
+import { LogOut, User, Save, Trash2, Check, Upload, Palette, Plus, Copy, Link2, ChevronUp, ChevronDown, Eye, EyeOff, FileText, X } from 'lucide-react'
 import api from '../api/axios'
 import InstallButton from '../components/InstallButton'
+
+const DEFAULT_FICHA_SECTIONS = [
+  { key: 'paciente', label: 'Dados do Paciente', visible: true },
+  { key: 'anamnese', label: 'Anamnese', visible: true },
+  { key: 'exame_pre', label: 'Exame Pré-Anestésico', visible: true },
+  { key: 'exames_comp', label: 'Exames Complementares', visible: true },
+  { key: 'farmacos', label: 'Fármacos Utilizados', visible: true },
+  { key: 'vias_aereas', label: 'Vias Aéreas', visible: true },
+  { key: 'bloqueios', label: 'Bloqueios', visible: true },
+  { key: 'tempos', label: 'Tempos Cirúrgicos', visible: true },
+  { key: 'monitorizacao', label: 'Monitoração', visible: true },
+  { key: 'intercorrencias', label: 'Intercorrências', visible: true },
+  { key: 'pos_operatorio', label: 'Pós-operatório', visible: true },
+  { key: 'observacoes', label: 'Observações', visible: true },
+]
+
+function mergeFichaLayout(saved) {
+  if (!saved || !Array.isArray(saved)) return DEFAULT_FICHA_SECTIONS.map(s => ({ ...s }))
+  const result = saved.map(s => ({ ...s }))
+  // Add any new default sections not in saved config
+  for (const def of DEFAULT_FICHA_SECTIONS) {
+    if (!result.find(s => s.key === def.key)) {
+      result.push({ ...def })
+    }
+  }
+  return result
+}
 
 const THEME_COLORS = [
   { name: 'Teal', value: '#19B5A0' },
@@ -35,6 +62,10 @@ export default function Perfil() {
   const [creatingCode, setCreatingCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(null)
 
+  // Ficha layout state
+  const [fichaLayout, setFichaLayout] = useState(() => DEFAULT_FICHA_SECTIONS.map(s => ({ ...s })))
+  const [showPreview, setShowPreview] = useState(false)
+
   // Signature pad state
   const canvasRef = useRef(null)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -51,6 +82,7 @@ export default function Perfil() {
       setBusinessAddress(user.business_address || '')
       setBusinessPhone(user.business_phone || '')
       setBusinessEmail(user.business_email || '')
+      setFichaLayout(mergeFichaLayout(user.ficha_layout))
     }
   }, [user])
 
@@ -278,6 +310,7 @@ export default function Perfil() {
         business_address: businessAddress,
         business_phone: businessPhone,
         business_email: businessEmail,
+        ficha_layout: fichaLayout,
       })
       if (res.data?.user) {
         updateUser(res.data.user)
@@ -566,6 +599,130 @@ export default function Perfil() {
           )}
         </button>
       </div>
+
+      {/* Configurar Layout da Ficha */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <FileText size={14} />
+            Layout do Documento
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">Escolha quais seções aparecem e a ordem no documento impresso</p>
+        </div>
+
+        <div className="space-y-1">
+          {fichaLayout.map((section, i) => (
+            <div key={section.key} className={`flex items-center gap-2 p-2.5 rounded-lg border transition ${section.visible ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+              <div className="flex flex-col gap-0.5 shrink-0">
+                <button type="button" disabled={i === 0} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n })}
+                  className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronUp size={14} /></button>
+                <button type="button" disabled={i === fichaLayout.length - 1} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i], n[i + 1]] = [n[i + 1], n[i]]; return n })}
+                  className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronDown size={14} /></button>
+              </div>
+              <span className="text-sm text-slate-700 flex-1 font-medium">{section.label}</span>
+              <button type="button" onClick={() => setFichaLayout(l => l.map((s, idx) => idx === i ? { ...s, visible: !s.visible } : s))}
+                className={`p-2 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center transition ${section.visible ? 'text-teal-600 bg-teal-50' : 'text-slate-400 bg-slate-100'}`}>
+                {section.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setFichaLayout(DEFAULT_FICHA_SECTIONS.map(s => ({ ...s })))}
+            className="flex-1 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg min-h-[44px] active:bg-slate-200">
+            Restaurar padrão
+          </button>
+          <button type="button" onClick={() => setShowPreview(true)}
+            className="flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] active:opacity-90 text-white"
+            style={{ backgroundColor: themeColor }}>
+            <Eye size={16} className="inline mr-1" />
+            Pré-visualizar
+          </button>
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={`flex items-center justify-center gap-2 w-full py-3 font-medium rounded-xl text-sm min-h-[48px] transition ${
+            saved ? 'bg-green-100 text-green-700' : 'text-white active:opacity-90'
+          }`}
+          style={!saved ? { backgroundColor: themeColor } : {}}
+        >
+          {saved ? <><Check size={18} /> Salvo!</> : <><Save size={18} /> {saving ? 'Salvando...' : 'Salvar layout'}</>}
+        </button>
+      </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) setShowPreview(false) }}>
+          <div className="bg-white w-full max-w-lg m-4 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-700">Pré-visualização do Documento</h3>
+              <button onClick={() => setShowPreview(false)} className="p-2 rounded-lg active:bg-slate-100 min-h-[36px] min-w-[36px] flex items-center justify-center"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Mock header */}
+              <div className="text-center border-b border-slate-200 pb-3" style={{ position: 'relative' }}>
+                {logoImage && <img src={logoImage} alt="Logo" style={{ position: 'absolute', top: 0, right: 0, width: '60px', height: '30px', objectFit: 'contain' }} />}
+                <p className="text-sm font-bold" style={{ color: themeColor }}>{fullName || 'Dr(a). Nome'}</p>
+                <p className="text-[10px] text-slate-500">{professionalTitle || 'Médica Veterinária'}{crmvNumber ? ` — ${crmvNumber}` : ''}</p>
+                <h2 className="text-xs font-bold uppercase tracking-wider mt-2" style={{ color: themeColor }}>Ficha de Registro Anestésico</h2>
+              </div>
+              {/* Sections in configured order */}
+              {fichaLayout.filter(s => s.visible).map(section => (
+                <div key={section.key} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{section.label}</p>
+                  <div className="space-y-0.5">
+                    {section.key === 'paciente' && <>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Paciente:</span> Rex</p>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Espécie:</span> Canino · Labrador</p>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Peso:</span> 32 kg</p>
+                    </>}
+                    {section.key === 'anamnese' && <>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Jejum sólido:</span> Sim (12h)</p>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Temperamento:</span> Dócil</p>
+                    </>}
+                    {section.key === 'exame_pre' && <>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">FC:</span> 120 bpm &nbsp;<span className="text-slate-400">FR:</span> 24 mpm</p>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">ASA:</span> II</p>
+                    </>}
+                    {section.key === 'exames_comp' && <p className="text-xs text-slate-600"><span className="text-slate-400">Ht%:</span> 45 &nbsp;<span className="text-slate-400">Creat:</span> 1.2</p>}
+                    {section.key === 'farmacos' && <>
+                      <p className="text-xs text-slate-600">MPA: Acepromazina 0.05 mg/kg IV</p>
+                      <p className="text-xs text-slate-600">Indução: Propofol 4 mg/kg IV</p>
+                    </>}
+                    {section.key === 'vias_aereas' && <p className="text-xs text-slate-600"><span className="text-slate-400">IOT:</span> Tubo 7.5 · Espontânea</p>}
+                    {section.key === 'bloqueios' && <p className="text-xs text-slate-600">Epidural — Lidocaína 2%</p>}
+                    {section.key === 'tempos' && <>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Início anestesia:</span> 14:00</p>
+                      <p className="text-xs text-slate-600"><span className="text-slate-400">Final:</span> 15:30</p>
+                    </>}
+                    {section.key === 'monitorizacao' && <>
+                      <div className="overflow-x-auto">
+                        <table className="text-[10px] w-full"><thead><tr className="border-b border-slate-200">
+                          <th className="text-left py-1 text-slate-400">Hora</th><th className="text-center py-1 text-slate-400">FC</th><th className="text-center py-1 text-slate-400">SpO2</th><th className="text-center py-1 text-slate-400">T°C</th>
+                        </tr></thead><tbody>
+                          <tr><td className="py-1">14:10</td><td className="text-center">110</td><td className="text-center">98</td><td className="text-center">38.2</td></tr>
+                          <tr><td className="py-1">14:20</td><td className="text-center">105</td><td className="text-center">97</td><td className="text-center">37.8</td></tr>
+                        </tbody></table>
+                      </div>
+                    </>}
+                    {section.key === 'intercorrencias' && <p className="text-xs text-slate-600"><span className="text-red-500 font-mono">14:15</span> Bradicardia leve, administrado atropina</p>}
+                    {section.key === 'pos_operatorio' && <p className="text-xs text-slate-600">Recuperação suave, sem excitação</p>}
+                    {section.key === 'observacoes' && <p className="text-xs text-slate-600">Paciente estável durante todo procedimento</p>}
+                  </div>
+                </div>
+              ))}
+              {/* Signature block */}
+              <div className="border border-teal-300 rounded-lg p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: themeColor }}>Assinatura Eletrônica</p>
+                <p className="text-[9px] text-slate-400 mt-0.5">QR Code + Hash SHA256</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Referral codes - only for max_legacy users */}
       {user?.email === 'camilacadibe@gmail.com' && (

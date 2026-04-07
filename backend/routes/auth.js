@@ -179,7 +179,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const supabase = getSupabase();
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, ficha_layout, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -197,7 +197,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 // PUT /api/auth/profile
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done } = req.body;
+    const { full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, ficha_layout } = req.body;
     const supabase = getSupabase();
 
     const updateData = {};
@@ -215,6 +215,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     if (business_phone !== undefined) updateData.business_phone = business_phone || null;
     if (business_email !== undefined) updateData.business_email = business_email || null;
     if (onboarding_done !== undefined) updateData.onboarding_done = onboarding_done;
+    if (ficha_layout !== undefined) updateData.ficha_layout = ficha_layout;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
@@ -227,7 +228,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
 
     const { data: user } = await supabase
       .from('users')
-      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, created_at')
+      .select('id, name, email, role, full_name, professional_title, crmv_number, signature_image, theme_color, logo_image, business_address, business_phone, business_email, onboarding_done, plan, ficha_layout, created_at')
       .eq('id', req.user.id)
       .single();
 

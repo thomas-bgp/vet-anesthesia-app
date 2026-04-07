@@ -316,6 +316,19 @@ export default function FichaDetail() {
   })
   const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', manutencao_inalatoria: 'Manut. Inalatória', manutencao_tiva: 'Manut. TIVA', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
 
+  // Layout configuration — determines section visibility and order
+  const DEFAULT_LAYOUT_KEYS = ['paciente','anamnese','exame_pre','exames_comp','farmacos','vias_aereas','bloqueios','tempos','monitorizacao','intercorrencias','pos_operatorio','observacoes']
+  const fichaLayout = (() => {
+    const saved = profile?.ficha_layout
+    if (!saved || !Array.isArray(saved)) return DEFAULT_LAYOUT_KEYS.map(k => ({ key: k, visible: true }))
+    const merged = saved.map(s => ({ ...s }))
+    for (const k of DEFAULT_LAYOUT_KEYS) { if (!merged.find(s => s.key === k)) merged.push({ key: k, visible: true }) }
+    return merged
+  })()
+  const secHidden = new Set(fichaLayout.filter(s => s.visible === false).map(s => s.key))
+  const secOrder = fichaLayout.filter(s => s.visible !== false).map(s => s.key)
+  const secVis = (key) => !secHidden.has(key)
+
   return (
     <div className="pb-6">
       {/* Emergency modal */}
@@ -392,11 +405,10 @@ export default function FichaDetail() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 space-y-3 max-w-lg mx-auto">
+      <div className="px-4 pt-4 flex flex-col gap-3 max-w-lg mx-auto">
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
-        {/* Patient + Surgery info */}
-        <Card title="Identificação">
+        {secVis('paciente') && <Card title="Identificação" style={{ order: secOrder.indexOf('paciente') }}>
           <InfoRow label="Paciente" value={surgery.patient_name} />
           <InfoRow label="Procedimento" value={surgery.procedure_name} />
           <InfoRow label="Espécie / Raça" value={[surgery.patient_species, surgery.patient_breed].filter(Boolean).join(' · ')} />
@@ -409,11 +421,11 @@ export default function FichaDetail() {
           <InfoRow label="Patologia" value={surgery.pathology} />
           <InfoRow label="ASA" value={surgery.asa_classification} />
           <InfoRow label="Data" value={fmtDate(surgery.start_time)} />
-        </Card>
+        </Card>}
 
-        {/* Financial summary */}
+        {/* Financial summary — always visible, screen only */}
         {(surgery.revenue > 0 || (summary && summary.total_cost > 0)) && (
-          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 p-4" data-no-print>
+          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 p-4" data-no-print style={{ order: -1 }}>
             <h3 className="text-xs font-semibold text-teal-600 uppercase tracking-wide mb-3">Financeiro</h3>
             <div className="grid grid-cols-2 gap-3">
               {surgery.revenue > 0 && (
@@ -453,8 +465,8 @@ export default function FichaDetail() {
         )}
 
         {/* Anamnese */}
-        {(surgery.pre_existing_diseases || surgery.temperament || surgery.prior_medications || surgery.anamnesis_notes) && (
-          <Card title="Anamnese">
+        {secVis('anamnese') && (surgery.pre_existing_diseases || surgery.temperament || surgery.prior_medications || surgery.anamnesis_notes) && (
+          <Card title="Anamnese" style={{ order: secOrder.indexOf('anamnese') }}>
             <InfoRow label="Jejum sólido" value={surgery.fasting_solid ? `Sim (${surgery.fasting_solid_hours || '?'}h)` : null} />
             <InfoRow label="Jejum hídrico" value={surgery.fasting_liquid ? `Sim (${surgery.fasting_liquid_hours || '?'}h)` : null} />
             <InfoRow label="Doenças" value={surgery.pre_existing_diseases} />
@@ -486,8 +498,8 @@ export default function FichaDetail() {
         )}
 
         {/* Exame pré */}
-        {(surgery.pre_fc || surgery.pre_fr || surgery.pre_acp) && (
-          <Card title="Exame Pré-Anestésico">
+        {secVis('exame_pre') && (surgery.pre_fc || surgery.pre_fr || surgery.pre_acp) && (
+          <Card title="Exame Pré-Anestésico" style={{ order: secOrder.indexOf('exame_pre') }}>
             <InfoRow label="ACP" value={surgery.pre_acp} />
             <div className="grid grid-cols-2 gap-x-4">
               <InfoRow label="FC" value={surgery.pre_fc ? `${surgery.pre_fc} bpm` : null} />
@@ -505,8 +517,8 @@ export default function FichaDetail() {
         )}
 
         {/* Exames complementares */}
-        {(surgery.exam_raiox || surgery.exam_ultrassom || surgery.exam_eco_ecg || surgery.exam_outros || surgery.exam_ht) && (
-          <Card title="Exames Complementares">
+        {secVis('exames_comp') && (surgery.exam_raiox || surgery.exam_ultrassom || surgery.exam_eco_ecg || surgery.exam_outros || surgery.exam_ht) && (
+          <Card title="Exames Complementares" style={{ order: secOrder.indexOf('exames_comp') }}>
             <div className="grid grid-cols-3 gap-x-4">
               <InfoRow label="Ht%" value={surgery.exam_ht} />
               <InfoRow label="Hb" value={surgery.exam_hb} />
@@ -532,8 +544,8 @@ export default function FichaDetail() {
         )}
 
         {/* Vias aéreas */}
-        {(surgery.airway_type || surgery.breathing_mode) && (
-          <Card title="Vias Aéreas">
+        {secVis('vias_aereas') && (surgery.airway_type || surgery.breathing_mode) && (
+          <Card title="Vias Aéreas" style={{ order: secOrder.indexOf('vias_aereas') }}>
             <InfoRow label="Tipo" value={surgery.airway_type === 'Outro' && surgery.airway_other ? `Outro: ${surgery.airway_other}` : surgery.airway_type} />
             <InfoRow label="Tubo" value={surgery.tube_number} />
             <InfoRow label="Respiração" value={surgery.breathing_mode} />
@@ -546,11 +558,11 @@ export default function FichaDetail() {
         )}
 
         {/* Bloqueios */}
-        {surgery.block_type && (() => {
+        {secVis('bloqueios') && surgery.block_type && (() => {
           let parsedBlocks = []
           try { parsedBlocks = JSON.parse(surgery.block_type) } catch { parsedBlocks = [{ type: surgery.block_type, drug: surgery.block_drug, dose_volume: surgery.block_dose_volume }] }
           return parsedBlocks.length > 0 ? (
-            <Card title="Bloqueios">
+            <Card title="Bloqueios" style={{ order: secOrder.indexOf('bloqueios') }}>
               {parsedBlocks.map((blk, i) => (
                 <div key={i} className={`${i > 0 ? 'mt-3 pt-3 border-t border-slate-100' : ''}`}>
                   <InfoRow label="Tipo" value={blk.type === 'Outro' && blk.other_type ? `Outro: ${blk.other_type}` : blk.type} />
@@ -575,7 +587,7 @@ export default function FichaDetail() {
         })()}
 
         {/* Medicamentos por fase */}
-        <Card title="Fármacos Utilizados">
+        {secVis('farmacos') && <Card title="Fármacos Utilizados" style={{ order: secOrder.indexOf('farmacos') }}>
           {medicines.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-4">Nenhum fármaco registrado.</p>
           ) : (
@@ -639,11 +651,11 @@ export default function FichaDetail() {
               </div>
             </>
           )}
-        </Card>
+        </Card>}
 
         {/* Descartáveis Utilizados */}
         {disposables.length > 0 && (
-          <Card title="Descartáveis Utilizados" data-no-print>
+          <Card title="Descartáveis Utilizados" data-no-print style={{ order: secOrder.indexOf('farmacos') }}>
             {disposables.map(d => (
               <div key={d.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
                 <div className="min-w-0 flex-1">
@@ -661,8 +673,8 @@ export default function FichaDetail() {
         )}
 
         {/* Tempos cirúrgicos */}
-        {(surgery.anesthesia_start || surgery.procedure_start || surgery.procedure_end || surgery.anesthesia_end || surgery.extubation_time) && (
-          <Card title="Tempos" icon={Clock}>
+        {secVis('tempos') && (surgery.anesthesia_start || surgery.procedure_start || surgery.procedure_end || surgery.anesthesia_end || surgery.extubation_time) && (
+          <Card title="Tempos" icon={Clock} style={{ order: secOrder.indexOf('tempos') }}>
             <InfoRow label="Início anestesia" value={surgery.anesthesia_start ? fmtTime(surgery.anesthesia_start) : null} />
             <InfoRow label="Início procedimento" value={surgery.procedure_start ? fmtTime(surgery.procedure_start) : null} />
             <InfoRow label="Final procedimento" value={surgery.procedure_end ? fmtTime(surgery.procedure_end) : null} />
@@ -672,7 +684,7 @@ export default function FichaDetail() {
         )}
 
         {/* === MONITORAÇÃO TRANSOPERATÓRIA === */}
-        <Card title="Monitoração" icon={Heart}>
+        {secVis('monitorizacao') && <Card title="Monitoração" icon={Heart} style={{ order: secOrder.indexOf('monitorizacao') }}>
           <button
             onClick={() => setShowVitals(!showVitals)}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 mb-3 bg-teal-50 text-teal-700 text-sm font-medium rounded-lg active:bg-teal-100 min-h-[44px]"
@@ -755,10 +767,10 @@ export default function FichaDetail() {
               </table>
             </div>
           )}
-        </Card>
+        </Card>}
 
-        {/* Intercorrências / Anotações — separate section for print visibility */}
-        {surgery.complications && (() => {
+        {/* Intercorrências / Anotações */}
+        {secVis('intercorrencias') && surgery.complications && (() => {
           let entries = []
           try {
             const parsed = JSON.parse(surgery.complications)
@@ -768,7 +780,7 @@ export default function FichaDetail() {
           }
           if (entries.length === 0 || entries.every(e => !e.text?.trim())) return null
           return (
-            <Card title="Intercorrências / Anotações">
+            <Card title="Intercorrências / Anotações" style={{ order: secOrder.indexOf('intercorrencias') }}>
               <div className="space-y-1.5">
                 {entries.filter(e => e.text?.trim()).map((entry, i) => (
                   <div key={i} className="flex items-start gap-2 py-1">
@@ -784,8 +796,8 @@ export default function FichaDetail() {
         })()}
 
         {/* Pós-operatório */}
-        {(surgery.post_operative || surgery.recovery_quality) && (
-          <Card title="Pós-operatório">
+        {secVis('pos_operatorio') && (surgery.post_operative || surgery.recovery_quality) && (
+          <Card title="Pós-operatório" style={{ order: secOrder.indexOf('pos_operatorio') }}>
             {surgery.post_operative && (
               <p className="text-sm text-slate-700 whitespace-pre-line">{surgery.post_operative}</p>
             )}
@@ -796,8 +808,8 @@ export default function FichaDetail() {
         )}
 
         {/* Observações */}
-        {surgery.monitoring_notes && (
-          <Card title="Observações">
+        {secVis('observacoes') && surgery.monitoring_notes && (
+          <Card title="Observações" style={{ order: secOrder.indexOf('observacoes') }}>
             <p className="text-sm text-slate-700 whitespace-pre-line">{surgery.monitoring_notes}</p>
           </Card>
         )}
@@ -805,6 +817,7 @@ export default function FichaDetail() {
         {/* Electronic Signature Block (print only) */}
         {signature && (
           <div className="print-only" style={{
+            order: 100,
             display: 'none',
             marginTop: '24pt',
             padding: '12pt 16pt',

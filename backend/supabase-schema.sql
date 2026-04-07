@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   professional_title TEXT DEFAULT 'Médica Veterinária',
   crmv_number TEXT,
   signature_image TEXT,
+  ficha_layout JSONB,
   is_active INTEGER DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
