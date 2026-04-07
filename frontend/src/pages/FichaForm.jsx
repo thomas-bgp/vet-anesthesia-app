@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams, useBlocker } from 'react-router-dom'
 import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, Trash2, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle } from 'lucide-react'
 import api from '../api/axios'
+import { useAuth } from '../context/AuthContext'
 import EmergencyModal from '../components/EmergencyModal'
 
 // --- Auto-save helpers ---
@@ -316,6 +317,24 @@ export default function FichaForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
+  const { user: authUser } = useAuth()
+
+  // Field visibility from ficha_layout config
+  const fv = (sectionKey, fieldKey) => {
+    const layout = authUser?.ficha_layout
+    if (!layout || !Array.isArray(layout)) return true
+    const sec = layout.find(s => s.key === sectionKey)
+    if (!sec) return true
+    if (sec.visible === false) return false
+    if (!sec.fields) return true
+    return sec.fields[fieldKey] !== false
+  }
+  const secVis = (key) => {
+    const layout = authUser?.ficha_layout
+    if (!layout || !Array.isArray(layout)) return true
+    const sec = layout.find(s => s.key === key)
+    return sec ? sec.visible !== false : true
+  }
 
   const [form, setForm] = useState(EMPTY)
   const [loading, setLoading] = useState(isEdit)
@@ -771,41 +790,52 @@ export default function FichaForm() {
 
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
-        <Section title="Dados do Paciente" open={sections.paciente} onToggle={() => toggle('paciente')}>
+        {secVis('paciente') && <Section title="Dados do Paciente" open={sections.paciente} onToggle={() => toggle('paciente')}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Nome do paciente *" span2><input name="patient_name" value={form.patient_name} onChange={handle} className={inp} placeholder="Rex" /></Field>
-            <Field label="Espécie"><select name="patient_species" value={form.patient_species} onChange={handle} className={sel}>{SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field>
-            <Field label="Peso (kg)"><input type="number" step="0.1" inputMode="decimal" name="patient_weight" value={form.patient_weight} onChange={handle} className={inp} placeholder="15.5" /></Field>
-            <Field label="Raça"><input name="patient_breed" value={form.patient_breed} onChange={handle} className={inp} placeholder="Golden" /></Field>
-            <Field label="Sexo"><select name="patient_sex" value={form.patient_sex} onChange={handle} className={sel}><option value="">-</option>{SEX_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></Field>
-            <Field label="Idade"><input name="patient_age" value={form.patient_age} onChange={handle} className={inp} placeholder="3 anos" /></Field>
-            <Field label="Tutor"><input name="owner_name" value={form.owner_name} onChange={handle} className={inp} placeholder="João Silva" /></Field>
+            {fv('paciente','patient_species') && <Field label="Espécie"><select name="patient_species" value={form.patient_species} onChange={handle} className={sel}>{SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field>}
+            {fv('paciente','patient_weight') && <Field label="Peso (kg)"><input type="number" step="0.1" inputMode="decimal" name="patient_weight" value={form.patient_weight} onChange={handle} className={inp} placeholder="15.5" /></Field>}
+            {fv('paciente','patient_species') && <Field label="Raça"><input name="patient_breed" value={form.patient_breed} onChange={handle} className={inp} placeholder="Golden" /></Field>}
+            {fv('paciente','patient_sex') && <Field label="Sexo"><select name="patient_sex" value={form.patient_sex} onChange={handle} className={sel}><option value="">-</option>{SEX_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></Field>}
+            {fv('paciente','patient_age') && <Field label="Idade"><input name="patient_age" value={form.patient_age} onChange={handle} className={inp} placeholder="3 anos" /></Field>}
+            {fv('paciente','owner_name') && <Field label="Tutor"><input name="owner_name" value={form.owner_name} onChange={handle} className={inp} placeholder="João Silva" /></Field>}
+            {fv('paciente','owner_phone') && <Field label="Telefone tutor"><input name="owner_phone" value={form.owner_phone} onChange={handle} className={inp} placeholder="(11) 99999-9999" /></Field>}
             <Field label="Data"><input type="datetime-local" name="start_time" value={form.start_time} onChange={handle} className={inp} /></Field>
-            <Field label="Clínica/Hospital" span2><input name="clinic_name" value={form.clinic_name} onChange={handle} className={inp} placeholder="Clínica Exemplo" /></Field>
-            <Field label="Patologia base" span2><input name="pathology" value={form.pathology} onChange={handle} className={inp} placeholder="Ex: Piometra" /></Field>
+            {fv('paciente','clinic_name') && <Field label="Clínica/Hospital" span2><input name="clinic_name" value={form.clinic_name} onChange={handle} className={inp} placeholder="Clínica Exemplo" /></Field>}
+            {fv('paciente','pathology') && <Field label="Patologia base" span2><input name="pathology" value={form.pathology} onChange={handle} className={inp} placeholder="Ex: Piometra" /></Field>}
             <Field label="Procedimento proposto *" span2><input name="procedure_name" value={form.procedure_name} onChange={handle} className={inp} placeholder="Ovariohisterectomia" /></Field>
-            <Field label="Cirurgião" span2><input name="surgeon_name" value={form.surgeon_name} onChange={handle} className={inp} placeholder="Dra. Ana Lima" /></Field>
-            <Field label="Valor cobrado (R$)" span2>
+            {fv('paciente','surgeon_name') && <Field label="Cirurgião" span2><input name="surgeon_name" value={form.surgeon_name} onChange={handle} className={inp} placeholder="Dra. Ana Lima" /></Field>}
+            {fv('paciente','asa_classification') && <Field label="ASA">
+              <div className="flex gap-1">
+                {ASA_OPTIONS.map(a => (
+                  <button key={a} type="button" onClick={() => setForm(f => ({ ...f, asa_classification: `ASA ${a}` }))}
+                    className={`flex-1 py-2 text-sm font-medium rounded-lg min-h-[44px] transition ${form.asa_classification === `ASA ${a}` ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{a}</button>
+                ))}
+              </div>
+            </Field>}
+            {fv('paciente','revenue') && <Field label="Valor cobrado (R$)" span2>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
                 <input type="number" step="0.01" min="0" inputMode="decimal" name="revenue" value={form.revenue} onChange={handle} className={`${inp} pl-10`} placeholder="0,00" />
               </div>
-            </Field>
+            </Field>}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Anamnese" open={sections.anamnese} onToggle={() => toggle('anamnese')}>
+        {secVis('anamnese') && <Section title="Anamnese" open={sections.anamnese} onToggle={() => toggle('anamnese')}>
           <div className="space-y-3">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_solid" checked={form.fasting_solid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum sólido</span></label>
-              {form.fasting_solid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_solid_hours" value={form.fasting_solid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
-            </div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_liquid" checked={form.fasting_liquid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum hídrico</span></label>
-              {form.fasting_liquid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_liquid_hours" value={form.fasting_liquid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
-            </div>
-            <Field label="Doenças pré-existentes" span2><textarea name="pre_existing_diseases" value={form.pre_existing_diseases} onChange={handle} rows={2} className={inp} /></Field>
-            <Field label="Temperamento"><input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" /></Field>
+            {fv('anamnese','fasting') && <>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_solid" checked={form.fasting_solid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum sólido</span></label>
+                {form.fasting_solid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_solid_hours" value={form.fasting_solid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 min-h-[44px]"><input type="checkbox" name="fasting_liquid" checked={form.fasting_liquid} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" /><span className="text-sm text-slate-700">Jejum hídrico</span></label>
+                {form.fasting_liquid && <div className="flex items-center gap-1"><input type="number" inputMode="decimal" name="fasting_liquid_hours" value={form.fasting_liquid_hours} onChange={handle} className={`${inp} w-20`} placeholder="0" /><span className="text-sm text-slate-500 font-medium">h</span></div>}
+              </div>
+            </>}
+            {fv('anamnese','pre_existing_diseases') && <Field label="Doenças pré-existentes" span2><textarea name="pre_existing_diseases" value={form.pre_existing_diseases} onChange={handle} rows={2} className={inp} /></Field>}
+            {fv('anamnese','temperament') && <Field label="Temperamento"><input name="temperament" value={form.temperament} onChange={handle} className={inp} placeholder="Dócil" /></Field>}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-500">Medicações prévias</label>
@@ -828,50 +858,50 @@ export default function FichaForm() {
                 </div>
               ))}
             </div>
-            <Field label="Observações" span2><textarea name="anamnesis_notes" value={form.anamnesis_notes} onChange={handle} rows={2} className={inp} /></Field>
+            {fv('anamnese','anamnesis_notes') && <Field label="Observações" span2><textarea name="anamnesis_notes" value={form.anamnesis_notes} onChange={handle} rows={2} className={inp} /></Field>}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Exame Pré-Anestésico" open={sections.exame} onToggle={() => toggle('exame')}>
+        {secVis('exame_pre') && <Section title="Exame Pré-Anestésico" open={sections.exame} onToggle={() => toggle('exame')}>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="ACP" span2><input name="pre_acp" value={form.pre_acp} onChange={handle} className={inp} /></Field>
-            <Field label="FC (bpm)"><input type="number" inputMode="numeric" name="pre_fc" value={form.pre_fc} onChange={handle} className={inp} /></Field>
-            <Field label="FR (mpm)"><input type="number" inputMode="numeric" name="pre_fr" value={form.pre_fr} onChange={handle} className={inp} /></Field>
-            <Field label="Mucosas"><input name="pre_mucosas" value={form.pre_mucosas} onChange={handle} className={inp} placeholder="Rosadas" /></Field>
-            <Field label="TPC (seg)"><input name="pre_tpc" value={form.pre_tpc} onChange={handle} className={inp} placeholder="< 2s" /></Field>
-            <Field label="T°C"><input type="number" step="0.1" inputMode="decimal" name="pre_temperature" value={form.pre_temperature} onChange={handle} className={inp} placeholder="38.5" /></Field>
-            <Field label="Hidratação"><input name="pre_hydration" value={form.pre_hydration} onChange={handle} className={inp} placeholder="Normal" /></Field>
-            <Field label="PAS (mmHg)"><input type="number" inputMode="numeric" name="pre_pas" value={form.pre_pas} onChange={handle} className={inp} /></Field>
-            <Field label="Pulso"><input name="pre_pulse" value={form.pre_pulse} onChange={handle} className={inp} placeholder="Forte" /></Field>
-            <Field label="ASA">
-              <div className="flex gap-1">
-                {ASA_OPTIONS.map(a => (
-                  <button key={a} type="button" onClick={() => setForm(f => ({ ...f, asa_classification: `ASA ${a}` }))}
-                    className={`flex-1 py-2 text-sm font-medium rounded-lg min-h-[44px] transition ${form.asa_classification === `ASA ${a}` ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{a}</button>
-                ))}
-              </div>
-            </Field>
-            <Field label="Estado geral"><input name="general_state" value={form.general_state} onChange={handle} className={inp} placeholder="Bom" /></Field>
-            <Field label="Estado nutricional"><input name="nutritional_state" value={form.nutritional_state} onChange={handle} className={inp} placeholder="Normal" /></Field>
-            <Field label="Outras alterações" span2><input name="pre_other_alterations" value={form.pre_other_alterations} onChange={handle} className={inp} /></Field>
+            {fv('exame_pre','pre_acp') && <Field label="ACP" span2><input name="pre_acp" value={form.pre_acp} onChange={handle} className={inp} /></Field>}
+            {fv('exame_pre','pre_fc') && <Field label="FC (bpm)"><input type="number" inputMode="numeric" name="pre_fc" value={form.pre_fc} onChange={handle} className={inp} /></Field>}
+            {fv('exame_pre','pre_fr') && <Field label="FR (mpm)"><input type="number" inputMode="numeric" name="pre_fr" value={form.pre_fr} onChange={handle} className={inp} /></Field>}
+            {fv('exame_pre','pre_mucosas') && <Field label="Mucosas"><input name="pre_mucosas" value={form.pre_mucosas} onChange={handle} className={inp} placeholder="Rosadas" /></Field>}
+            {fv('exame_pre','pre_tpc') && <Field label="TPC (seg)"><input name="pre_tpc" value={form.pre_tpc} onChange={handle} className={inp} placeholder="< 2s" /></Field>}
+            {fv('exame_pre','pre_temperature') && <Field label="T°C"><input type="number" step="0.1" inputMode="decimal" name="pre_temperature" value={form.pre_temperature} onChange={handle} className={inp} placeholder="38.5" /></Field>}
+            {fv('exame_pre','pre_hydration') && <Field label="Hidratação"><input name="pre_hydration" value={form.pre_hydration} onChange={handle} className={inp} placeholder="Normal" /></Field>}
+            {fv('exame_pre','pre_pas') && <Field label="PAS (mmHg)"><input type="number" inputMode="numeric" name="pre_pas" value={form.pre_pas} onChange={handle} className={inp} /></Field>}
+            {fv('exame_pre','pre_pulse') && <Field label="Pulso"><input name="pre_pulse" value={form.pre_pulse} onChange={handle} className={inp} placeholder="Forte" /></Field>}
+            {fv('exame_pre','general_state') && <Field label="Estado geral"><input name="general_state" value={form.general_state} onChange={handle} className={inp} placeholder="Bom" /></Field>}
+            {fv('exame_pre','nutritional_state') && <Field label="Estado nutricional"><input name="nutritional_state" value={form.nutritional_state} onChange={handle} className={inp} placeholder="Normal" /></Field>}
+            {fv('exame_pre','pre_other_alterations') && <Field label="Outras alterações" span2><input name="pre_other_alterations" value={form.pre_other_alterations} onChange={handle} className={inp} /></Field>}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Exames Complementares" open={sections.exames_comp} onToggle={() => toggle('exames_comp')}>
+        {secVis('exames_comp') && <Section title="Exames Complementares" open={sections.exames_comp} onToggle={() => toggle('exames_comp')}>
           <div className="grid grid-cols-3 gap-2">
-            {[['Ht%','exam_ht'],['Hb','exam_hb'],['Eritr','exam_eritr'],['PPT','exam_ppt'],['Plaquetas','exam_plaquetas'],['Leuc','exam_leuc'],['N.Segm','exam_segm'],['N.Bast','exam_bast'],['Linfócitos','exam_linf'],['Creat','exam_creat'],['ALT','exam_alt'],['FA','exam_fa'],['Ureia','exam_ureia'],['Alb','exam_alb'],['Glic','exam_glic']].map(([label,name]) => (
+            {fv('exames_comp','hemograma') && [['Ht%','exam_ht'],['Hb','exam_hb'],['Eritr','exam_eritr'],['PPT','exam_ppt'],['Plaquetas','exam_plaquetas'],['Leuc','exam_leuc']].map(([label,name]) => (
+              <Field key={name} label={label}><input name={name} value={form[name]} onChange={handle} className={inp} /></Field>
+            ))}
+            {fv('exames_comp','hemograma_diff') && [['N.Segm','exam_segm'],['N.Bast','exam_bast'],['Linfócitos','exam_linf']].map(([label,name]) => (
+              <Field key={name} label={label}><input name={name} value={form[name]} onChange={handle} className={inp} /></Field>
+            ))}
+            {fv('exames_comp','bioquimica') && [['Creat','exam_creat'],['ALT','exam_alt'],['FA','exam_fa'],['Ureia','exam_ureia'],['Alb','exam_alb'],['Glic','exam_glic']].map(([label,name]) => (
               <Field key={name} label={label}><input name={name} value={form[name]} onChange={handle} className={inp} /></Field>
             ))}
           </div>
           <div className="grid grid-cols-2 gap-3 pt-1">
-            <Field label="Raio-X"><textarea name="exam_raiox" value={form.exam_raiox} onChange={handle} rows={2} className={inp} /></Field>
-            <Field label="Ultrassom"><textarea name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} rows={2} className={inp} /></Field>
-            <Field label="Eco/ECG" span2><textarea name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} rows={2} className={inp} /></Field>
-            <Field label="Outros exames" span2><textarea name="exam_outros" value={form.exam_outros} onChange={handle} rows={2} className={inp} /></Field>
+            {fv('exames_comp','imagem') && <>
+              <Field label="Raio-X"><textarea name="exam_raiox" value={form.exam_raiox} onChange={handle} rows={2} className={inp} /></Field>
+              <Field label="Ultrassom"><textarea name="exam_ultrassom" value={form.exam_ultrassom} onChange={handle} rows={2} className={inp} /></Field>
+              <Field label="Eco/ECG" span2><textarea name="exam_eco_ecg" value={form.exam_eco_ecg} onChange={handle} rows={2} className={inp} /></Field>
+            </>}
+            {fv('exames_comp','exam_outros') && <Field label="Outros exames" span2><textarea name="exam_outros" value={form.exam_outros} onChange={handle} rows={2} className={inp} /></Field>}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Protocolo Anestésico" open={sections.protocolo} onToggle={() => toggle('protocolo')}
+        {secVis('farmacos') && <Section title="Protocolo Anestésico" open={sections.protocolo} onToggle={() => toggle('protocolo')}
           badge={drugs.mpa.length + drugs.inducao.length + (drugs.manutencao_inalatoria || []).length + (drugs.manutencao_tiva || []).length + (drugs.manutencao || []).length + (drugs.infusao || []).length + (drugs.transoperatorio || []).length || null}>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -912,19 +942,19 @@ export default function FichaForm() {
             </div>
             {(drugs.infusao || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="infusao" onChange={(m) => updateDrug('infusao', i, m)} onRemove={() => removeDrug('infusao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Vias Aéreas" open={sections.vias_aereas} onToggle={() => toggle('vias_aereas')}>
+        {secVis('vias_aereas') && <Section title="Vias Aéreas" open={sections.vias_aereas} onToggle={() => toggle('vias_aereas')}>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Tipo" span2>
+            {fv('vias_aereas','airway_type') && <Field label="Tipo" span2>
               <div className="flex gap-1 flex-wrap">
                 {AIRWAY_TYPES.map(t => <button key={t} type="button" onClick={() => setForm(f => ({ ...f, airway_type: t }))}
                   className={`px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] transition ${form.airway_type === t ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{t}</button>)}
               </div>
-            </Field>
-            {form.airway_type === 'Outro' && <Field label="Descrever via aérea" span2><input name="airway_other" value={form.airway_other} onChange={handle} className={inp} placeholder="Ex: Traqueostomia, supraglótico..." /></Field>}
-            <Field label="Tubo nº/tipo"><input name="tube_number" value={form.tube_number} onChange={handle} className={inp} placeholder="7.5" /></Field>
-            <Field label="Respiração">
+            </Field>}
+            {fv('vias_aereas','airway_type') && form.airway_type === 'Outro' && <Field label="Descrever via aérea" span2><input name="airway_other" value={form.airway_other} onChange={handle} className={inp} placeholder="Ex: Traqueostomia, supraglótico..." /></Field>}
+            {fv('vias_aereas','tube_number') && <Field label="Tubo nº/tipo"><input name="tube_number" value={form.tube_number} onChange={handle} className={inp} placeholder="7.5" /></Field>}
+            {fv('vias_aereas','breathing_mode') && <Field label="Respiração">
               <div className="flex gap-1 flex-wrap">
                 {BREATHING_MODES.map(m => {
                   const modes = (form.breathing_mode || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -935,8 +965,8 @@ export default function FichaForm() {
                   }} className={`px-3 py-2 text-xs font-medium rounded-lg min-h-[40px] transition ${isActive ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}>{m}</button>
                 })}
               </div>
-            </Field>
-            {(form.breathing_mode || '').includes('Controlada') && (
+            </Field>}
+            {fv('vias_aereas','ventilation_type') && (form.breathing_mode || '').includes('Controlada') && (
               <Field label="Tipo de ventilação" span2>
                 <div className="flex gap-1 flex-wrap">
                   {VENTILATION_TYPES.map(t => <button key={t} type="button" onClick={() => setForm(f => ({ ...f, ventilation_type: t }))}
@@ -944,15 +974,15 @@ export default function FichaForm() {
                 </div>
               </Field>
             )}
-            <Field label="Sistema" span2><input name="breathing_system" value={form.breathing_system} onChange={handle} className={inp} placeholder="Ex: Circular" /></Field>
-            <label className="flex items-center gap-2 min-h-[44px] col-span-2">
+            {fv('vias_aereas','breathing_system') && <Field label="Sistema" span2><input name="breathing_system" value={form.breathing_system} onChange={handle} className={inp} placeholder="Ex: Circular" /></Field>}
+            {fv('vias_aereas','peep') && <label className="flex items-center gap-2 min-h-[44px] col-span-2">
               <input type="checkbox" name="peep" checked={form.peep} onChange={handle} className="w-5 h-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
               <span className="text-sm text-slate-700">PEEP</span>
-            </label>
+            </label>}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Bloqueios" open={sections.bloqueios} onToggle={() => toggle('bloqueios')} badge={blocks.length || null}>
+        {secVis('bloqueios') && <Section title="Bloqueios" open={sections.bloqueios} onToggle={() => toggle('bloqueios')} badge={blocks.length || null}>
           <div className="space-y-3">
             {blocks.map((blk, i) => (
               <div key={i} className="bg-slate-50 rounded-lg p-3 space-y-2 relative">
@@ -997,12 +1027,12 @@ export default function FichaForm() {
             <button type="button" onClick={() => setBlocks(b => [...b, { type: '', other_type: '', drugs: [{ name: '', dose_volume: '' }] }])}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-teal-400 text-teal-600 text-xs font-medium rounded-lg active:bg-teal-50 min-h-[44px]"><Plus size={14} /> Adicionar bloqueio</button>
           </div>
-        </Section>
+        </Section>}
 
         <Section title="Transoperatório" open={sections.transoperatorio} onToggle={() => toggle('transoperatorio')} badge={vitals.length || null}>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <Field label="Início anestesia"><input type="time" value={(form.anesthesia_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
-            <Field label="Início procedimento"><input type="time" value={(form.procedure_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            {fv('tempos','anesthesia_start') && <Field label="Início anestesia"><input type="time" value={(form.anesthesia_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>}
+            {fv('tempos','procedure_start') && <Field label="Início procedimento"><input type="time" value={(form.procedure_start || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_start: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>}
           </div>
 
           <div className="space-y-2 mb-3">
@@ -1134,15 +1164,15 @@ export default function FichaForm() {
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Final procedimento"><input type="time" value={(form.procedure_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
-            <Field label="Final anestesia"><input type="time" value={(form.anesthesia_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
-            <Field label="Extubação"><input type="time" value={(form.extubation_time || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, extubation_time: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>
+            {fv('tempos','procedure_end') && <Field label="Final procedimento"><input type="time" value={(form.procedure_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, procedure_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>}
+            {fv('tempos','anesthesia_end') && <Field label="Final anestesia"><input type="time" value={(form.anesthesia_end || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, anesthesia_end: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>}
+            {fv('tempos','extubation_time') && <Field label="Extubação"><input type="time" value={(form.extubation_time || '').slice(11, 16)} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); setForm(f => ({ ...f, extubation_time: date + 'T' + e.target.value })); hasUnsavedChanges.current = true }} className={inp} /></Field>}
           </div>
         </Section>
 
-        <Section title="Pós-operatório" open={sections.pos_operatorio} onToggle={() => toggle('pos_operatorio')} badge={(drugs.pos_operatorio || []).length || null}>
-          <Field label="Pós-operatório"><textarea name="post_operative" value={form.post_operative} onChange={handle} rows={4} className={inp} /></Field>
-          <Field label="Qualidade da recuperação"><textarea name="recovery_quality" value={form.recovery_quality} onChange={handle} rows={2} className={inp} placeholder="Ex: Recuperação suave, sem excitação..." /></Field>
+        {secVis('pos_operatorio') && <Section title="Pós-operatório" open={sections.pos_operatorio} onToggle={() => toggle('pos_operatorio')} badge={(drugs.pos_operatorio || []).length || null}>
+          {fv('pos_operatorio','post_operative') && <Field label="Pós-operatório"><textarea name="post_operative" value={form.post_operative} onChange={handle} rows={4} className={inp} /></Field>}
+          {fv('pos_operatorio','recovery_quality') && <Field label="Qualidade da recuperação"><textarea name="recovery_quality" value={form.recovery_quality} onChange={handle} rows={2} className={inp} placeholder="Ex: Recuperação suave, sem excitação..." /></Field>}
           <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Pós-operatório</p>
@@ -1150,11 +1180,11 @@ export default function FichaForm() {
             </div>
             {(drugs.pos_operatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="pos_operatorio" onChange={(m) => updateDrug('pos_operatorio', i, m)} onRemove={() => removeDrug('pos_operatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
           </div>
-        </Section>
+        </Section>}
 
-        <Section title="Observações" open={sections.observacoes} onToggle={() => toggle('observacoes')}>
+        {secVis('observacoes') && <Section title="Observações" open={sections.observacoes} onToggle={() => toggle('observacoes')}>
           <Field label="Observações gerais"><textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={4} className={inp} /></Field>
-        </Section>
+        </Section>}
 
         <button type="submit" disabled={saving}
           className="w-full flex items-center justify-center gap-2 py-3.5 bg-teal-600 text-white font-medium rounded-xl active:bg-teal-700 transition min-h-[52px] text-sm">

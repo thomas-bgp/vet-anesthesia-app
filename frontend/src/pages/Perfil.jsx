@@ -19,16 +19,84 @@ const DEFAULT_FICHA_SECTIONS = [
   { key: 'observacoes', label: 'Observações', visible: true },
 ]
 
+// Fields configurable within each section
+const SECTION_FIELDS = {
+  paciente: [
+    { key: 'patient_species', label: 'Espécie / Raça' },
+    { key: 'patient_weight', label: 'Peso' },
+    { key: 'patient_age', label: 'Idade' },
+    { key: 'patient_sex', label: 'Sexo' },
+    { key: 'owner_name', label: 'Tutor' },
+    { key: 'owner_phone', label: 'Telefone tutor' },
+    { key: 'clinic_name', label: 'Clínica' },
+    { key: 'surgeon_name', label: 'Cirurgião' },
+    { key: 'pathology', label: 'Patologia' },
+    { key: 'asa_classification', label: 'ASA' },
+    { key: 'revenue', label: 'Valor cobrado (R$)' },
+  ],
+  anamnese: [
+    { key: 'fasting', label: 'Jejum (sólido/hídrico)' },
+    { key: 'pre_existing_diseases', label: 'Doenças pré-existentes' },
+    { key: 'temperament', label: 'Temperamento' },
+    { key: 'prior_medications', label: 'Medicações prévias' },
+    { key: 'anamnesis_notes', label: 'Observações anamnese' },
+  ],
+  exame_pre: [
+    { key: 'pre_acp', label: 'ACP' },
+    { key: 'pre_fc', label: 'FC' },
+    { key: 'pre_fr', label: 'FR' },
+    { key: 'pre_mucosas', label: 'Mucosas' },
+    { key: 'pre_tpc', label: 'TPC' },
+    { key: 'pre_temperature', label: 'Temperatura' },
+    { key: 'pre_hydration', label: 'Hidratação' },
+    { key: 'pre_pas', label: 'PAS' },
+    { key: 'pre_pulse', label: 'Pulso' },
+    { key: 'general_state', label: 'Estado geral' },
+    { key: 'nutritional_state', label: 'Estado nutricional' },
+    { key: 'pre_other_alterations', label: 'Outras alterações' },
+  ],
+  exames_comp: [
+    { key: 'hemograma', label: 'Hemograma (Ht, Hb, Eritr, PPT, Plaq, Leuc)' },
+    { key: 'hemograma_diff', label: 'Diferencial (N.Segm, N.Bast, Linfócitos)' },
+    { key: 'bioquimica', label: 'Bioquímica (Creat, ALT, FA, Ureia, Alb, Glic)' },
+    { key: 'imagem', label: 'Imagem (Raio-X, Ultrassom, Eco/ECG)' },
+    { key: 'exam_outros', label: 'Outros exames' },
+  ],
+  vias_aereas: [
+    { key: 'airway_type', label: 'Tipo via aérea' },
+    { key: 'tube_number', label: 'Tubo nº/tipo' },
+    { key: 'breathing_mode', label: 'Modo de respiração' },
+    { key: 'ventilation_type', label: 'Tipo de ventilação' },
+    { key: 'breathing_system', label: 'Sistema respiratório' },
+    { key: 'peep', label: 'PEEP' },
+  ],
+  tempos: [
+    { key: 'anesthesia_start', label: 'Início anestesia' },
+    { key: 'procedure_start', label: 'Início procedimento' },
+    { key: 'procedure_end', label: 'Final procedimento' },
+    { key: 'anesthesia_end', label: 'Final anestesia' },
+    { key: 'extubation_time', label: 'Extubação' },
+  ],
+  pos_operatorio: [
+    { key: 'post_operative', label: 'Texto pós-operatório' },
+    { key: 'recovery_quality', label: 'Qualidade da recuperação' },
+  ],
+}
+
 function mergeFichaLayout(saved) {
   if (!saved || !Array.isArray(saved)) return DEFAULT_FICHA_SECTIONS.map(s => ({ ...s }))
   const result = saved.map(s => ({ ...s }))
-  // Add any new default sections not in saved config
   for (const def of DEFAULT_FICHA_SECTIONS) {
-    if (!result.find(s => s.key === def.key)) {
-      result.push({ ...def })
-    }
+    if (!result.find(s => s.key === def.key)) result.push({ ...def })
   }
   return result
+}
+
+// Get field visibility from layout (missing = visible by default)
+function getFieldVis(layout, sectionKey, fieldKey) {
+  const sec = layout.find(s => s.key === sectionKey)
+  if (!sec || !sec.fields) return true
+  return sec.fields[fieldKey] !== false
 }
 
 const THEME_COLORS = [
@@ -65,6 +133,7 @@ export default function Perfil() {
   // Ficha layout state
   const [fichaLayout, setFichaLayout] = useState(() => DEFAULT_FICHA_SECTIONS.map(s => ({ ...s })))
   const [showPreview, setShowPreview] = useState(false)
+  const [expandedSection, setExpandedSection] = useState(null)
 
   // Signature pad state
   const canvasRef = useRef(null)
@@ -611,21 +680,54 @@ export default function Perfil() {
         </div>
 
         <div className="space-y-1">
-          {fichaLayout.map((section, i) => (
-            <div key={section.key} className={`flex items-center gap-2 p-2.5 rounded-lg border transition ${section.visible ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-              <div className="flex flex-col gap-0.5 shrink-0">
-                <button type="button" disabled={i === 0} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n })}
-                  className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronUp size={14} /></button>
-                <button type="button" disabled={i === fichaLayout.length - 1} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i], n[i + 1]] = [n[i + 1], n[i]]; return n })}
-                  className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronDown size={14} /></button>
+          {fichaLayout.map((section, i) => {
+            const fields = SECTION_FIELDS[section.key]
+            const isExpanded = expandedSection === section.key
+            return (
+              <div key={section.key} className={`rounded-lg border transition ${section.visible ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                <div className="flex items-center gap-2 p-2.5">
+                  <div className="flex flex-col gap-0.5 shrink-0">
+                    <button type="button" disabled={i === 0} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n })}
+                      className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronUp size={14} /></button>
+                    <button type="button" disabled={i === fichaLayout.length - 1} onClick={() => setFichaLayout(l => { const n = [...l]; [n[i], n[i + 1]] = [n[i + 1], n[i]]; return n })}
+                      className="p-0.5 text-slate-400 disabled:opacity-20 active:text-slate-700"><ChevronDown size={14} /></button>
+                  </div>
+                  <button type="button" onClick={() => fields && section.visible && setExpandedSection(isExpanded ? null : section.key)}
+                    className="flex-1 text-left">
+                    <span className="text-sm text-slate-700 font-medium">{section.label}</span>
+                    {fields && section.visible && <span className="text-[10px] text-slate-400 ml-1">{isExpanded ? '▲' : '▼'}</span>}
+                  </button>
+                  <button type="button" onClick={() => setFichaLayout(l => l.map((s, idx) => idx === i ? { ...s, visible: !s.visible } : s))}
+                    className={`p-2 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center transition ${section.visible ? 'text-teal-600 bg-teal-50' : 'text-slate-400 bg-slate-100'}`}>
+                    {section.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                  </button>
+                </div>
+                {/* Expandable field toggles */}
+                {isExpanded && fields && section.visible && (
+                  <div className="px-3 pb-3 pt-0 border-t border-slate-100">
+                    <div className="grid grid-cols-1 gap-0.5 mt-2">
+                      {fields.map(f => {
+                        const vis = getFieldVis(fichaLayout, section.key, f.key)
+                        return (
+                          <button key={f.key} type="button" onClick={() => {
+                            setFichaLayout(l => l.map(s => s.key === section.key ? {
+                              ...s, fields: { ...(s.fields || {}), [f.key]: !vis }
+                            } : s))
+                          }}
+                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition min-h-[40px] ${vis ? 'bg-white' : 'bg-slate-50 opacity-50'}`}>
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${vis ? 'border-teal-500 bg-teal-500' : 'border-slate-300'}`}>
+                              {vis && <Check size={10} className="text-white" />}
+                            </div>
+                            <span className="text-xs text-slate-600">{f.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
-              <span className="text-sm text-slate-700 flex-1 font-medium">{section.label}</span>
-              <button type="button" onClick={() => setFichaLayout(l => l.map((s, idx) => idx === i ? { ...s, visible: !s.visible } : s))}
-                className={`p-2 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center transition ${section.visible ? 'text-teal-600 bg-teal-50' : 'text-slate-400 bg-slate-100'}`}>
-                {section.visible ? <Eye size={16} /> : <EyeOff size={16} />}
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="flex gap-2">

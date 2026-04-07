@@ -328,6 +328,12 @@ export default function FichaDetail() {
   const secHidden = new Set(fichaLayout.filter(s => s.visible === false).map(s => s.key))
   const secOrder = fichaLayout.filter(s => s.visible !== false).map(s => s.key)
   const secVis = (key) => !secHidden.has(key)
+  const fv = (sectionKey, fieldKey) => {
+    const sec = fichaLayout.find(s => s.key === sectionKey)
+    if (!sec || sec.visible === false) return false
+    if (!sec.fields) return true
+    return sec.fields[fieldKey] !== false
+  }
 
   return (
     <div className="pb-6">
@@ -546,14 +552,14 @@ export default function FichaDetail() {
         {/* Vias aéreas */}
         {secVis('vias_aereas') && (surgery.airway_type || surgery.breathing_mode) && (
           <Card title="Vias Aéreas" style={{ order: secOrder.indexOf('vias_aereas') }}>
-            <InfoRow label="Tipo" value={surgery.airway_type === 'Outro' && surgery.airway_other ? `Outro: ${surgery.airway_other}` : surgery.airway_type} />
-            <InfoRow label="Tubo" value={surgery.tube_number} />
-            <InfoRow label="Respiração" value={surgery.breathing_mode} />
-            {(surgery.breathing_mode || '').includes('Controlada') && surgery.ventilation_type && (
+            {fv('vias_aereas','airway_type') && <InfoRow label="Tipo" value={surgery.airway_type === 'Outro' && surgery.airway_other ? `Outro: ${surgery.airway_other}` : surgery.airway_type} />}
+            {fv('vias_aereas','tube_number') && <InfoRow label="Tubo" value={surgery.tube_number} />}
+            {fv('vias_aereas','breathing_mode') && <InfoRow label="Respiração" value={surgery.breathing_mode} />}
+            {fv('vias_aereas','ventilation_type') && (surgery.breathing_mode || '').includes('Controlada') && surgery.ventilation_type && (
               <InfoRow label="Tipo de ventilação" value={surgery.ventilation_type} />
             )}
-            <InfoRow label="Sistema" value={surgery.breathing_system} />
-            {surgery.peep ? <InfoRow label="PEEP" value="Sim" /> : null}
+            {fv('vias_aereas','breathing_system') && <InfoRow label="Sistema" value={surgery.breathing_system} />}
+            {fv('vias_aereas','peep') && surgery.peep ? <InfoRow label="PEEP" value="Sim" /> : null}
           </Card>
         )}
 
@@ -675,11 +681,11 @@ export default function FichaDetail() {
         {/* Tempos cirúrgicos */}
         {secVis('tempos') && (surgery.anesthesia_start || surgery.procedure_start || surgery.procedure_end || surgery.anesthesia_end || surgery.extubation_time) && (
           <Card title="Tempos" icon={Clock} style={{ order: secOrder.indexOf('tempos') }}>
-            <InfoRow label="Início anestesia" value={surgery.anesthesia_start ? fmtTime(surgery.anesthesia_start) : null} />
-            <InfoRow label="Início procedimento" value={surgery.procedure_start ? fmtTime(surgery.procedure_start) : null} />
-            <InfoRow label="Final procedimento" value={surgery.procedure_end ? fmtTime(surgery.procedure_end) : null} />
-            <InfoRow label="Final anestesia" value={surgery.anesthesia_end ? fmtTime(surgery.anesthesia_end) : null} />
-            <InfoRow label="Hora de extubação" value={surgery.extubation_time ? fmtTime(surgery.extubation_time) : null} />
+            {fv('tempos','anesthesia_start') && <InfoRow label="Início anestesia" value={surgery.anesthesia_start ? fmtTime(surgery.anesthesia_start) : null} />}
+            {fv('tempos','procedure_start') && <InfoRow label="Início procedimento" value={surgery.procedure_start ? fmtTime(surgery.procedure_start) : null} />}
+            {fv('tempos','procedure_end') && <InfoRow label="Final procedimento" value={surgery.procedure_end ? fmtTime(surgery.procedure_end) : null} />}
+            {fv('tempos','anesthesia_end') && <InfoRow label="Final anestesia" value={surgery.anesthesia_end ? fmtTime(surgery.anesthesia_end) : null} />}
+            {fv('tempos','extubation_time') && <InfoRow label="Hora de extubação" value={surgery.extubation_time ? fmtTime(surgery.extubation_time) : null} />}
           </Card>
         )}
 
