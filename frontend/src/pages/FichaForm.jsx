@@ -50,10 +50,20 @@ function clearDraftFromStorage(id) {
 const SPECIES = ['Canino', 'Felino', 'Equino', 'Bovino', 'Suíno', 'Silvestre', 'Outro']
 const SEX_OPTIONS = ['Macho', 'Fêmea', 'Macho castrado', 'Fêmea castrada']
 const ASA_OPTIONS = ['I', 'II', 'III', 'IV', 'V']
-const BOLUS_UNITS = ['mg/kg', 'mcg/kg', 'UI/kg', 'Outro']
-const INFUSION_UNITS = ['mg/kg/h', 'mg/kg/min', 'mcg/kg/h', 'mcg/kg/min', 'Outro']
+const BOLUS_UNITS = ['mg/kg', 'mcg/kg', 'UI/kg', 'mL', 'mL/kg', '+ Nova unidade']
+const INFUSION_UNITS = ['mg/kg/h', 'mg/kg/min', 'mcg/kg/h', 'mcg/kg/min', '+ Nova unidade']
 const DOSE_UNITS = ['mL', 'mg', 'mg/kg', 'mcg/kg', 'UI'] // legacy fallback
-const ROUTES = ['IV', 'IM', 'SC', 'VO', 'Inalatório', 'Epidural', 'Tópico', 'Retal', 'Outro']
+const ROUTES = ['IV', 'IM', 'SC', 'VO', 'Inalatório', 'Epidural', 'Tópico', 'Retal', '+ Nova via']
+
+const CUSTOM_UNITS_KEY = 'anestify_custom_units'
+const CUSTOM_ROUTES_KEY = 'anestify_custom_routes'
+
+function loadCustomList(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] }
+}
+function saveCustomList(key, list) {
+  localStorage.setItem(key, JSON.stringify(list))
+}
 const PRIOR_MED_ROUTES = ['IV', 'IM', 'SC', 'VO', 'Tópico', 'Outro']
 const PHASES = [
   { value: 'mpa', label: 'MPA' },
@@ -136,12 +146,17 @@ function parseConcentration(str) {
 }
 
 function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, phase, infusionMinutes }) {
-  if (!dose || !patientWeight || !concentrationMgMl || concentrationMgMl <= 0) return null
-
   const doseNum = parseFloat(dose)
-  if (isNaN(doseNum) || doseNum <= 0) return null
+  if (!dose || isNaN(doseNum) || doseNum <= 0) return null
 
-  if (phase === 'infusao') {
+  // Direct volume units — no calculation needed
+  if (doseUnit === 'mL') return doseNum
+  if (doseUnit === 'mL/kg') return patientWeight > 0 ? doseNum * patientWeight : null
+
+  if (!patientWeight || !concentrationMgMl || concentrationMgMl <= 0) return null
+
+  // Infusion or TIVA — rate × time
+  if (phase === 'infusao' || phase === 'manutencao_tiva') {
     const mins = parseFloat(infusionMinutes)
     if (!mins || mins <= 0) return 'need_times'
     const durationHours = mins / 60
@@ -173,13 +188,15 @@ function calculateVolume({ dose, doseUnit, patientWeight, concentrationMgMl, pha
   return (mgKg * patientWeight) / concentrationMgMl
 }
 
-function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight }) {
-  const isInfusion = phase === 'infusao'
+function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, customUnits, customRoutes, onAddUnit, onAddRoute }) {
+  const isInfusion = phase === 'infusao' || phase === 'manutencao_tiva'
   const isMaintenance = phase === 'manutencao' || phase === 'manutencao_inalatoria' || phase === 'manutencao_tiva'
-  const unitOptions = isInfusion ? INFUSION_UNITS : BOLUS_UNITS
+  const baseUnits = isInfusion ? INFUSION_UNITS : BOLUS_UNITS
+  const unitOptions = [...baseUnits.filter(u => u !== '+ Nova unidade'), ...(customUnits || []), '+ Nova unidade']
+  const routeOptions = [...ROUTES.filter(r => r !== '+ Nova via'), ...(customRoutes || []), '+ Nova via']
   const isAE = med.dose_ae === true
-  const isOutroUnit = med.dose_unit === 'Outro'
-  const isOutroRoute = med.route === 'Outro'
+  const isAddingUnit = med._addingUnit === true
+  const isAddingRoute = med._addingRoute === true
   const selectedMed = med.medicine_id ? allMedicines.find(m => String(m.id) === String(med.medicine_id)) : null
   const presType = selectedMed?.presentation_type
 
@@ -244,32 +261,50 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight }
           )}
         </div>
         <div>
-          <select value={isOutroUnit ? 'Outro' : med.dose_unit}
-            onChange={e => {
-              if (e.target.value === 'Outro') onChange({ ...med, dose_unit: 'Outro', custom_unit: med.custom_unit || '' })
-              else onChange({ ...med, dose_unit: e.target.value, custom_unit: '' })
-            }} className={sel}>
-            {unitOptions.map(u => <option key={u}>{u}</option>)}
-          </select>
-          {isOutroUnit && (
-            <input type="text" value={med.custom_unit || ''}
-              onChange={e => onChange({ ...med, custom_unit: e.target.value })}
-              placeholder="Unidade..." className={`${inp} mt-1`} />
+          {isAddingUnit ? (
+            <div className="flex gap-1">
+              <input type="text" value={med._newUnit || ''} onChange={e => onChange({ ...med, _newUnit: e.target.value })}
+                placeholder="Nova unidade..." className={`${inp} flex-1`} autoFocus />
+              <button type="button" onClick={() => {
+                const u = (med._newUnit || '').trim()
+                if (u) { onAddUnit(u); onChange({ ...med, dose_unit: u, _addingUnit: false, _newUnit: '' }) }
+              }} className="px-2 py-1 bg-teal-600 text-white text-xs rounded-lg min-h-[40px]">OK</button>
+              <button type="button" onClick={() => onChange({ ...med, _addingUnit: false, _newUnit: '' })}
+                className="px-2 py-1 bg-slate-200 text-slate-600 text-xs rounded-lg min-h-[40px]"><X size={12} /></button>
+            </div>
+          ) : (
+            <select value={unitOptions.includes(med.dose_unit) ? med.dose_unit : med.dose_unit || unitOptions[0]}
+              onChange={e => {
+                if (e.target.value === '+ Nova unidade') onChange({ ...med, _addingUnit: true, _newUnit: '' })
+                else onChange({ ...med, dose_unit: e.target.value })
+              }} className={sel}>
+              {!unitOptions.includes(med.dose_unit) && med.dose_unit && <option value={med.dose_unit}>{med.dose_unit}</option>}
+              {unitOptions.map(u => <option key={u}>{u}</option>)}
+            </select>
           )}
         </div>
         <div>
-          <select value={isOutroRoute ? 'Outro' : med.route}
-            onChange={e => {
-              if (e.target.value === 'Outro') onChange({ ...med, route: 'Outro', custom_route: med.custom_route || '' })
-              else onChange({ ...med, route: e.target.value, custom_route: '' })
-            }} className={sel}>
-            <option value="">Via...</option>
-            {ROUTES.map(r => <option key={r}>{r}</option>)}
-          </select>
-          {isOutroRoute && (
-            <input type="text" value={med.custom_route || ''}
-              onChange={e => onChange({ ...med, custom_route: e.target.value })}
-              placeholder="Especificar via..." className={`${inp} mt-1`} />
+          {isAddingRoute ? (
+            <div className="flex gap-1">
+              <input type="text" value={med._newRoute || ''} onChange={e => onChange({ ...med, _newRoute: e.target.value })}
+                placeholder="Nova via..." className={`${inp} flex-1`} autoFocus />
+              <button type="button" onClick={() => {
+                const r = (med._newRoute || '').trim()
+                if (r) { onAddRoute(r); onChange({ ...med, route: r, _addingRoute: false, _newRoute: '' }) }
+              }} className="px-2 py-1 bg-teal-600 text-white text-xs rounded-lg min-h-[40px]">OK</button>
+              <button type="button" onClick={() => onChange({ ...med, _addingRoute: false, _newRoute: '' })}
+                className="px-2 py-1 bg-slate-200 text-slate-600 text-xs rounded-lg min-h-[40px]"><X size={12} /></button>
+            </div>
+          ) : (
+            <select value={routeOptions.includes(med.route) ? med.route : med.route || ''}
+              onChange={e => {
+                if (e.target.value === '+ Nova via') onChange({ ...med, _addingRoute: true, _newRoute: '' })
+                else onChange({ ...med, route: e.target.value })
+              }} className={sel}>
+              <option value="">Via...</option>
+              {!routeOptions.includes(med.route) && med.route && <option value={med.route}>{med.route}</option>}
+              {routeOptions.map(r => <option key={r}>{r}</option>)}
+            </select>
           )}
         </div>
         <div>
@@ -352,6 +387,10 @@ export default function FichaForm() {
   const [newParamName, setNewParamName] = useState('')
   const [complications, setComplications] = useState([])
   const [priorMeds, setPriorMeds] = useState([])
+  const [customUnits, setCustomUnits] = useState(() => loadCustomList(CUSTOM_UNITS_KEY))
+  const [customRoutes, setCustomRoutes] = useState(() => loadCustomList(CUSTOM_ROUTES_KEY))
+  const addCustomUnit = (u) => { if (!customUnits.includes(u)) { const next = [...customUnits, u]; setCustomUnits(next); saveCustomList(CUSTOM_UNITS_KEY, next) } }
+  const addCustomRoute = (r) => { if (!customRoutes.includes(r)) { const next = [...customRoutes, r]; setCustomRoutes(next); saveCustomList(CUSTOM_ROUTES_KEY, next) } }
 
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [draftData, setDraftData] = useState(null)
@@ -616,7 +655,7 @@ export default function FichaForm() {
   const updateVital = (idx, key, value) => { setVitals(v => v.map((item, i) => i === idx ? { ...item, [key]: value, edited: true } : item)); hasUnsavedChanges.current = true }
 
   const addDrug = (phase) => {
-    const defaultUnit = phase === 'infusao' ? 'mg/kg/h' : 'mg/kg'
+    const defaultUnit = (phase === 'infusao' || phase === 'manutencao_tiva') ? 'mg/kg/min' : 'mg/kg'
     setDrugs(d => ({
       ...d, [phase]: [...(d[phase] || []), { medicine_id: '', custom_name: '', dose: '', dose_ae: false, dose_unit: defaultUnit, custom_unit: '', route: '', custom_route: '', time: '', drug_source: 'proprio' }]
     })); hasUnsavedChanges.current = true
@@ -908,7 +947,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Medicação Pré-Anestésica (MPA)</p>
               <button type="button" onClick={() => addDrug('mpa')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.mpa.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="mpa" onChange={(m) => updateDrug('mpa', i, m)} onRemove={() => removeDrug('mpa', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {drugs.mpa.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="mpa" onChange={(m) => updateDrug('mpa', i, m)} onRemove={() => removeDrug('mpa', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -916,7 +955,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Indução</p>
               <button type="button" onClick={() => addDrug('inducao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {drugs.inducao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="inducao" onChange={(m) => updateDrug('inducao', i, m)} onRemove={() => removeDrug('inducao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {drugs.inducao.map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="inducao" onChange={(m) => updateDrug('inducao', i, m)} onRemove={() => removeDrug('inducao', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -924,7 +963,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção — Inalatória</p>
               <button type="button" onClick={() => addDrug('manutencao_inalatoria')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.manutencao_inalatoria || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_inalatoria" onChange={(m) => updateDrug('manutencao_inalatoria', i, m)} onRemove={() => removeDrug('manutencao_inalatoria', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.manutencao_inalatoria || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_inalatoria" onChange={(m) => updateDrug('manutencao_inalatoria', i, m)} onRemove={() => removeDrug('manutencao_inalatoria', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -932,7 +971,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Manutenção — TIVA</p>
               <button type="button" onClick={() => addDrug('manutencao_tiva')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.manutencao_tiva || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_tiva" onChange={(m) => updateDrug('manutencao_tiva', i, m)} onRemove={() => removeDrug('manutencao_tiva', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.manutencao_tiva || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="manutencao_tiva" onChange={(m) => updateDrug('manutencao_tiva', i, m)} onRemove={() => removeDrug('manutencao_tiva', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
           <div className="border-t border-slate-100 my-2" />
           <div className="space-y-2">
@@ -940,7 +979,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Infusões Contínuas</p>
               <button type="button" onClick={() => addDrug('infusao')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.infusao || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="infusao" onChange={(m) => updateDrug('infusao', i, m)} onRemove={() => removeDrug('infusao', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.infusao || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="infusao" onChange={(m) => updateDrug('infusao', i, m)} onRemove={() => removeDrug('infusao', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
         </Section>}
 
@@ -1142,7 +1181,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Trans-operatório</p>
               <button type="button" onClick={() => addDrug('transoperatorio')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.transoperatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="transoperatorio" onChange={(m) => updateDrug('transoperatorio', i, m)} onRemove={() => removeDrug('transoperatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.transoperatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="transoperatorio" onChange={(m) => updateDrug('transoperatorio', i, m)} onRemove={() => removeDrug('transoperatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
 
           <div className="space-y-2 mb-3">
@@ -1178,7 +1217,7 @@ export default function FichaForm() {
               <p className="text-xs font-semibold text-slate-500 uppercase">Fármacos Pós-operatório</p>
               <button type="button" onClick={() => addDrug('pos_operatorio')} className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar</button>
             </div>
-            {(drugs.pos_operatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="pos_operatorio" onChange={(m) => updateDrug('pos_operatorio', i, m)} onRemove={() => removeDrug('pos_operatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} />)}
+            {(drugs.pos_operatorio || []).map((med, i) => <DrugRow key={i} med={med} allMedicines={allMedicines} phase="pos_operatorio" onChange={(m) => updateDrug('pos_operatorio', i, m)} onRemove={() => removeDrug('pos_operatorio', i)} patientWeight={parseFloat(form.patient_weight) || 0} customUnits={customUnits} customRoutes={customRoutes} onAddUnit={addCustomUnit} onAddRoute={addCustomRoute} />)}
           </div>
         </Section>}
 
