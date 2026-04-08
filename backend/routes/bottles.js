@@ -246,7 +246,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     if (!bottle) return res.status(404).json({ error: 'Frasco não encontrado' });
 
-    const { volume_ml, remaining_ml, purchase_cost, batch_number, expiry_date, concentration } = req.body;
+    const { volume_ml, remaining_ml, purchase_cost, batch_number, expiry_date, concentration, purchased_at } = req.body;
     const updateData = {};
 
     if (volume_ml !== undefined) {
@@ -263,6 +263,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
     if (batch_number !== undefined) updateData.batch_number = batch_number || null;
     if (expiry_date !== undefined) updateData.expiry_date = expiry_date || null;
+    if (purchased_at !== undefined) updateData.purchased_at = purchased_at || null;
 
     // Update concentration on the medicine record if provided
     if (concentration !== undefined) {

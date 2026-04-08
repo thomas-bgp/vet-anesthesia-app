@@ -237,21 +237,21 @@ export default function Estoque() {
         }
       }
 
-      // If cost changed, update remaining bottles in this group
-      if (parseFloat(editingPurchase.purchase_cost) !== parseFloat(orig.purchase_cost)) {
-        const res = await api.get(`/bottles?medicine_id=${orig.medicine_id}`)
+      // If cost or date changed, update remaining bottles in this group
+      const costChanged = parseFloat(editingPurchase.purchase_cost) !== parseFloat(orig.purchase_cost)
+      const dateChanged = editingPurchase.purchased_at !== (orig.purchased_at ? orig.purchased_at.split('T')[0] : '')
+      if (costChanged || dateChanged) {
+        const res = await api.get(`/bottles?medicine_id=${orig.medicine_id}&status=all`)
         const groupBottles = (res.data?.bottles || res.data || [])
           .filter(b =>
             b.purchased_at && b.purchased_at.split('T')[0] === (orig.purchased_at ? orig.purchased_at.split('T')[0] : '') &&
             parseFloat(b.volume_ml) === parseFloat(orig.volume_ml) &&
             parseFloat(b.purchase_cost) === parseFloat(orig.purchase_cost))
         for (const bottle of groupBottles) {
-          await api.put(`/bottles/${bottle.id}`, {
-            volume_ml: bottle.volume_ml,
-            remaining_ml: bottle.remaining_ml,
-            purchase_cost: parseFloat(editingPurchase.purchase_cost),
-            batch_number: bottle.batch_number,
-          })
+          const updates = {}
+          if (costChanged) updates.purchase_cost = parseFloat(editingPurchase.purchase_cost)
+          if (dateChanged) updates.purchased_at = editingPurchase.purchased_at
+          await api.put(`/bottles/${bottle.id}`, updates)
         }
       }
 

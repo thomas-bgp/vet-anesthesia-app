@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Search, ChevronRight, FileEdit } from 'lucide-react'
 import api from '../api/axios'
 
@@ -16,25 +16,40 @@ function getLocalDraft() {
 
 export default function Fichas() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [surgeries, setSurgeries] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('data')
   const [localDraft] = useState(() => getLocalDraft())
 
   useEffect(() => {
+    setLoading(true)
     api.get('/surgeries', { params: { limit: 100 } })
       .then(res => setSurgeries(res.data.surgeries || []))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [location.key])
 
-  const filtered = search
+  const filtered = (search
     ? surgeries.filter(s =>
         (s.patient_name + s.procedure_name + s.owner_name + s.clinic_name)
           .toLowerCase()
           .includes(search.toLowerCase())
       )
     : surgeries
+  ).slice().sort((a, b) => {
+    if (sortBy === 'nome') return (a.patient_name || '').localeCompare(b.patient_name || '', 'pt-BR')
+    if (sortBy === 'clinica') {
+      const ca = a.clinic_name || '', cb = b.clinic_name || ''
+      if (!ca && cb) return 1
+      if (ca && !cb) return -1
+      return ca.localeCompare(cb, 'pt-BR')
+    }
+    // 'data' — newest first
+    const da = a.start_time || a.created_at || '', db = b.start_time || b.created_at || ''
+    return db.localeCompare(da)
+  })
 
   const fmtDate = (v) => {
     if (!v) return ''
@@ -65,6 +80,23 @@ export default function Fichas() {
           placeholder="Buscar paciente, tutor, clínica..."
           className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[48px]"
         />
+      </div>
+
+      {/* Sort */}
+      <div className="flex gap-1.5">
+        {[['data', 'Data'], ['nome', 'Alfabética'], ['clinica', 'Clínica']].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setSortBy(key)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition ${
+              sortBy === key
+                ? 'bg-teal-600 text-white'
+                : 'bg-slate-100 text-slate-500 active:bg-slate-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Local draft banner */}

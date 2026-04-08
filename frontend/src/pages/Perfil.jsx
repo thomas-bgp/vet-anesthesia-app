@@ -138,6 +138,7 @@ export default function Perfil() {
   const canvasRef = useRef(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasDrawn, setHasDrawn] = useState(false)
+  const [editingSignature, setEditingSignature] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -192,6 +193,7 @@ export default function Perfil() {
   // Initialize canvas
   const canvasInited = useRef(false)
   useEffect(() => {
+    if (!editingSignature) return
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -219,7 +221,7 @@ export default function Perfil() {
       }
       img.src = signatureImage
     }
-  }, [signatureImage, hasDrawn])
+  }, [signatureImage, hasDrawn, editingSignature])
 
   const getPos = useCallback((e) => {
     const canvas = canvasRef.current
@@ -452,40 +454,65 @@ export default function Perfil() {
         {/* Signature pad */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Assinatura digital</label>
-          <p className="text-xs text-slate-400 mb-2">Desenhe com o dedo/mouse ou envie uma imagem</p>
-          <div className="border-2 border-dashed border-slate-300 rounded-lg overflow-hidden bg-white">
-            <canvas
-              ref={canvasRef}
-              className="w-full touch-none"
-              style={{ height: '150px', display: 'block' }}
-              onMouseDown={startDraw}
-              onMouseMove={draw}
-              onMouseUp={stopDraw}
-              onMouseLeave={stopDraw}
-              onTouchStart={startDraw}
-              onTouchMove={draw}
-              onTouchEnd={stopDraw}
-            />
-          </div>
-          <div className="flex gap-2 mt-2">
-            <button
-              type="button"
-              onClick={clearCanvas}
-              className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]"
-            >
-              <Trash2 size={14} />
-              Limpar
-            </button>
-            <label className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px] cursor-pointer">
-              Enviar imagem
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-            </label>
-          </div>
+
+          {!editingSignature ? (
+            <>
+              {signatureImage ? (
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white p-2">
+                  <img src={signatureImage} alt="Assinatura" className="w-full object-contain" style={{ height: '120px' }} />
+                </div>
+              ) : (
+                <div className="border border-dashed border-slate-300 rounded-lg bg-slate-50 flex items-center justify-center" style={{ height: '120px' }}>
+                  <span className="text-sm text-slate-400">Nenhuma assinatura</span>
+                </div>
+              )}
+              <button type="button" onClick={() => { canvasInited.current = false; setHasDrawn(false); setEditingSignature(true) }}
+                className="flex items-center gap-1 mt-2 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]">
+                Editar assinatura
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-400 mb-2">Desenhe com o dedo/mouse ou envie uma imagem</p>
+              <div className="border-2 border-dashed border-slate-300 rounded-lg overflow-hidden bg-white">
+                <canvas
+                  ref={canvasRef}
+                  className="w-full touch-none"
+                  style={{ height: '150px', display: 'block' }}
+                  onMouseDown={startDraw}
+                  onMouseMove={draw}
+                  onMouseUp={stopDraw}
+                  onMouseLeave={stopDraw}
+                  onTouchStart={startDraw}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDraw}
+                />
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={clearCanvas}
+                  className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]">
+                  <Trash2 size={14} /> Limpar
+                </button>
+                <label className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px] cursor-pointer">
+                  Enviar imagem
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+                <div className="flex-1" />
+                <button type="button" onClick={() => {
+                    if (hasDrawn && canvasRef.current) setSignatureImage(canvasRef.current.toDataURL('image/png'))
+                    setEditingSignature(false)
+                  }}
+                  className="flex items-center gap-1 px-3 py-2 text-white text-xs font-medium rounded-lg active:opacity-90 min-h-[40px]"
+                  style={{ backgroundColor: themeColor }}>
+                  <Save size={14} /> Salvar
+                </button>
+                <button type="button" onClick={() => { setSignatureImage(user?.signature_image || null); setHasDrawn(false); setEditingSignature(false) }}
+                  className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-200 min-h-[40px]">
+                  Cancelar
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <button
