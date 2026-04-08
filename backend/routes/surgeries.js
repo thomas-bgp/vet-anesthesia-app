@@ -1141,7 +1141,7 @@ router.delete('/:id/disposables/:dispId', authenticateToken, async (req, res) =>
   }
 });
 
-// DELETE /api/surgeries/:id - cancel surgery
+// DELETE /api/surgeries/:id - delete surgery
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const supabase = getSupabase();
@@ -1149,7 +1149,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
     const { data: surgery } = await supabase
       .from('surgeries')
-      .select('*')
+      .select('id')
       .eq('id', id)
       .eq('user_id', req.user.id)
       .maybeSingle();
@@ -1158,18 +1158,15 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    if (surgery.status === 'completed') {
-      return res.status(400).json({ error: 'Cannot cancel a completed surgery' });
-    }
+    // Clean up related records
+    await supabase.from('surgery_vitals').delete().eq('surgery_id', id);
+    await supabase.from('surgery_medicines').delete().eq('surgery_id', id);
+    await supabase.from('surgery_disposables').delete().eq('surgery_id', id);
+    await supabase.from('surgeries').delete().eq('id', id);
 
-    await supabase
-      .from('surgeries')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    res.json({ message: 'Surgery cancelled successfully' });
+    res.json({ message: 'Surgery deleted successfully' });
   } catch (err) {
-    console.error('Cancel surgery error:', err);
+    console.error('Delete surgery error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

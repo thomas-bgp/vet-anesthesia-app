@@ -3,12 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, ChevronRight, FileEdit } from 'lucide-react'
 import api from '../api/axios'
 
-const STATUS = {
-  scheduled: { label: 'Agendada', cls: 'bg-blue-100 text-blue-700' },
-  in_progress: { label: 'Em andamento', cls: 'bg-amber-100 text-amber-700' },
-  completed: { label: 'Concluída', cls: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Cancelada', cls: 'bg-red-100 text-red-700' },
-}
 
 function getLocalDraft() {
   try {
@@ -108,21 +102,14 @@ export default function Fichas() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(s => {
-            const st = STATUS[s.status] || STATUS.scheduled
-            return (
+          {filtered.map(s => (
               <button
                 key={s.id}
                 onClick={() => navigate(`/fichas/${s.id}`)}
                 className="w-full flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-4 active:bg-slate-50 transition text-left min-h-[72px]"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-semibold text-slate-800 text-sm truncate">{s.patient_name}</p>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${st.cls}`}>
-                      {st.label}
-                    </span>
-                  </div>
+                  <p className="font-semibold text-slate-800 text-sm truncate mb-0.5">{s.patient_name}</p>
                   <p className="text-xs text-slate-500 truncate">{s.procedure_name}</p>
                   <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
                     {s.clinic_name && <span>{s.clinic_name}</span>}
@@ -132,8 +119,7 @@ export default function Fichas() {
                 </div>
                 <ChevronRight size={18} className="text-slate-300 shrink-0" />
               </button>
-            )
-          })}
+          ))}
         </div>
       )}
     </div>

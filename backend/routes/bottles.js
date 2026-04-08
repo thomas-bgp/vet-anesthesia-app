@@ -246,7 +246,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     if (!bottle) return res.status(404).json({ error: 'Frasco não encontrado' });
 
-    const { volume_ml, remaining_ml, purchase_cost, batch_number, expiry_date } = req.body;
+    const { volume_ml, remaining_ml, purchase_cost, batch_number, expiry_date, concentration } = req.body;
     const updateData = {};
 
     if (volume_ml !== undefined) {
@@ -264,15 +264,25 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (batch_number !== undefined) updateData.batch_number = batch_number || null;
     if (expiry_date !== undefined) updateData.expiry_date = expiry_date || null;
 
-    if (Object.keys(updateData).length === 0) {
+    // Update concentration on the medicine record if provided
+    if (concentration !== undefined) {
+      await supabase
+        .from('medicines')
+        .update({ concentration: concentration || null })
+        .eq('id', bottle.medicine_id);
+    }
+
+    if (Object.keys(updateData).length === 0 && concentration === undefined) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
 
-    await supabase
-      .from('medicine_bottles')
-      .update(updateData)
-      .eq('id', id)
-      .eq('user_id', req.user.id);
+    if (Object.keys(updateData).length > 0) {
+      await supabase
+        .from('medicine_bottles')
+        .update(updateData)
+        .eq('id', id)
+        .eq('user_id', req.user.id);
+    }
 
     const { data: updated } = await supabase
       .from('medicine_bottles')
@@ -284,6 +294,55 @@ router.put('/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Update bottle error:', err);
     res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// DELETE /api/bottles/purchase - Delete all bottles in a purchase group
+router.delete('/purchase', authenticateToken, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const userId = req.user.id;
+    const { medicine_id, purchased_at, volume_ml, purchase_cost } = req.query;
+
+    if (!medicine_id || !purchased_at) {
+      return res.status(400).json({ error: 'medicine_id e purchased_at são obrigatórios' });
+    }
+
+    // Find all bottles matching this purchase group
+    const bottles = await queryRows(`
+      SELECT id, status FROM medicine_bottles
+      WHERE user_id = $1
+        AND medicine_id = $2
+        AND purchased_at::text LIKE $3 || '%'
+        AND volume_ml = $4
+        AND purchase_cost = $5
+    `, [userId, medicine_id, purchased_at.split('T')[0], parseFloat(volume_ml), parseFloat(purchase_cost)]);
+
+    if (bottles.length === 0) {
+      return res.status(404).json({ error: 'Nenhum frasco encontrado para esta compra' });
+    }
+
+    // Only allow deleting if all bottles are sealed
+    const nonSealed = bottles.filter(b => b.status !== 'sealed');
+    if (nonSealed.length > 0) {
+      return res.status(400).json({ error: 'Só é possível excluir compras cujos frascos estão todos selados' });
+    }
+
+    const ids = bottles.map(b => b.id);
+    for (const id of ids) {
+      await supabase.from('medicine_bottles').delete().eq('id', id);
+    }
+
+    // Update medicine stock count
+    await queryRows(
+      'UPDATE medicines SET current_stock = current_stock - $1 WHERE id = $2',
+      [bottles.length, medicine_id]
+    ).catch(() => {});
+
+    res.json({ message: `${bottles.length} frasco(s) removido(s)`, count: bottles.length });
+  } catch (err) {
+    console.error('Delete purchase error:', err);
+    res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -443,9 +502,16 @@ router.put('/:id/discard', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Frasco não encontrado' });
     }
 
+    const updateData = { status: 'discarded' };
+
+    // If bottle was sealed, set opened_at since it must be opened to discard contents
+    if (bottle.status === 'sealed') {
+      updateData.opened_at = new Date().toISOString();
+    }
+
     await supabase
       .from('medicine_bottles')
-      .update({ status: 'discarded' })
+      .update(updateData)
       .eq('id', bottleId)
       .eq('user_id', userId);
 

@@ -104,7 +104,8 @@ const THEME_COLORS = [
   { name: 'Azul', value: '#2563eb' },
   { name: 'Indigo', value: '#4f46e5' },
   { name: 'Roxo', value: '#7c3aed' },
-  { name: 'Rosa', value: '#e11d48' },
+  { name: 'Cereja', value: '#e11d48' },
+  { name: 'Rosa', value: '#ec4899' },
   { name: 'Cinza', value: '#475569' },
 ]
 

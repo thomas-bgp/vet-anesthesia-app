@@ -128,7 +128,36 @@ export default function Estoque() {
   const [editBottle, setEditBottle] = useState(null) // { id, volume_ml, remaining_ml, purchase_cost, batch_number }
   const [editSaving, setEditSaving] = useState(false)
 
-  const startEdit = (b) => setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '', expiry_date: b.expiry_date ? b.expiry_date.split('T')[0] : '' })
+  const [confirmDeleteBottle, setConfirmDeleteBottle] = useState(null)
+  const [confirmDeletePurchase, setConfirmDeletePurchase] = useState(null)
+
+  const handleDeleteBottle = async (id) => {
+    setActionLoading(id)
+    try {
+      await api.delete(`/bottles/${id}`)
+      setSuccessMsg('Frasco removido!')
+      setConfirmDeleteBottle(null)
+      load()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao remover frasco.')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleDeletePurchase = async (p) => {
+    try {
+      await api.delete(`/bottles/purchase?medicine_id=${p.medicine_id}&purchased_at=${encodeURIComponent(p.purchased_at)}&volume_ml=${p.volume_ml}&purchase_cost=${p.purchase_cost}`)
+      setSuccessMsg('Compra removida!')
+      setConfirmDeletePurchase(null)
+      loadPurchases()
+      load()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao remover compra.')
+    }
+  }
+
+  const startEdit = (b, concentration) => setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '', expiry_date: b.expiry_date ? b.expiry_date.split('T')[0] : '', concentration: concentration || '' })
 
   const saveEdit = async () => {
     if (!editBottle) return
@@ -140,6 +169,7 @@ export default function Estoque() {
         purchase_cost: parseFloat(editBottle.purchase_cost),
         batch_number: editBottle.batch_number,
         expiry_date: editBottle.expiry_date || null,
+        concentration: editBottle.concentration || null,
       })
       setSuccessMsg('Frasco atualizado!')
       setEditBottle(null)
@@ -364,7 +394,14 @@ export default function Estoque() {
                                           onChange={e => setEditBottle(v => ({ ...v, batch_number: e.target.value }))}
                                           className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
                                       </div>
-                                      <div className="col-span-2">
+                                      <div>
+                                        <label className="text-[10px] text-slate-500">Concentração</label>
+                                        <input type="text" value={editBottle.concentration}
+                                          onChange={e => setEditBottle(v => ({ ...v, concentration: e.target.value }))}
+                                          placeholder="ex: 10mg/mL"
+                                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
+                                      </div>
+                                      <div>
                                         <label className="text-[10px] text-slate-500">Validade</label>
                                         <input type="date" value={editBottle.expiry_date}
                                           onChange={e => setEditBottle(v => ({ ...v, expiry_date: e.target.value }))}
@@ -389,7 +426,7 @@ export default function Estoque() {
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="text-[10px] text-slate-400">{b.cost_per_ml ? fmt(b.cost_per_ml) + '/mL' : ''}</span>
-                                        <button onClick={() => startEdit(b)} className="p-1 text-slate-400 active:text-teal-600"><Pencil size={12} /></button>
+                                        <button onClick={() => startEdit(b, g.concentration)} className="p-1 text-slate-400 active:text-teal-600"><Pencil size={12} /></button>
                                       </div>
                                     </div>
 
@@ -408,10 +445,29 @@ export default function Estoque() {
                                     {!isInactive && useBottleId !== b.id && (
                                       <div className="flex gap-1.5 mt-2">
                                         {b.status === 'sealed' && (
-                                          <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
-                                            className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
-                                            Abrir
-                                          </button>
+                                          <>
+                                            <button onClick={() => handleOpen(b.id)} disabled={actionLoading === b.id}
+                                              className="flex-1 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg active:bg-teal-700 min-h-[36px]">
+                                              Abrir
+                                            </button>
+                                            <button onClick={() => handleDiscard(b.id)} disabled={actionLoading === b.id}
+                                              className="py-2 px-3 border border-amber-200 text-amber-600 text-xs font-medium rounded-lg active:bg-amber-50 min-h-[36px]">
+                                              Descartar
+                                            </button>
+                                            {confirmDeleteBottle === b.id ? (
+                                              <div className="flex items-center gap-1">
+                                                <button onClick={() => handleDeleteBottle(b.id)} disabled={actionLoading === b.id}
+                                                  className="py-2 px-2 bg-red-600 text-white text-[10px] font-medium rounded-lg min-h-[36px]">Sim</button>
+                                                <button onClick={() => setConfirmDeleteBottle(null)}
+                                                  className="py-2 px-2 border border-slate-200 text-slate-500 text-[10px] rounded-lg min-h-[36px]">Não</button>
+                                              </div>
+                                            ) : (
+                                              <button onClick={() => setConfirmDeleteBottle(b.id)}
+                                                className="py-2 px-2 border border-red-200 text-red-500 text-xs rounded-lg active:bg-red-50 min-h-[36px]">
+                                                <Trash2 size={14} />
+                                              </button>
+                                            )}
+                                          </>
                                         )}
                                         {b.status === 'opened' && (
                                           <>
@@ -610,13 +666,28 @@ export default function Estoque() {
                             <p className="text-sm font-bold text-teal-700">{fmt(p.total_cost)}</p>
                           </div>
                         </div>
-                        <button
-                          onClick={() => startEditPurchase(p)}
-                          className="w-full flex items-center justify-center gap-1.5 py-2 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-50 min-h-[36px]"
-                        >
-                          <Pencil size={12} />
-                          Editar
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => startEditPurchase(p)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-50 min-h-[36px]"
+                          >
+                            <Pencil size={12} />
+                            Editar
+                          </button>
+                          {confirmDeletePurchase === pKey ? (
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleDeletePurchase(p)}
+                                className="py-2 px-3 bg-red-600 text-white text-xs font-medium rounded-lg min-h-[36px]">Excluir</button>
+                              <button onClick={() => setConfirmDeletePurchase(null)}
+                                className="py-2 px-3 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[36px]">Cancelar</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setConfirmDeletePurchase(pKey)}
+                              className="py-2 px-3 border border-red-200 text-red-500 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

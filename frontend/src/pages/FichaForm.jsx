@@ -216,10 +216,12 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, 
   // Store calculated volume in the med object when it changes
   const numericVolume = typeof calculatedVolume === 'number' ? calculatedVolume : null
   const prevVolRef = useRef(med.calculated_volume_ml)
+  const medRef = useRef(med)
+  medRef.current = med
   useEffect(() => {
     if (numericVolume !== prevVolRef.current) {
       prevVolRef.current = numericVolume
-      onChange({ ...med, calculated_volume_ml: numericVolume })
+      onChange({ ...medRef.current, calculated_volume_ml: numericVolume })
     }
   }, [numericVolume]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -391,6 +393,15 @@ export default function FichaForm() {
   const [customRoutes, setCustomRoutes] = useState(() => loadCustomList(CUSTOM_ROUTES_KEY))
   const addCustomUnit = (u) => { if (!customUnits.includes(u)) { const next = [...customUnits, u]; setCustomUnits(next); saveCustomList(CUSTOM_UNITS_KEY, next) } }
   const addCustomRoute = (r) => { if (!customRoutes.includes(r)) { const next = [...customRoutes, r]; setCustomRoutes(next); saveCustomList(CUSTOM_ROUTES_KEY, next) } }
+  const moveCustomParam = (index, direction) => {
+    setCustomParams(prev => {
+      const next = [...prev]
+      const targetIndex = index + direction
+      if (targetIndex < 0 || targetIndex >= next.length) return prev
+      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
+      return next
+    })
+  }
 
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [draftData, setDraftData] = useState(null)
@@ -1105,8 +1116,14 @@ export default function FichaForm() {
               </div>
               {customParams.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {customParams.map((param) => (
-                    <span key={param.key} className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 text-teal-700 text-[10px] rounded-full font-medium">
+                  {customParams.map((param, idx) => (
+                    <span key={param.key} className="inline-flex items-center gap-0.5 px-2 py-1 bg-teal-50 text-teal-700 text-[10px] rounded-full font-medium">
+                      {customParams.length > 1 && (
+                        <>
+                          <button type="button" onClick={() => moveCustomParam(idx, -1)} disabled={idx === 0} className={`p-0 ${idx === 0 ? 'text-teal-200' : 'text-teal-500 active:text-teal-700'}`}><ChevronUp size={10} /></button>
+                          <button type="button" onClick={() => moveCustomParam(idx, 1)} disabled={idx === customParams.length - 1} className={`p-0 ${idx === customParams.length - 1 ? 'text-teal-200' : 'text-teal-500 active:text-teal-700'}`}><ChevronDown size={10} /></button>
+                        </>
+                      )}
                       {param.label}<button type="button" onClick={() => setCustomParams(p => p.filter(pp => pp.key !== param.key))} className="text-teal-400 hover:text-red-500"><X size={10} /></button>
                     </span>
                   ))}

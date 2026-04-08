@@ -260,6 +260,16 @@ export default function FichaDetail() {
 
   const handlePrint = () => window.print()
 
+  const handleDelete = async () => {
+    if (!window.confirm('Tem certeza que deseja excluir esta ficha? Esta ação não pode ser desfeita.')) return
+    try {
+      await api.delete(`/surgeries/${id}`)
+      navigate('/fichas')
+    } catch {
+      setError('Erro ao excluir ficha.')
+    }
+  }
+
   const handleSign = async () => {
     if (!navigator.onLine) {
       setError('A assinatura eletrônica requer conexão com a internet.')
@@ -407,6 +417,10 @@ export default function FichaDetail() {
           <button onClick={() => navigate(`/fichas/${id}/edit`)}
             className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
             <Edit2 size={13} /> Editar
+          </button>
+          <button onClick={handleDelete}
+            className="flex items-center justify-center gap-1 px-3 py-2 bg-red-100 text-red-700 text-xs font-medium rounded-lg active:bg-red-200 min-h-[38px]">
+            <Trash2 size={13} />
           </button>
         </div>
       </div>
