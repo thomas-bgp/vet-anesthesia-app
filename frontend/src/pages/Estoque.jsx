@@ -198,6 +198,7 @@ export default function Estoque() {
       quantity: String(p.quantity),
       purchase_cost: String(p.purchase_cost || ''),
       purchased_at: p.purchased_at ? p.purchased_at.split('T')[0] : '',
+      concentration: p.concentration || '',
     })
   }
 
@@ -251,6 +252,15 @@ export default function Estoque() {
             purchase_cost: parseFloat(editingPurchase.purchase_cost),
             batch_number: bottle.batch_number,
           })
+        }
+      }
+
+      // If concentration changed, update via any bottle in this group
+      if (editingPurchase.concentration !== (orig.concentration || '')) {
+        const res2 = await api.get(`/bottles?medicine_id=${orig.medicine_id}&status=all`)
+        const anyBottle = (res2.data?.bottles || res2.data || [])[0]
+        if (anyBottle) {
+          await api.put(`/bottles/${anyBottle.id}`, { concentration: editingPurchase.concentration })
         }
       }
 
@@ -583,9 +593,18 @@ export default function Estoque() {
                       <div className="p-4 space-y-3">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="text-sm font-semibold text-slate-800">{p.medicine_name}</h3>
-                          {p.concentration && <span className="text-[10px] text-slate-400">{p.concentration}</span>}
                         </div>
                         <div className="grid grid-cols-2 gap-3">
+                          <div className="col-span-2">
+                            <label className="text-[10px] text-slate-500 mb-0.5 block">Concentração</label>
+                            <input
+                              type="text"
+                              value={editingPurchase.concentration}
+                              onChange={e => setEditingPurchase(v => ({ ...v, concentration: e.target.value }))}
+                              placeholder="ex: 10mg/mL"
+                              className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]"
+                            />
+                          </div>
                           <div>
                             <label className="text-[10px] text-slate-500 mb-0.5 block">Quantidade</label>
                             <input

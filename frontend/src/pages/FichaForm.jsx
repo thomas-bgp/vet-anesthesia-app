@@ -75,6 +75,21 @@ const PHASES = [
   { value: 'transoperatorio', label: 'Trans-op' },
 ]
 
+const STANDARD_PARAMS = {
+  fc: { label: 'FC', unit: 'bpm', type: 'number' },
+  pas: { label: 'PAS', unit: 'mmHg', type: 'number', hasNote: true },
+  pam: { label: 'PAM', unit: 'mmHg', type: 'number' },
+  pad: { label: 'PAD', unit: 'mmHg', type: 'number' },
+  spo2: { label: 'SpO\u2082', unit: '%', type: 'number' },
+  fr: { label: 'FR', unit: 'mpm', type: 'number', hasNote: true },
+  etco2: { label: 'ETCO\u2082', unit: '%', type: 'number' },
+  temperature: { label: 'T\u00b0C', unit: '\u00b0C', type: 'number', hasNote: true },
+  fluid_ml_kg_h: { label: 'Fluido', unit: 'ml/kg/h', type: 'number' },
+  o2_l_min: { label: 'O\u2082', unit: 'L/min', type: 'number', hasNote: true, noteKey: 'o2' },
+  anesthetic: { label: 'Anest.', unit: '', type: 'text', placeholder: 'ISO 1.5%' },
+}
+const DEFAULT_PARAM_ORDER = Object.keys(STANDARD_PARAMS)
+
 const AIRWAY_TYPES = ['Intubação orotraqueal', 'Máscara', 'Outro']
 const BREATHING_MODES = ['Espontânea', 'Assistida', 'Controlada']
 const VENTILATION_TYPES = ['VCV', 'PCV', 'SIMV', 'Outro']
@@ -386,6 +401,7 @@ export default function FichaForm() {
   const [vitals, setVitals] = useState([])
   const [newVital, setNewVital] = useState({})
   const [customParams, setCustomParams] = useState([])
+  const [paramOrder, setParamOrder] = useState([...DEFAULT_PARAM_ORDER])
   const [newParamName, setNewParamName] = useState('')
   const [complications, setComplications] = useState([])
   const [priorMeds, setPriorMeds] = useState([])
@@ -393,8 +409,8 @@ export default function FichaForm() {
   const [customRoutes, setCustomRoutes] = useState(() => loadCustomList(CUSTOM_ROUTES_KEY))
   const addCustomUnit = (u) => { if (!customUnits.includes(u)) { const next = [...customUnits, u]; setCustomUnits(next); saveCustomList(CUSTOM_UNITS_KEY, next) } }
   const addCustomRoute = (r) => { if (!customRoutes.includes(r)) { const next = [...customRoutes, r]; setCustomRoutes(next); saveCustomList(CUSTOM_ROUTES_KEY, next) } }
-  const moveCustomParam = (index, direction) => {
-    setCustomParams(prev => {
+  const moveParam = (index, direction) => {
+    setParamOrder(prev => {
       const next = [...prev]
       const targetIndex = index + direction
       if (targetIndex < 0 || targetIndex >= next.length) return prev
@@ -444,6 +460,7 @@ export default function FichaForm() {
   const sectionsRef = useRef(sections)
   const disposablesRef = useRef(disposables)
   const customParamsRef = useRef(customParams)
+  const paramOrderRef = useRef(paramOrder)
   const priorMedsRef = useRef(priorMeds)
 
   useEffect(() => { formRef.current = form }, [form])
@@ -454,6 +471,7 @@ export default function FichaForm() {
   useEffect(() => { sectionsRef.current = sections }, [sections])
   useEffect(() => { disposablesRef.current = disposables }, [disposables])
   useEffect(() => { customParamsRef.current = customParams }, [customParams])
+  useEffect(() => { paramOrderRef.current = paramOrder }, [paramOrder])
   useEffect(() => { priorMedsRef.current = priorMeds }, [priorMeds])
 
   const doAutoSave = useCallback(() => {
@@ -462,7 +480,7 @@ export default function FichaForm() {
       form: formRef.current, drugs: drugsRef.current, blocks: blocksRef.current,
       vitals: vitalsRef.current, complications: complicationsRef.current,
       sections: sectionsRef.current, disposables: disposablesRef.current,
-      customParams: customParamsRef.current,
+      customParams: customParamsRef.current, paramOrder: paramOrderRef.current,
       priorMeds: priorMedsRef.current,
     }
     saveDraftToStorage(id, data)
@@ -476,7 +494,7 @@ export default function FichaForm() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(doAutoSave, 2000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [form, drugs, blocks, vitals, complications, disposables, customParams, priorMeds, doAutoSave])
+  }, [form, drugs, blocks, vitals, complications, disposables, customParams, paramOrder, priorMeds, doAutoSave])
 
   useEffect(() => {
     const draft = loadDraftFromStorage(id)
@@ -500,6 +518,7 @@ export default function FichaForm() {
       if (draftData.sections) setSections(draftData.sections)
       if (draftData.disposables) setDisposables(draftData.disposables)
       if (draftData.customParams) setCustomParams(draftData.customParams)
+      if (draftData.paramOrder) setParamOrder(draftData.paramOrder)
       if (draftData.priorMeds) setPriorMeds(draftData.priorMeds)
     }
     setShowDraftBanner(false); initialLoadDone.current = true
@@ -535,7 +554,7 @@ export default function FichaForm() {
         pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
         block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
         complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
-        custom_vitals_params: customParams.length > 0 ? JSON.stringify(customParams) : null,
+        custom_vitals_params: (customParams.length > 0 || paramOrder.join(',') !== DEFAULT_PARAM_ORDER.join(',')) ? JSON.stringify({ params: customParams, order: paramOrder }) : null,
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
         status: 'scheduled',
       }
@@ -621,7 +640,18 @@ export default function FichaForm() {
         setVitals((res.data.vitals || []).map(v => ({ ...v, fromServer: true })))
 
         if (s.custom_vitals_params) {
-          try { const parsed = JSON.parse(s.custom_vitals_params); if (Array.isArray(parsed)) setCustomParams(parsed) } catch {}
+          try {
+            const parsed = JSON.parse(s.custom_vitals_params)
+            if (Array.isArray(parsed)) {
+              // Legacy format: just an array of custom params
+              setCustomParams(parsed)
+              setParamOrder([...DEFAULT_PARAM_ORDER, ...parsed.map(p => p.key)])
+            } else if (parsed && typeof parsed === 'object') {
+              // New format: { params: [...], order: [...] }
+              if (Array.isArray(parsed.params)) setCustomParams(parsed.params)
+              if (Array.isArray(parsed.order)) setParamOrder(parsed.order)
+            }
+          } catch {}
         }
 
         if (res.data.disposables) {
@@ -694,7 +724,7 @@ export default function FichaForm() {
         pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
         block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
         complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
-        custom_vitals_params: customParams.length > 0 ? JSON.stringify(customParams) : null,
+        custom_vitals_params: (customParams.length > 0 || paramOrder.join(',') !== DEFAULT_PARAM_ORDER.join(',')) ? JSON.stringify({ params: customParams, order: paramOrder }) : null,
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
       }
 
@@ -1089,44 +1119,53 @@ export default function FichaForm() {
             <p className="text-xs font-semibold text-slate-500 uppercase">Monitoração</p>
             <div className="bg-slate-50 rounded-lg p-3 space-y-2">
               <div className="grid grid-cols-3 gap-2">
-                {[['FC','fc','bpm'],['PAS','pas','mmHg'],['PAM','pam','mmHg'],['PAD','pad','mmHg'],['SpO2','spo2','%'],['FR','fr','mpm'],['ETCO2','etco2','%'],['T°C','temperature','°C'],['Fluido','fluid_ml_kg_h','ml/kg/h']].map(([label,key,unit]) => {
-                  const hasNote = ['pas','fr','temperature'].includes(key)
-                  return (
-                    <div key={key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{label}</label>
-                      <input type="number" inputMode="decimal" step="any" value={newVital[key] || ''} onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))} placeholder={unit} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
-                      {hasNote && <input type="text" value={(newVital.param_notes || {})[key] || ''} onChange={e => setNewVital(v => ({ ...v, param_notes: { ...(v.param_notes || {}), [key]: e.target.value } }))} placeholder={key === 'fr' ? 'Ex: VA' : key === 'temperature' ? 'Ex: esofágica' : 'Obs'} className="w-full px-2 py-1 border border-slate-100 rounded text-[10px] text-slate-500 mt-0.5" />}
-                    </div>
-                  )
+                {paramOrder.map((key) => {
+                  const std = STANDARD_PARAMS[key]
+                  if (std) {
+                    const noteKey = std.noteKey || key
+                    const notePlaceholder = key === 'fr' ? 'Ex: VA' : key === 'temperature' ? 'Ex: esofágica' : key === 'o2_l_min' ? 'Ex: MF' : 'Obs'
+                    return (
+                      <div key={key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{std.label}</label>
+                        {std.type === 'number' ? (
+                          <input type="number" inputMode="decimal" step="any" value={newVital[key] || ''} onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))} placeholder={std.unit} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
+                        ) : (
+                          <input type="text" value={newVital[key] || ''} onChange={e => setNewVital(v => ({ ...v, [key]: e.target.value }))} placeholder={std.placeholder || std.unit} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
+                        )}
+                        {std.hasNote && <input type="text" value={(newVital.param_notes || {})[noteKey] || ''} onChange={e => setNewVital(v => ({ ...v, param_notes: { ...(v.param_notes || {}), [noteKey]: e.target.value } }))} placeholder={notePlaceholder} className="w-full px-2 py-1 border border-slate-100 rounded text-[10px] text-slate-500 mt-0.5" />}
+                      </div>
+                    )
+                  }
+                  const cp = customParams.find(p => p.key === key)
+                  if (cp) {
+                    return (
+                      <div key={key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{cp.label}</label>
+                        <input type="text" value={(newVital.custom_params || {})[cp.key] || ''} onChange={e => setNewVital(v => ({ ...v, custom_params: { ...(v.custom_params || {}), [cp.key]: e.target.value } }))} placeholder={cp.label} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
+                    )
+                  }
+                  return null
                 })}
-                <div><label className="block text-[10px] font-medium text-slate-500 mb-0.5">O₂</label>
-                  <input type="number" inputMode="decimal" step="any" value={newVital.o2_l_min || ''} onChange={e => setNewVital(v => ({ ...v, o2_l_min: e.target.value }))} placeholder="L/min" className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
-                  <input type="text" value={(newVital.param_notes || {}).o2 || ''} onChange={e => setNewVital(v => ({ ...v, param_notes: { ...(v.param_notes || {}), o2: e.target.value } }))} placeholder="Ex: MF" className="w-full px-2 py-1 border border-slate-100 rounded text-[10px] text-slate-500 mt-0.5" />
-                </div>
-                <div><label className="block text-[10px] font-medium text-slate-500 mb-0.5">Anestésico</label>
-                  <input type="text" value={newVital.anesthetic || ''} onChange={e => setNewVital(v => ({ ...v, anesthetic: e.target.value }))} placeholder="ISO 1.5%" className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
-                {customParams.map((param) => (
-                  <div key={param.key}><label className="block text-[10px] font-medium text-slate-500 mb-0.5">{param.label}</label>
-                    <input type="text" value={(newVital.custom_params || {})[param.key] || ''} onChange={e => setNewVital(v => ({ ...v, custom_params: { ...(v.custom_params || {}), [param.key]: e.target.value } }))} placeholder={param.label} className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" /></div>
-                ))}
               </div>
               <div className="flex items-center gap-2 pt-1">
                 <input type="text" value={newParamName} onChange={e => setNewParamName(e.target.value)} placeholder="Novo parâmetro..." className="flex-1 px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]" />
-                <button type="button" onClick={() => { if (!newParamName.trim()) return; setCustomParams(p => [...p, { key: `custom_${Date.now()}`, label: newParamName.trim() }]); setNewParamName('') }}
+                <button type="button" onClick={() => { if (!newParamName.trim()) return; const newKey = `custom_${Date.now()}`; setCustomParams(p => [...p, { key: newKey, label: newParamName.trim() }]); setParamOrder(o => [...o, newKey]); setNewParamName('') }}
                   className="flex items-center gap-1 px-3 py-2 bg-teal-50 text-teal-700 text-xs font-medium rounded-lg active:bg-teal-100 min-h-[40px] shrink-0"><Plus size={14} /> Parâmetro</button>
               </div>
-              {customParams.length > 0 && (
+              {paramOrder.length > 1 && (
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {customParams.map((param, idx) => (
-                    <span key={param.key} className="inline-flex items-center gap-0.5 px-2 py-1 bg-teal-50 text-teal-700 text-[10px] rounded-full font-medium">
-                      {customParams.length > 1 && (
-                        <>
-                          <button type="button" onClick={() => moveCustomParam(idx, -1)} disabled={idx === 0} className={`p-0 ${idx === 0 ? 'text-teal-200' : 'text-teal-500 active:text-teal-700'}`}><ChevronUp size={10} /></button>
-                          <button type="button" onClick={() => moveCustomParam(idx, 1)} disabled={idx === customParams.length - 1} className={`p-0 ${idx === customParams.length - 1 ? 'text-teal-200' : 'text-teal-500 active:text-teal-700'}`}><ChevronDown size={10} /></button>
-                        </>
-                      )}
-                      {param.label}<button type="button" onClick={() => setCustomParams(p => p.filter(pp => pp.key !== param.key))} className="text-teal-400 hover:text-red-500"><X size={10} /></button>
-                    </span>
-                  ))}
+                  {paramOrder.map((key, idx) => {
+                    const std = STANDARD_PARAMS[key]
+                    const cp = customParams.find(p => p.key === key)
+                    const label = std ? std.label : cp ? cp.label : key
+                    const isCustom = !std && !!cp
+                    return (
+                      <span key={key} className={`inline-flex items-center gap-0.5 px-2 py-1 ${isCustom ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-600'} text-[10px] rounded-full font-medium`}>
+                        <button type="button" onClick={() => moveParam(idx, -1)} disabled={idx === 0} className={`p-0 ${idx === 0 ? 'text-slate-200' : 'text-slate-500 active:text-slate-700'}`}><ChevronUp size={10} /></button>
+                        <button type="button" onClick={() => moveParam(idx, 1)} disabled={idx === paramOrder.length - 1} className={`p-0 ${idx === paramOrder.length - 1 ? 'text-slate-200' : 'text-slate-500 active:text-slate-700'}`}><ChevronDown size={10} /></button>
+                        {label}
+                        {isCustom && <button type="button" onClick={() => { setCustomParams(p => p.filter(pp => pp.key !== key)); setParamOrder(o => o.filter(k => k !== key)) }} className="text-teal-400 hover:text-red-500"><X size={10} /></button>}
+                      </span>
+                    )
+                  })}
                 </div>
               )}
               <div className="flex items-center gap-2 pt-1">
@@ -1141,8 +1180,12 @@ export default function FichaForm() {
                 <table className="text-[11px] min-w-[760px] w-full">
                   <thead><tr className="border-b border-slate-200">
                     <th className="text-left py-1.5 font-semibold text-slate-500">Hora</th>
-                    {['FC','PAS','PAM','PAD','SpO2','FR','ETCO2','T°C','Fluido','O2','Anest.'].map(h => <th key={h} className="text-center py-1.5 font-semibold text-slate-500">{h}</th>)}
-                    {customParams.map(p => <th key={p.key} className="text-center py-1.5 font-semibold text-slate-500">{p.label}</th>)}
+                    {paramOrder.map(key => {
+                      const std = STANDARD_PARAMS[key]
+                      const cp = customParams.find(p => p.key === key)
+                      const label = std ? std.label : cp ? cp.label : key
+                      return <th key={key} className="text-center py-1.5 font-semibold text-slate-500">{label}</th>
+                    })}
                     <th className="w-6"></th>
                   </tr></thead>
                   <tbody>{vitals.map((v, i) => (
@@ -1150,26 +1193,34 @@ export default function FichaForm() {
                       <td className="py-1 font-mono text-slate-600">
                         <input type="time" value={v.recorded_at ? String(v.recorded_at).slice(11, 16) : ''} onChange={e => { const date = (form.start_time || new Date().toISOString()).slice(0, 10); updateVital(i, 'recorded_at', date + 'T' + e.target.value + ':00') }} className="w-[70px] px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] bg-transparent" />
                       </td>
-                      {['fc','pas','pam','pad','spo2','fr','etco2','temperature','fluid_ml_kg_h','o2_l_min'].map(k => {
-                        const noteKey = k === 'o2_l_min' ? 'o2' : k
-                        const hasNoteField = ['pas','fr','temperature','o2_l_min'].includes(k)
-                        let pn = v.param_notes; if (typeof pn === 'string') { try { pn = JSON.parse(pn) } catch { pn = {} } }
-                        const noteVal = (pn || {})[noteKey] || ''
-                        return (
-                          <td key={k} className="py-1 text-center">
-                            <input type="number" step="any" inputMode="decimal" value={v[k] ?? ''} onChange={e => updateVital(i, k, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
-                            {hasNoteField && noteVal && <div className="text-[8px] text-teal-600 leading-tight">{noteVal}</div>}
-                          </td>
-                        )
+                      {paramOrder.map(key => {
+                        const std = STANDARD_PARAMS[key]
+                        if (std) {
+                          const noteKey = std.noteKey || key
+                          let pn = v.param_notes; if (typeof pn === 'string') { try { pn = JSON.parse(pn) } catch { pn = {} } }
+                          const noteVal = std.hasNote ? ((pn || {})[noteKey] || '') : ''
+                          return (
+                            <td key={key} className="py-1 text-center">
+                              {std.type === 'number' ? (
+                                <input type="number" step="any" inputMode="decimal" value={v[key] ?? ''} onChange={e => updateVital(i, key, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                              ) : (
+                                <input type="text" value={v[key] ?? ''} onChange={e => updateVital(i, key, e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                              )}
+                              {std.hasNote && noteVal && <div className="text-[8px] text-teal-600 leading-tight">{noteVal}</div>}
+                            </td>
+                          )
+                        }
+                        const cp = customParams.find(p => p.key === key)
+                        if (cp) {
+                          let cpData = v.custom_params; if (typeof cpData === 'string') { try { cpData = JSON.parse(cpData) } catch { cpData = {} } }
+                          return (
+                            <td key={key} className="py-1 text-center">
+                              <input type="text" value={(cpData || {})[cp.key] || ''} onChange={e => { const newCp = { ...(typeof v.custom_params === 'string' ? JSON.parse(v.custom_params || '{}') : (v.custom_params || {})), [cp.key]: e.target.value }; updateVital(i, 'custom_params', newCp) }} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
+                            </td>
+                          )
+                        }
+                        return null
                       })}
-                      <td className="py-1 text-center">
-                        <input type="text" value={v.anesthetic ?? ''} onChange={e => updateVital(i, 'anesthetic', e.target.value)} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
-                      </td>
-                      {customParams.map(p => { let cpData = v.custom_params; if (typeof cpData === 'string') { try { cpData = JSON.parse(cpData) } catch { cpData = {} } }; return (
-                        <td key={p.key} className="py-1 text-center">
-                          <input type="text" value={(cpData || {})[p.key] || ''} onChange={e => { const newCp = { ...(typeof v.custom_params === 'string' ? JSON.parse(v.custom_params || '{}') : (v.custom_params || {})), [p.key]: e.target.value }; updateVital(i, 'custom_params', newCp) }} className="w-full px-1 py-1 border border-transparent focus:border-slate-300 rounded text-[11px] text-center bg-transparent" />
-                        </td>
-                      ) })}
                       <td><button type="button" onClick={() => removeVital(i)} className="p-1 text-slate-400 active:text-red-500"><X size={12} /></button></td>
                     </tr>
                   ))}</tbody>
