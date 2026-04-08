@@ -2,20 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil, Calendar, Save, Pill, Plus } from 'lucide-react'
 import api from '../api/axios'
+import { getConcUnits, addConcUnit, parseConc, buildConc } from '../concUnits'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
-const CONC_UNITS = ['mg/mL', 'mcg/mL', 'UI/mL', 'mg/g', 'mL', 'mL/kg', '%']
-function parseConc(str) {
-  if (!str) return { value: '', unit: 'mg/mL' }
-  const m = str.match(/^([\d.,]+)\s*(.+)$/)
-  if (m) return { value: m[1], unit: CONC_UNITS.includes(m[2]) ? m[2] : '__custom__', custom: CONC_UNITS.includes(m[2]) ? '' : m[2] }
-  return { value: '', unit: 'mg/mL', custom: '', raw: str }
-}
-function buildConc(value, unit, custom) {
-  if (!value) return null
-  const u = unit === '__custom__' ? (custom || '') : unit
-  return `${value} ${u}`.trim()
-}
 
 export default function Estoque() {
   const [bottles, setBottles] = useState([])
@@ -40,7 +29,7 @@ export default function Estoque() {
   const [medicinesLoading, setMedicinesLoading] = useState(false)
   const [medicineSearch, setMedicineSearch] = useState('')
   const [showAddMedicine, setShowAddMedicine] = useState(false)
-  const [addMedicineForm, setAddMedicineForm] = useState({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', concCustom: '', presentation_type: 'frasco', volume_ml: '' })
+  const [addMedicineForm, setAddMedicineForm] = useState({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', presentation_type: 'frasco', volume_ml: '' })
   const [addMedicineSaving, setAddMedicineSaving] = useState(false)
   const [editingMedicine, setEditingMedicine] = useState(null)
   const [editMedicineSaving, setEditMedicineSaving] = useState(false)
@@ -200,7 +189,7 @@ export default function Estoque() {
 
   const startEdit = (b, concentration) => {
     const conc = parseConc(concentration)
-    setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '', expiry_date: b.expiry_date ? b.expiry_date.split('T')[0] : '', concValue: conc.value, concUnit: conc.unit, concCustom: conc.custom || '' })
+    setEditBottle({ id: b.id, volume_ml: String(b.volume_ml || ''), remaining_ml: String(b.remaining_ml || ''), purchase_cost: String(b.purchase_cost || ''), batch_number: b.batch_number || '', expiry_date: b.expiry_date ? b.expiry_date.split('T')[0] : '', concValue: conc.value, concUnit: conc.unit })
   }
 
   const saveEdit = async () => {
@@ -213,7 +202,7 @@ export default function Estoque() {
         purchase_cost: parseFloat(editBottle.purchase_cost),
         batch_number: editBottle.batch_number,
         expiry_date: editBottle.expiry_date || null,
-        concentration: buildConc(editBottle.concValue, editBottle.concUnit, editBottle.concCustom),
+        concentration: buildConc(editBottle.concValue, editBottle.concUnit),
       })
       setSuccessMsg('Frasco atualizado!')
       setEditBottle(null)
@@ -245,7 +234,6 @@ export default function Estoque() {
       purchased_at: p.purchased_at ? p.purchased_at.split('T')[0] : '',
       concValue: conc.value,
       concUnit: conc.unit,
-      concCustom: conc.custom || '',
     })
   }
 
@@ -303,7 +291,7 @@ export default function Estoque() {
       }
 
       // If concentration changed, update via any bottle in this group
-      const newConc = buildConc(editingPurchase.concValue, editingPurchase.concUnit, editingPurchase.concCustom)
+      const newConc = buildConc(editingPurchase.concValue, editingPurchase.concUnit)
       if (newConc !== (orig.concentration || null)) {
         const res2 = await api.get(`/bottles?medicine_id=${orig.medicine_id}&status=all`)
         const anyBottle = (res2.data?.bottles || res2.data || [])[0]
@@ -331,15 +319,15 @@ export default function Estoque() {
       await api.post('/medicines', {
         name: addMedicineForm.name.trim(),
         active_principle: addMedicineForm.active_principle.trim() || null,
-        concentration: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit, addMedicineForm.concCustom),
+        concentration: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit),
         presentation_type: addMedicineForm.presentation_type,
         volume_ml: addMedicineForm.volume_ml ? parseFloat(addMedicineForm.volume_ml) : null,
-        unit: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit, addMedicineForm.concCustom) ? (addMedicineForm.concUnit === '__custom__' ? addMedicineForm.concCustom : addMedicineForm.concUnit) : null,
+        unit: addMedicineForm.concValue ? addMedicineForm.concUnit : null,
         medicine_type: 'farmaco',
       })
       setSuccessMsg('Fármaco cadastrado!')
       setShowAddMedicine(false)
-      setAddMedicineForm({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', concCustom: '', presentation_type: 'frasco', volume_ml: '' })
+      setAddMedicineForm({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', presentation_type: 'frasco', volume_ml: '' })
       loadMedicines()
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao cadastrar fármaco.')
@@ -369,10 +357,10 @@ export default function Estoque() {
       await api.put(`/medicines/${editingMedicine.id}`, {
         name: editingMedicine.name.trim(),
         active_principle: editingMedicine.active_principle.trim() || null,
-        concentration: buildConc(editingMedicine.concValue, editingMedicine.concUnit, editingMedicine.concCustom),
+        concentration: buildConc(editingMedicine.concValue, editingMedicine.concUnit),
         presentation_type: editingMedicine.presentation_type,
         volume_ml: editingMedicine.volume_ml ? parseFloat(editingMedicine.volume_ml) : null,
-        unit: buildConc(editingMedicine.concValue, editingMedicine.concUnit, editingMedicine.concCustom) ? (editingMedicine.concUnit === '__custom__' ? editingMedicine.concCustom : editingMedicine.concUnit) : null,
+        unit: editingMedicine.concValue ? editingMedicine.concUnit : null,
         medicine_type: 'farmaco',
       })
       setSuccessMsg('Fármaco atualizado!')
@@ -402,7 +390,18 @@ export default function Estoque() {
   ).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   // Concentration field component for reuse
-  const ConcField = ({ value, unit, custom, onChange, label = 'Concentração' }) => (
+  const [addingConcUnit, setAddingConcUnit] = useState(false)
+  const [newConcUnitText, setNewConcUnitText] = useState('')
+  const [concUnitsList, setConcUnitsList] = useState(getConcUnits)
+  const confirmNewConcUnit = (onSelect) => {
+    const t = newConcUnitText.trim()
+    if (t && addConcUnit(t)) setConcUnitsList(getConcUnits())
+    if (t) onSelect(t)
+    setNewConcUnitText('')
+    setAddingConcUnit(false)
+  }
+
+  const ConcField = ({ value, unit, onChange, label = 'Concentração' }) => (
     <div>
       <label className="text-[10px] text-slate-500 mb-0.5 block">{label}</label>
       <div className="flex gap-1">
@@ -410,20 +409,24 @@ export default function Estoque() {
           onChange={e => onChange({ concValue: e.target.value })}
           placeholder="Ex: 10"
           className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-        {unit === '__custom__' ? (
+        {addingConcUnit ? (
           <div className="flex gap-0.5 items-center">
-            <input type="text" value={custom}
-              onChange={e => onChange({ concCustom: e.target.value })}
-              placeholder="Unid." className="w-20 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-            <button type="button" onClick={() => onChange({ concUnit: 'mg/mL', concCustom: '' })}
+            <input type="text" value={newConcUnitText}
+              onChange={e => setNewConcUnitText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmNewConcUnit(u => onChange({ concUnit: u }))}
+              placeholder="Nova unidade" autoFocus
+              className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+            <button type="button" onClick={() => confirmNewConcUnit(u => onChange({ concUnit: u }))}
+              className="p-1 text-teal-600 active:text-teal-800"><Check size={14} /></button>
+            <button type="button" onClick={() => { setAddingConcUnit(false); setNewConcUnitText('') }}
               className="p-0.5 text-slate-400"><X size={12} /></button>
           </div>
         ) : (
           <select value={unit}
-            onChange={e => onChange({ concUnit: e.target.value })}
+            onChange={e => { if (e.target.value === '__add__') { setAddingConcUnit(true); setNewConcUnitText('') } else onChange({ concUnit: e.target.value }) }}
             className="w-24 px-1 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
-            {CONC_UNITS.map(u => <option key={u}>{u}</option>)}
-            <option value="__custom__">+ Outra</option>
+            {concUnitsList.map(u => <option key={u}>{u}</option>)}
+            <option value="__add__">+ Nova</option>
           </select>
         )}
       </div>
@@ -449,7 +452,7 @@ export default function Estoque() {
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
         </div>
         <div className="col-span-2">
-          <ConcField value={data.concValue} unit={data.concUnit} custom={data.concCustom} onChange={onChange} />
+          <ConcField value={data.concValue} unit={data.concUnit} onChange={onChange} />
         </div>
         <div>
           <label className="text-[10px] text-slate-500 mb-0.5 block">Apresentação</label>
@@ -712,31 +715,8 @@ export default function Estoque() {
                                           onChange={e => setEditBottle(v => ({ ...v, batch_number: e.target.value }))}
                                           className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
                                       </div>
-                                      <div>
-                                        <label className="text-[10px] text-slate-500">Concentração</label>
-                                        <div className="flex gap-1">
-                                          <input type="number" step="any" value={editBottle.concValue}
-                                            onChange={e => setEditBottle(v => ({ ...v, concValue: e.target.value }))}
-                                            placeholder="10"
-                                            className="flex-1 px-2 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
-                                          {editBottle.concUnit === '__custom__' ? (
-                                            <div className="flex gap-0.5 items-center">
-                                              <input type="text" value={editBottle.concCustom}
-                                                onChange={e => setEditBottle(v => ({ ...v, concCustom: e.target.value }))}
-                                                placeholder="Unid." className="w-16 px-1 py-1.5 border border-slate-200 rounded text-sm min-h-[36px]" />
-                                              <button type="button" onClick={() => setEditBottle(v => ({ ...v, concUnit: 'mg/mL', concCustom: '' }))}
-                                                className="p-0.5 text-slate-400"><X size={12} /></button>
-                                            </div>
-                                          ) : (
-                                            <select value={editBottle.concUnit}
-                                              onChange={e => setEditBottle(v => ({ ...v, concUnit: e.target.value }))}
-                                              className="w-24 px-1 py-1.5 border border-slate-200 rounded text-sm min-h-[36px] bg-white">
-                                              {CONC_UNITS.map(u => <option key={u}>{u}</option>)}
-                                              <option value="__custom__">+ Outra</option>
-                                            </select>
-                                          )}
-                                        </div>
-                                      </div>
+                                      <ConcField value={editBottle.concValue} unit={editBottle.concUnit}
+                                        onChange={o => setEditBottle(v => ({ ...v, ...o }))} />
                                       <div>
                                         <label className="text-[10px] text-slate-500">Validade</label>
                                         <input type="date" value={editBottle.expiry_date}
@@ -922,33 +902,8 @@ export default function Estoque() {
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="col-span-2">
-                            <label className="text-[10px] text-slate-500 mb-0.5 block">Concentração</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="number"
-                                step="any"
-                                value={editingPurchase.concValue}
-                                onChange={e => setEditingPurchase(v => ({ ...v, concValue: e.target.value }))}
-                                placeholder="Ex: 10"
-                                className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]"
-                              />
-                              {editingPurchase.concUnit === '__custom__' ? (
-                                <div className="flex gap-1 items-center">
-                                  <input type="text" value={editingPurchase.concCustom}
-                                    onChange={e => setEditingPurchase(v => ({ ...v, concCustom: e.target.value }))}
-                                    placeholder="Unidade" className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-                                  <button type="button" onClick={() => setEditingPurchase(v => ({ ...v, concUnit: 'mg/mL', concCustom: '' }))}
-                                    className="p-1 text-slate-400 active:text-slate-600"><X size={14} /></button>
-                                </div>
-                              ) : (
-                                <select value={editingPurchase.concUnit}
-                                  onChange={e => setEditingPurchase(v => ({ ...v, concUnit: e.target.value }))}
-                                  className="w-28 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
-                                  {CONC_UNITS.map(u => <option key={u}>{u}</option>)}
-                                  <option value="__custom__">+ Outra</option>
-                                </select>
-                              )}
-                            </div>
+                            <ConcField value={editingPurchase.concValue} unit={editingPurchase.concUnit}
+                              onChange={o => setEditingPurchase(v => ({ ...v, ...o }))} />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-500 mb-0.5 block">Quantidade</label>

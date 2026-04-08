@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ShoppingCart, Plus, Check, X, ChevronDown, Pill, Package, Box } from 'lucide-react'
 import api from '../api/axios'
+import { getConcUnits, addConcUnit } from '../concUnits'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
@@ -40,7 +41,9 @@ export default function Compras() {
   const [newMedicineUnitsPerBox, setNewMedicineUnitsPerBox] = useState('1')
   const [newMedicineConcentrationValue, setNewMedicineConcentrationValue] = useState('')
   const [newMedicineConcentrationUnit, setNewMedicineConcentrationUnit] = useState('mg/mL')
-  const [newMedicineConcentrationCustom, setNewMedicineConcentrationCustom] = useState('')
+  const [addingConcUnit, setAddingConcUnit] = useState(false)
+  const [newConcUnitText, setNewConcUnitText] = useState('')
+  const [concUnitsList, setConcUnitsList] = useState(getConcUnits)
   const [newMedicineActivePrinciple, setNewMedicineActivePrinciple] = useState('')
   const [newMedicinePresentation, setNewMedicinePresentation] = useState('ampola')
   const [newMedicineExpiry, setNewMedicineExpiry] = useState('')
@@ -186,7 +189,7 @@ export default function Compras() {
         volume_ml: parseFloat(newMedicineVolume),
         units_per_box: parseInt(newMedicineUnitsPerBox) || 1,
         medicine_type: 'farmaco',
-        concentration: newMedicineConcentrationValue ? newMedicineConcentrationValue + ' ' + (newMedicineConcentrationUnit === '__custom__' ? newMedicineConcentrationCustom : newMedicineConcentrationUnit) : null,
+        concentration: newMedicineConcentrationValue ? newMedicineConcentrationValue + ' ' + newMedicineConcentrationUnit : null,
         active_principle: newMedicineActivePrinciple || null,
         presentation: newMedicinePresentation,
         unit: newMedicinePresentation === 'ampola' ? 'ampola' : 'frasco',
@@ -381,33 +384,26 @@ export default function Compras() {
                       placeholder="Ex: 10"
                       className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />
-                    {newMedicineConcentrationUnit === '__custom__' ? (
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          value={newMedicineConcentrationCustom}
-                          onChange={(e) => setNewMedicineConcentrationCustom(e.target.value)}
-                          placeholder="Unidade"
-                          className="w-24 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                          autoFocus
-                        />
-                        <button type="button" onClick={() => { setNewMedicineConcentrationUnit('mg/mL'); setNewMedicineConcentrationCustom('') }}
-                          className="px-1.5 text-slate-400 active:text-slate-600"><X size={14} /></button>
+                    {addingConcUnit ? (
+                      <div className="flex gap-1 items-center">
+                        <input type="text" value={newConcUnitText}
+                          onChange={e => setNewConcUnitText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { const t = newConcUnitText.trim(); if (t) { addConcUnit(t); setConcUnitsList(getConcUnits()); setNewMedicineConcentrationUnit(t) } setAddingConcUnit(false); setNewConcUnitText('') } }}
+                          placeholder="Nova unidade" autoFocus
+                          className="w-24 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                        <button type="button" onClick={() => { const t = newConcUnitText.trim(); if (t) { addConcUnit(t); setConcUnitsList(getConcUnits()); setNewMedicineConcentrationUnit(t) } setAddingConcUnit(false); setNewConcUnitText('') }}
+                          className="p-1 text-teal-600"><Check size={14} /></button>
+                        <button type="button" onClick={() => { setAddingConcUnit(false); setNewConcUnitText('') }}
+                          className="p-0.5 text-slate-400"><X size={14} /></button>
                       </div>
                     ) : (
                       <select
                         value={newMedicineConcentrationUnit}
-                        onChange={(e) => setNewMedicineConcentrationUnit(e.target.value)}
+                        onChange={e => { if (e.target.value === '__add__') { setAddingConcUnit(true); setNewConcUnitText('') } else setNewMedicineConcentrationUnit(e.target.value) }}
                         className="w-28 px-2 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
                       >
-                        <option>mg/mL</option>
-                        <option>mcg/mL</option>
-                        <option>UI/mL</option>
-                        <option>mg/g</option>
-                        <option>mL</option>
-                        <option>mL/kg</option>
-                        <option>%</option>
-                        <option value="__custom__">Outra...</option>
+                        {concUnitsList.map(u => <option key={u}>{u}</option>)}
+                        <option value="__add__">+ Nova</option>
                       </select>
                     )}
                   </div>
