@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil, Calendar, Save } from 'lucide-react'
+import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil, Calendar, Save, Pill, Plus } from 'lucide-react'
 import api from '../api/axios'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
@@ -35,6 +35,17 @@ export default function Estoque() {
   const [editingPurchase, setEditingPurchase] = useState(null) // { key, quantity, purchase_cost, purchased_at }
   const [editPurchaseSaving, setEditPurchaseSaving] = useState(false)
 
+  // Farmacos tab state
+  const [medicines, setMedicines] = useState([])
+  const [medicinesLoading, setMedicinesLoading] = useState(false)
+  const [medicineSearch, setMedicineSearch] = useState('')
+  const [showAddMedicine, setShowAddMedicine] = useState(false)
+  const [addMedicineForm, setAddMedicineForm] = useState({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', concCustom: '', presentation_type: 'frasco', volume_ml: '' })
+  const [addMedicineSaving, setAddMedicineSaving] = useState(false)
+  const [editingMedicine, setEditingMedicine] = useState(null)
+  const [editMedicineSaving, setEditMedicineSaving] = useState(false)
+  const [confirmDeleteMed, setConfirmDeleteMed] = useState(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -59,6 +70,18 @@ export default function Estoque() {
     }
   }, [])
 
+  const loadMedicines = useCallback(async () => {
+    setMedicinesLoading(true)
+    try {
+      const res = await api.get('/medicines')
+      setMedicines(res.data?.medicines || res.data || [])
+    } catch {
+      setError('Erro ao carregar fármacos.')
+    } finally {
+      setMedicinesLoading(false)
+    }
+  }, [])
+
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
@@ -66,6 +89,12 @@ export default function Estoque() {
       loadPurchases()
     }
   }, [activeTab, loadPurchases, purchases.length])
+
+  useEffect(() => {
+    if (activeTab === 'farmacos' && medicines.length === 0) {
+      loadMedicines()
+    }
+  }, [activeTab, loadMedicines, medicines.length])
 
   useEffect(() => {
     if (successMsg) { const t = setTimeout(() => setSuccessMsg(''), 3000); return () => clearTimeout(t) }
@@ -294,6 +323,165 @@ export default function Estoque() {
     }
   }
 
+  // Farmacos CRUD handlers
+  const handleAddMedicine = async () => {
+    if (!addMedicineForm.name.trim()) return
+    setAddMedicineSaving(true)
+    try {
+      await api.post('/medicines', {
+        name: addMedicineForm.name.trim(),
+        active_principle: addMedicineForm.active_principle.trim() || null,
+        concentration: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit, addMedicineForm.concCustom),
+        presentation_type: addMedicineForm.presentation_type,
+        volume_ml: addMedicineForm.volume_ml ? parseFloat(addMedicineForm.volume_ml) : null,
+        unit: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit, addMedicineForm.concCustom) ? (addMedicineForm.concUnit === '__custom__' ? addMedicineForm.concCustom : addMedicineForm.concUnit) : null,
+        medicine_type: 'farmaco',
+      })
+      setSuccessMsg('Fármaco cadastrado!')
+      setShowAddMedicine(false)
+      setAddMedicineForm({ name: '', active_principle: '', concValue: '', concUnit: 'mg/mL', concCustom: '', presentation_type: 'frasco', volume_ml: '' })
+      loadMedicines()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao cadastrar fármaco.')
+    } finally {
+      setAddMedicineSaving(false)
+    }
+  }
+
+  const startEditMedicine = (m) => {
+    const conc = parseConc(m.concentration)
+    setEditingMedicine({
+      id: m.id,
+      name: m.name || '',
+      active_principle: m.active_principle || '',
+      concValue: conc.value,
+      concUnit: conc.unit,
+      concCustom: conc.custom || '',
+      presentation_type: m.presentation_type || 'frasco',
+      volume_ml: m.volume_ml ? String(m.volume_ml) : '',
+    })
+  }
+
+  const saveEditMedicine = async () => {
+    if (!editingMedicine || !editingMedicine.name.trim()) return
+    setEditMedicineSaving(true)
+    try {
+      await api.put(`/medicines/${editingMedicine.id}`, {
+        name: editingMedicine.name.trim(),
+        active_principle: editingMedicine.active_principle.trim() || null,
+        concentration: buildConc(editingMedicine.concValue, editingMedicine.concUnit, editingMedicine.concCustom),
+        presentation_type: editingMedicine.presentation_type,
+        volume_ml: editingMedicine.volume_ml ? parseFloat(editingMedicine.volume_ml) : null,
+        unit: buildConc(editingMedicine.concValue, editingMedicine.concUnit, editingMedicine.concCustom) ? (editingMedicine.concUnit === '__custom__' ? editingMedicine.concCustom : editingMedicine.concUnit) : null,
+        medicine_type: 'farmaco',
+      })
+      setSuccessMsg('Fármaco atualizado!')
+      setEditingMedicine(null)
+      loadMedicines()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao atualizar fármaco.')
+    } finally {
+      setEditMedicineSaving(false)
+    }
+  }
+
+  const handleDeleteMed = async (id) => {
+    try {
+      await api.delete(`/medicines/${id}`)
+      setMedicines(prev => prev.filter(m => m.id !== id))
+      setSuccessMsg('Fármaco removido!')
+      setConfirmDeleteMed(null)
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao remover fármaco.')
+    }
+  }
+
+  const filteredMedicines = medicines.filter(m =>
+    !medicineSearch || (m.name || '').toLowerCase().includes(medicineSearch.toLowerCase()) ||
+    (m.active_principle || '').toLowerCase().includes(medicineSearch.toLowerCase())
+  ).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+
+  // Concentration field component for reuse
+  const ConcField = ({ value, unit, custom, onChange, label = 'Concentração' }) => (
+    <div>
+      <label className="text-[10px] text-slate-500 mb-0.5 block">{label}</label>
+      <div className="flex gap-1">
+        <input type="number" step="any" value={value}
+          onChange={e => onChange({ concValue: e.target.value })}
+          placeholder="Ex: 10"
+          className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        {unit === '__custom__' ? (
+          <div className="flex gap-0.5 items-center">
+            <input type="text" value={custom}
+              onChange={e => onChange({ concCustom: e.target.value })}
+              placeholder="Unid." className="w-20 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+            <button type="button" onClick={() => onChange({ concUnit: 'mg/mL', concCustom: '' })}
+              className="p-0.5 text-slate-400"><X size={12} /></button>
+          </div>
+        ) : (
+          <select value={unit}
+            onChange={e => onChange({ concUnit: e.target.value })}
+            className="w-24 px-1 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
+            {CONC_UNITS.map(u => <option key={u}>{u}</option>)}
+            <option value="__custom__">+ Outra</option>
+          </select>
+        )}
+      </div>
+    </div>
+  )
+
+  // Medicine form fields (used for both add and edit)
+  const MedicineFormFields = ({ data, onChange, onSave, onCancel, saving, saveLabel }) => (
+    <div className="p-4 space-y-3 bg-white rounded-xl border border-slate-200">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Nome *</label>
+          <input type="text" value={data.name}
+            onChange={e => onChange({ name: e.target.value })}
+            placeholder="Nome do fármaco"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+        <div className="col-span-2">
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Princípio ativo</label>
+          <input type="text" value={data.active_principle}
+            onChange={e => onChange({ active_principle: e.target.value })}
+            placeholder="Princípio ativo"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+        <div className="col-span-2">
+          <ConcField value={data.concValue} unit={data.concUnit} custom={data.concCustom} onChange={onChange} />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Apresentação</label>
+          <select value={data.presentation_type}
+            onChange={e => onChange({ presentation_type: e.target.value })}
+            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
+            <option value="frasco">Frasco</option>
+            <option value="ampola">Ampola</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Volume/unid (mL)</label>
+          <input type="number" step="0.1" value={data.volume_ml}
+            onChange={e => onChange({ volume_ml: e.target.value })}
+            placeholder="Ex: 10"
+            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onSave} disabled={saving || !data.name.trim()}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-teal-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 min-h-[40px]">
+          <Save size={14} />
+          {saving ? 'Salvando...' : saveLabel}
+        </button>
+        <button onClick={onCancel}
+          className="py-2.5 px-4 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[40px]">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
       <div className="flex items-center justify-between">
@@ -327,12 +515,113 @@ export default function Estoque() {
           <ShoppingCart size={16} className="inline mr-1.5 -mt-0.5" />
           Compras
         </button>
+        <button
+          onClick={() => setActiveTab('farmacos')}
+          className={`flex-1 py-3 rounded-xl text-sm font-semibold transition border-2 min-h-[48px] ${
+            activeTab === 'farmacos'
+              ? 'bg-teal-50 border-teal-600 text-teal-700'
+              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+          }`}
+        >
+          <Pill size={16} className="inline mr-1.5 -mt-0.5" />
+          Fármacos
+        </button>
       </div>
 
       {successMsg && <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm flex items-center gap-2"><Check size={16} />{successMsg}</div>}
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center justify-between">{error}<button onClick={() => setError('')}><X size={16} /></button></div>}
 
-      {activeTab === 'estoque' ? (
+      {activeTab === 'farmacos' ? (
+        /* Farmacos tab */
+        <>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={medicineSearch} onChange={e => setMedicineSearch(e.target.value)} placeholder="Buscar fármaco..."
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[44px]" />
+            </div>
+            <button onClick={() => { setShowAddMedicine(true); setEditingMedicine(null) }}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px] shrink-0">
+              <Plus size={16} /> Novo
+            </button>
+          </div>
+
+          {showAddMedicine && (
+            <MedicineFormFields
+              data={addMedicineForm}
+              onChange={(fields) => setAddMedicineForm(prev => ({ ...prev, ...fields }))}
+              onSave={handleAddMedicine}
+              onCancel={() => setShowAddMedicine(false)}
+              saving={addMedicineSaving}
+              saveLabel="Cadastrar"
+            />
+          )}
+
+          {medicinesLoading ? (
+            <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-3 border-teal-600 border-t-transparent" /></div>
+          ) : filteredMedicines.length === 0 ? (
+            <div className="text-center py-12">
+              <Pill size={40} className="mx-auto text-slate-300 mb-3" />
+              <p className="text-slate-500 font-medium">{medicines.length === 0 ? 'Nenhum fármaco cadastrado' : 'Nenhum fármaco encontrado'}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredMedicines.map(m => {
+                const isEditing = editingMedicine?.id === m.id
+                return (
+                  <div key={m.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    {isEditing ? (
+                      <MedicineFormFields
+                        data={editingMedicine}
+                        onChange={(fields) => setEditingMedicine(prev => ({ ...prev, ...fields }))}
+                        onSave={saveEditMedicine}
+                        onCancel={() => setEditingMedicine(null)}
+                        saving={editMedicineSaving}
+                        saveLabel="Salvar"
+                      />
+                    ) : (
+                      <div className="p-4">
+                        <div className="flex items-start justify-between mb-1.5">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-semibold text-slate-800 truncate">{m.name}</h3>
+                            {m.active_principle && <p className="text-[11px] text-slate-400 truncate">{m.active_principle}</p>}
+                          </div>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${m.presentation_type === 'ampola' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {m.presentation_type === 'ampola' ? 'Ampola' : 'Frasco'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
+                          {m.concentration && <span>{m.concentration}</span>}
+                          {m.volume_ml && <span>{m.volume_ml} mL</span>}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { startEditMedicine(m); setShowAddMedicine(false) }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg active:bg-slate-50 min-h-[36px]">
+                            <Pencil size={12} /> Editar
+                          </button>
+                          {confirmDeleteMed === m.id ? (
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleDeleteMed(m.id)}
+                                className="py-2 px-3 bg-red-600 text-white text-xs font-medium rounded-lg min-h-[36px]">Excluir</button>
+                              <button onClick={() => setConfirmDeleteMed(null)}
+                                className="py-2 px-3 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[36px]">Cancelar</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setConfirmDeleteMed(m.id)}
+                              className="py-2 px-3 border border-red-200 text-red-500 text-xs font-medium rounded-lg active:bg-red-50 min-h-[36px]">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      ) : activeTab === 'estoque' ? (
         <>
           {/* Search */}
           <div className="relative">
