@@ -430,6 +430,7 @@ export default function FichaForm() {
   const hasUnsavedChanges = useRef(false)
   const initialLoadDone = useRef(false)
   const savingRef = useRef(false)
+  const createdIdRef = useRef(null)
 
   const [showEmergency, setShowEmergency] = useState(false)
 
@@ -560,12 +561,12 @@ export default function FichaForm() {
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
         status: 'scheduled',
       }
-      let surgeryId = id
-      if (isEdit) { await api.put(`/surgeries/${id}`, payload) }
+      let surgeryId = id || createdIdRef.current
+      if (surgeryId) { await api.put(`/surgeries/${surgeryId}`, payload) }
       else {
         if (!payload.patient_name) payload.patient_name = 'Rascunho'
         if (!payload.procedure_name) payload.procedure_name = 'A definir'
-        const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id
+        const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId
       }
       clearDraftFromStorage(id); hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
       if (!isEdit) navigate(`/fichas/${surgeryId}/edit`, { replace: true })
@@ -704,7 +705,7 @@ export default function FichaForm() {
     })); hasUnsavedChanges.current = true
   }
 
-  const updateDrug = (phase, index, med) => { setDrugs(d => ({ ...d, [phase]: d[phase].map((m, i) => i === index ? med : m) })); hasUnsavedChanges.current = true }
+  const updateDrug = (phase, index, med) => { setDrugs(d => ({ ...d, [phase]: d[phase].map((m, i) => i === index ? { ...med, edited: med.existing ? true : med.edited } : m) })); hasUnsavedChanges.current = true }
   const removeDrug = (phase, index) => { setDrugs(d => ({ ...d, [phase]: d[phase].filter((_, i) => i !== index) })); hasUnsavedChanges.current = true }
   const submit = async (e) => {
     e.preventDefault()
@@ -729,9 +730,9 @@ export default function FichaForm() {
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
       }
 
-      let surgeryId = id
-      if (isEdit) await api.put(`/surgeries/${id}`, payload)
-      else { const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id }
+      let surgeryId = id || createdIdRef.current
+      if (surgeryId) await api.put(`/surgeries/${surgeryId}`, payload)
+      else { const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId }
 
       for (const vital of vitals) {
         if (vital.fromServer && !vital.edited) continue
@@ -761,12 +762,6 @@ export default function FichaForm() {
       ]
 
       for (const drug of allDrugs) {
-        // Update existing drugs that changed drug_source
-        if (drug.existing && drug.id && drug.drug_source !== drug.original_drug_source) {
-          await api.put(`/surgeries/${surgeryId}/medicines/${drug.id}`, { drug_source: drug.drug_source })
-          continue
-        }
-        if (drug.existing) continue
         const hasMed = drug.medicine_id
         const hasCustom = !drug.medicine_id && drug.custom_name
         if (!hasMed && !hasCustom) continue
@@ -775,11 +770,20 @@ export default function FichaForm() {
         const adminAt = drug.time ? `${form.start_time?.slice(0, 10) || new Date().toISOString().slice(0, 10)}T${drug.time}` : null
         const resolvedUnit = drug.dose_unit === 'Outro' && drug.custom_unit ? drug.custom_unit : drug.dose_unit
         const resolvedRoute = drug.route === 'Outro' && drug.custom_route ? drug.custom_route : drug.route
+        // Update existing drugs that were edited
+        if (drug.existing && drug.id && drug.edited) {
+          await api.put(`/surgeries/${surgeryId}/medicines/${drug.id}`, {
+            dose: isAE ? 0 : Number(drug.dose), dose_unit: isAE ? 'AE' : resolvedUnit,
+            route: resolvedRoute || null, administered_at: adminAt, drug_source: drug.drug_source,
+          })
+          continue
+        }
+        if (drug.existing) continue
         await api.post(`/surgeries/${surgeryId}/medicines`, {
           medicine_id: hasMed ? Number(drug.medicine_id) : null, custom_name: hasCustom ? drug.custom_name : null,
           dose: isAE ? 0 : Number(drug.dose), dose_unit: isAE ? 'AE' : resolvedUnit,
           route: resolvedRoute || null, administered_at: adminAt, drug_source: drug.drug_source, phase: drug.phase,
-          calculated_volume_ml: drug.calculated_volume_ml || null,
+          decrement_stock: false,
         })
       }
 

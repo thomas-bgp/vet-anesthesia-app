@@ -860,6 +860,10 @@ router.put('/:id/medicines/:medId', authenticateToken, async (req, res) => {
 
     const updates = {};
     if (req.body.drug_source !== undefined) updates.drug_source = req.body.drug_source;
+    if (req.body.dose !== undefined) updates.dose = parseFloat(req.body.dose);
+    if (req.body.dose_unit !== undefined) updates.dose_unit = req.body.dose_unit;
+    if (req.body.route !== undefined) updates.route = req.body.route;
+    if (req.body.administered_at !== undefined) updates.administered_at = req.body.administered_at;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
