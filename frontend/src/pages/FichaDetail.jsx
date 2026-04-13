@@ -888,7 +888,7 @@ export default function FichaDetail() {
 
         {/* Carimbo / Stamp (visible only in print) */}
         {profile && (profile.full_name || profile.crmv_number) && (
-          <div className="print-carimbo">
+          <div className="print-carimbo" style={{ order: 99 }}>
             <div className="carimbo-line" />
             <div className="carimbo-content">
               {profile.signature_image && (
