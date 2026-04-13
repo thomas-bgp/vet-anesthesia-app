@@ -1163,7 +1163,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     }
 
     // Clean up related records
-    await supabase.from('surgery_vitals').delete().eq('surgery_id', id);
+    await supabase.from('document_signatures').delete().eq('surgery_id', id);
+    await supabase.from('monitoring_vitals').delete().eq('surgery_id', id);
     await supabase.from('surgery_medicines').delete().eq('surgery_id', id);
     await supabase.from('surgery_disposables').delete().eq('surgery_id', id);
     await supabase.from('surgeries').delete().eq('id', id);
