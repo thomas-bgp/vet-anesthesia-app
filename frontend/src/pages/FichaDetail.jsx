@@ -593,7 +593,7 @@ export default function FichaDetail() {
                       <div key={di} className="ml-2">
                         <span className="text-slate-500">Fármaco{blk.drugs.length > 1 ? ` ${di + 1}` : ''}</span>
                         <span className="text-slate-700 ml-1">{drug.name || '-'}</span>
-                        {drug.dose_volume && <span className="text-slate-500 ml-1">({drug.dose_volume})</span>}
+                        {(drug.dose || drug.dose_volume) && <span className="text-slate-500 ml-1">({drug.dose ? `${drug.dose} ${drug.dose_unit || ''}` : drug.dose_volume})</span>}
                       </div>
                     ))
                   ) : (

@@ -1089,8 +1089,19 @@ export default function FichaForm() {
                     <div key={di} className="space-y-1.5">
                       <div className="flex items-center gap-2">
                         <input type="text" value={drug.name || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, name: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Fármaco" />
-                        <input type="text" value={drug.dose_volume || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_volume: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Dose/volume" />
                         {(blk.drugs || []).length > 1 && <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.filter((_, dIdx) => dIdx !== di) } : item))} className="p-1 text-slate-400 active:text-red-500 shrink-0"><X size={14} /></button>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input type="text" inputMode="decimal" value={drug.dose || drug.dose_volume || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose: e.target.value, dose_volume: '' } : d) } : item))} className={`${inp} flex-1`} placeholder="Dose" />
+                        {drug._addingUnit ? (
+                          <div className="flex gap-1 flex-1">
+                            <input type="text" autoFocus placeholder="Nova unidade" className={`${inp} flex-1`} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (v) { addCustomUnit(v); setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_unit: v, _addingUnit: false } : d) } : item)) } } }} onBlur={e => { const v = e.target.value.trim(); if (v) { addCustomUnit(v); setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_unit: v, _addingUnit: false } : d) } : item)) } else { setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, _addingUnit: false } : d) } : item)) } }} />
+                          </div>
+                        ) : (
+                          <select value={drug.dose_unit || 'mg/kg'} onChange={e => { if (e.target.value === '+ Nova unidade') { setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, _addingUnit: true } : d) } : item)); return } setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose_unit: e.target.value } : d) } : item)) }} className={`${sel} flex-1`}>
+                            {[...BOLUS_UNITS.filter(u => u !== '+ Nova unidade'), ...(customUnits || []), '+ Nova unidade'].map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, drug_source: 'proprio' } : d) } : item))}
@@ -1104,12 +1115,12 @@ export default function FichaForm() {
                       </div>
                     </div>
                   ))}
-                  <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: [...(item.drugs || []), { name: '', dose_volume: '', drug_source: 'proprio' }] } : item))}
+                  <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: [...(item.drugs || []), { name: '', dose: '', dose_unit: 'mg/kg', drug_source: 'proprio' }] } : item))}
                     className="flex items-center gap-1 text-xs text-teal-600 font-medium min-h-[36px] px-2"><Plus size={14} /> Adicionar fármaco</button>
                 </div>
               </div>
             ))}
-            <button type="button" onClick={() => setBlocks(b => [...b, { type: '', other_type: '', drugs: [{ name: '', dose_volume: '' }] }])}
+            <button type="button" onClick={() => setBlocks(b => [...b, { type: '', other_type: '', drugs: [{ name: '', dose: '', dose_unit: 'mg/kg' }] }])}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-teal-400 text-teal-600 text-xs font-medium rounded-lg active:bg-teal-50 min-h-[44px]"><Plus size={14} /> Adicionar bloqueio</button>
           </div>
         </Section>}
