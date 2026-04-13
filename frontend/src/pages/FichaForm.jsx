@@ -673,6 +673,7 @@ export default function FichaForm() {
             dose_unit: m.dose_unit || 'mg/kg', custom_unit: m.custom_unit || '',
             route: m.route || '', custom_route: m.custom_route || '',
             time: m.administered_at ? m.administered_at.slice(11, 16) : '',
+            infusion_minutes: m.infusion_minutes ? String(m.infusion_minutes) : '',
             drug_source: m.drug_source || 'proprio', original_drug_source: m.drug_source || 'proprio', existing: true,
           })
         })
@@ -775,6 +776,7 @@ export default function FichaForm() {
           await api.put(`/surgeries/${surgeryId}/medicines/${drug.id}`, {
             dose: isAE ? 0 : Number(drug.dose), dose_unit: isAE ? 'AE' : resolvedUnit,
             route: resolvedRoute || null, administered_at: adminAt, drug_source: drug.drug_source,
+            infusion_minutes: drug.infusion_minutes || null,
           })
           continue
         }
@@ -783,7 +785,7 @@ export default function FichaForm() {
           medicine_id: hasMed ? Number(drug.medicine_id) : null, custom_name: hasCustom ? drug.custom_name : null,
           dose: isAE ? 0 : Number(drug.dose), dose_unit: isAE ? 'AE' : resolvedUnit,
           route: resolvedRoute || null, administered_at: adminAt, drug_source: drug.drug_source, phase: drug.phase,
-          decrement_stock: false,
+          decrement_stock: false, infusion_minutes: drug.infusion_minutes || null,
         })
       }
 

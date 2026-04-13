@@ -437,7 +437,7 @@ router.post('/', authenticateToken, async (req, res) => {
       'patient_sex', 'owner_name', 'owner_phone', 'procedure_name', 'asa_classification',
       'fasting_solid_hours', 'fasting_liquid_hours', 'start_time',
       'pre_anesthesia', 'induction', 'maintenance', 'anesthesia_protocol',
-      'clinic_name', 'surgeon_name', 'revenue', 'status',
+      'clinic_name', 'surgeon_name', 'revenue', 'status', 'complications', 'monitoring_notes',
       'pathology', 'fasting_solid', 'fasting_liquid',
       'pre_existing_diseases', 'temperament', 'prior_medications', 'anamnesis_notes',
       'pre_acp', 'pre_fc', 'pre_fr', 'pre_mucosas', 'pre_tpc', 'pre_temperature',
@@ -710,6 +710,7 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
       drug_source = 'proprio',
       phase = 'mpa',
       decrement_stock = true,
+      infusion_minutes,
     } = req.body;
 
     const isAE = dose_unit === 'AE';
@@ -777,6 +778,7 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
         notes: notes || null,
         drug_source,
         phase,
+        infusion_minutes: infusion_minutes ? parseFloat(infusion_minutes) : null,
       })
       .select()
       .single();
@@ -864,6 +866,7 @@ router.put('/:id/medicines/:medId', authenticateToken, async (req, res) => {
     if (req.body.dose_unit !== undefined) updates.dose_unit = req.body.dose_unit;
     if (req.body.route !== undefined) updates.route = req.body.route;
     if (req.body.administered_at !== undefined) updates.administered_at = req.body.administered_at;
+    if (req.body.infusion_minutes !== undefined) updates.infusion_minutes = req.body.infusion_minutes ? parseFloat(req.body.infusion_minutes) : null;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
