@@ -325,6 +325,8 @@ export default function FichaDetail() {
     groupedMeds[phase].push(m)
   })
   const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', manutencao_inalatoria: 'Manut. Inalatória', manutencao_tiva: 'Manut. TIVA', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
+  const PHASE_ORDER = ['mpa', 'inducao', 'manutencao_inalatoria', 'manutencao_tiva', 'manutencao', 'infusao', 'bloqueio', 'transoperatorio', 'pos_operatorio']
+  const orderedPhases = PHASE_ORDER.filter(p => groupedMeds[p]).map(p => [p, groupedMeds[p]])
 
   // Layout configuration — determines section visibility and order
   const DEFAULT_LAYOUT_KEYS = ['paciente','anamnese','exame_pre','exames_comp','farmacos','vias_aereas','bloqueios','tempos','monitorizacao','intercorrencias','pos_operatorio','observacoes']
@@ -614,7 +616,7 @@ export default function FichaDetail() {
             <>
               {/* Screen: cards */}
               <div className="print-hide">
-                {Object.entries(groupedMeds).map(([phase, meds]) => (
+                {orderedPhases.map(([phase, meds]) => (
                   <div key={phase} className="mb-3 last:mb-0">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{phaseLabels[phase] || phase}</p>
                     {meds.map(m => (
@@ -655,7 +657,7 @@ export default function FichaDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(groupedMeds).flatMap(([phase, meds]) =>
+                    {orderedPhases.flatMap(([phase, meds]) =>
                       meds.map((m) => (
                         <tr key={m.id} style={{ borderBottom: '0.5pt solid #ddd' }}>
                           <td style={{ padding: '2.5pt 4pt', textAlign: 'left' }}>{phaseLabels[phase]}</td>
