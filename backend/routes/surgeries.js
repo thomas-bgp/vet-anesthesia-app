@@ -787,37 +787,29 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
 
     // Decrement stock if applicable
     if (medicine && decrement_stock && drug_source === 'proprio' && !isAE) {
-      if (medicine.current_stock < doseNum) {
-        // Rollback the surgery_medicine insert
-        await supabase.from('surgery_medicines').delete().eq('id', surgeryMedInserted.id);
-        return res.status(400).json({
-          error: 'Insufficient stock',
-          available: medicine.current_stock,
-          requested: doseNum,
+      if (medicine.current_stock >= doseNum) {
+        const unitCost = medicine.cost_per_unit;
+        const totalCost = doseNum * unitCost;
+
+        await supabase.from('stock_movements').insert({
+          medicine_id,
+          user_id: req.user.id,
+          type: 'usage',
+          quantity: doseNum,
+          unit_cost: unitCost,
+          total_cost: totalCost,
+          surgery_id: id,
+          notes: `Usado em cirurgia: ${surgery.procedure_name} - ${surgery.patient_name}`,
         });
+
+        await supabase
+          .from('medicines')
+          .update({
+            current_stock: medicine.current_stock - doseNum,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', medicine_id);
       }
-
-      const unitCost = medicine.cost_per_unit;
-      const totalCost = doseNum * unitCost;
-
-      await supabase.from('stock_movements').insert({
-        medicine_id,
-        user_id: req.user.id,
-        type: 'usage',
-        quantity: doseNum,
-        unit_cost: unitCost,
-        total_cost: totalCost,
-        surgery_id: id,
-        notes: `Usado em cirurgia: ${surgery.procedure_name} - ${surgery.patient_name}`,
-      });
-
-      await supabase
-        .from('medicines')
-        .update({
-          current_stock: medicine.current_stock - doseNum,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', medicine_id);
     }
 
     // Fetch the full surgery medicine record with joins

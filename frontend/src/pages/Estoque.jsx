@@ -322,7 +322,7 @@ export default function Estoque() {
         concentration: buildConc(addMedicineForm.concValue, addMedicineForm.concUnit),
         presentation_type: addMedicineForm.presentation_type,
         volume_ml: addMedicineForm.volume_ml ? parseFloat(addMedicineForm.volume_ml) : null,
-        unit: addMedicineForm.concValue ? addMedicineForm.concUnit : null,
+        unit: addMedicineForm.concValue ? addMedicineForm.concUnit : 'unidade',
         medicine_type: 'farmaco',
       })
       setSuccessMsg('Fármaco cadastrado!')
@@ -347,6 +347,7 @@ export default function Estoque() {
       concCustom: conc.custom || '',
       presentation_type: m.presentation_type || 'frasco',
       volume_ml: m.volume_ml ? String(m.volume_ml) : '',
+      originalUnit: m.unit || 'unidade',
     })
   }
 
@@ -360,7 +361,7 @@ export default function Estoque() {
         concentration: buildConc(editingMedicine.concValue, editingMedicine.concUnit),
         presentation_type: editingMedicine.presentation_type,
         volume_ml: editingMedicine.volume_ml ? parseFloat(editingMedicine.volume_ml) : null,
-        unit: editingMedicine.concValue ? editingMedicine.concUnit : null,
+        unit: editingMedicine.concValue ? editingMedicine.concUnit : (editingMedicine.originalUnit || 'unidade'),
         medicine_type: 'farmaco',
       })
       setSuccessMsg('Fármaco atualizado!')

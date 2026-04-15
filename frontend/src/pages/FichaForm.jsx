@@ -785,7 +785,7 @@ export default function FichaForm() {
           medicine_id: hasMed ? Number(drug.medicine_id) : null, custom_name: hasCustom ? drug.custom_name : null,
           dose: isAE ? 0 : Number(drug.dose), dose_unit: isAE ? 'AE' : resolvedUnit,
           route: resolvedRoute || null, administered_at: adminAt, drug_source: drug.drug_source, phase: drug.phase,
-          decrement_stock: false, infusion_minutes: drug.infusion_minutes || null,
+          infusion_minutes: drug.infusion_minutes || null,
         })
       }
 
