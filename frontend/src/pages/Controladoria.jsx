@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, X, Trash2, Zap, Settings, Save, TrendingUp, Target, Package, AlertTriangle, CheckCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, X, Trash2, Zap, Settings, Save, TrendingUp, Target, Package, AlertTriangle, CheckCircle, Wallet } from 'lucide-react'
+import FinancasPessoaisContent from './FinancasPessoais'
 import { BarChart, Bar, ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts'
 import api from '../api/axios'
 
@@ -31,7 +32,7 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Controladoria() {
-  const [tab, setTab] = useState('dre') // dre | analise | cadastro
+  const [tab, setTab] = useState('dre') // dre | analise | cadastro | pessoal
   const [month, setMonth] = useState(currentMonth())
   const [dre, setDre] = useState(null)
   const [costCenters, setCostCenters] = useState([])
@@ -107,9 +108,10 @@ export default function Controladoria() {
         <button onClick={() => setTab('dre')} className={`flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'dre' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>DRE</button>
         <button onClick={() => setTab('analise')} className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'analise' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}><TrendingUp size={14} /> Analise</button>
         <button onClick={() => setTab('cadastro')} className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'cadastro' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}><Settings size={14} /> Cadastro</button>
+        <button onClick={() => setTab('pessoal')} className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm font-medium rounded-lg min-h-[44px] transition ${tab === 'pessoal' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}><Wallet size={14} /> Pessoal</button>
       </div>
 
-      {tab === 'cadastro' ? <CadastroTab categories={categories} costCenters={costCenters} onUpdate={() => loadDre(month)} /> : tab === 'analise' ? <AnaliseTab /> : (
+      {tab === 'pessoal' ? <FinancasPessoaisContent embedded /> : tab === 'cadastro' ? <CadastroTab categories={categories} costCenters={costCenters} onUpdate={() => loadDre(month)} /> : tab === 'analise' ? <AnaliseTab /> : (
         <>
           {/* Month nav */}
           <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 px-4 py-3">

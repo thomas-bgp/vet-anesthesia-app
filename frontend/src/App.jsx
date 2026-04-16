@@ -15,6 +15,7 @@ import Financeiro from './pages/Financeiro'
 import AReceber from './pages/AReceber'
 import Controladoria from './pages/Controladoria'
 import Validar from './pages/Validar'
+import FinancasPessoais from './pages/FinancasPessoais'
 
 const router = createBrowserRouter([
   {
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
           { path: '/resumo', element: <Resumo /> },
           { path: '/financeiro', element: <Financeiro /> },
           { path: '/controladoria', element: <Controladoria /> },
+          { path: '/financas-pessoais', element: <FinancasPessoais /> },
           { path: '/perfil', element: <Perfil /> },
         ],
       },

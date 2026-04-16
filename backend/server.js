@@ -23,6 +23,7 @@ const receivablesRoutes = require('./routes/receivables');
 const expensesRoutes = require('./routes/expenses');
 const controladoriaRoutes = require('./routes/controladoria');
 const signatureRoutes = require('./routes/signature');
+const personalFinanceRoutes = require('./routes/personal-finance');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -114,6 +115,7 @@ app.use('/api/receivables', receivablesRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/controladoria', controladoriaRoutes);
 app.use('/api/signatures', signatureRoutes);
+app.use('/api/personal-finance', personalFinanceRoutes);
 
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {

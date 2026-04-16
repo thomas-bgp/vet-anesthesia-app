@@ -320,3 +320,75 @@ CREATE POLICY referrals_user_all ON referral_links FOR ALL USING (created_by = c
 
 ALTER TABLE document_signatures ENABLE ROW LEVEL SECURITY;
 CREATE POLICY signatures_user_all ON document_signatures FOR ALL USING (user_id = current_setting('app.user_id', true)::int);
+
+-- ─── Personal Finance ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS personal_settings (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) UNIQUE,
+  pro_labore REAL DEFAULT 0,
+  pro_labore_auto INTEGER DEFAULT 1,
+  currency TEXT DEFAULT 'BRL',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_personal_settings_user ON personal_settings(user_id);
+
+CREATE TABLE IF NOT EXISTS personal_transactions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  type TEXT NOT NULL CHECK(type IN ('receita', 'despesa')),
+  category TEXT NOT NULL,
+  description TEXT NOT NULL,
+  amount REAL NOT NULL,
+  date DATE NOT NULL,
+  is_recurring INTEGER DEFAULT 0,
+  recurring_day INTEGER,
+  source TEXT DEFAULT 'manual',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_personal_tx_user ON personal_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_personal_tx_date ON personal_transactions(user_id, date);
+
+CREATE TABLE IF NOT EXISTS personal_budgets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  category TEXT NOT NULL,
+  monthly_limit REAL NOT NULL,
+  month TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, category, month)
+);
+CREATE INDEX IF NOT EXISTS idx_personal_budgets_user ON personal_budgets(user_id);
+
+CREATE TABLE IF NOT EXISTS personal_goals (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  name TEXT NOT NULL,
+  target_amount REAL NOT NULL,
+  current_amount REAL DEFAULT 0,
+  deadline DATE,
+  icon TEXT DEFAULT 'piggy-bank',
+  color TEXT DEFAULT '#14b8a6',
+  is_completed INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_personal_goals_user ON personal_goals(user_id);
+
+ALTER TABLE personal_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY personal_settings_user_all ON personal_settings FOR ALL
+  USING (user_id = current_setting('app.user_id', true)::int);
+
+ALTER TABLE personal_transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY personal_tx_user_all ON personal_transactions FOR ALL
+  USING (user_id = current_setting('app.user_id', true)::int);
+
+ALTER TABLE personal_budgets ENABLE ROW LEVEL SECURITY;
+CREATE POLICY personal_budgets_user_all ON personal_budgets FOR ALL
+  USING (user_id = current_setting('app.user_id', true)::int);
+
+ALTER TABLE personal_goals ENABLE ROW LEVEL SECURITY;
+CREATE POLICY personal_goals_user_all ON personal_goals FOR ALL
+  USING (user_id = current_setting('app.user_id', true)::int);
