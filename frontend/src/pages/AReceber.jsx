@@ -179,9 +179,9 @@ export default function AReceber() {
                       </div>
                       <button
                         onClick={() => openPayModal(s)}
-                        className="shrink-0 flex items-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700 min-h-[40px]"
+                        className="shrink-0 flex items-center gap-1 px-3 py-2 border-2 border-dashed border-amber-400 text-amber-700 bg-amber-50 text-xs font-medium rounded-lg active:bg-amber-100 min-h-[40px]"
                       >
-                        <Check size={14} /> Pago
+                        <DollarSign size={14} /> Receber
                       </button>
                     </div>
                   ))}
