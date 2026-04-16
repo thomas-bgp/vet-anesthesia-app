@@ -102,13 +102,12 @@ router.get('/', authenticateToken, async (req, res) => {
     const byClinic = await queryRows(`
       SELECT
         COALESCE(s.clinic_name, 'Sem clínica') as clinic,
-        COUNT(DISTINCT s.id)::int as count,
-        COALESCE(SUM(DISTINCT s.revenue), 0)::numeric as total_revenue,
-        COALESCE(SUM(DISTINCT CASE WHEN s.paid = true THEN s.revenue ELSE 0 END), 0)::numeric as paid_revenue,
-        COALESCE(SUM(DISTINCT CASE WHEN COALESCE(s.paid, false) = false AND s.revenue > 0 THEN s.revenue ELSE 0 END), 0)::numeric as pending_revenue,
-        COALESCE(SUM(sm.total_cost), 0)::numeric as stock_cost
+        COUNT(*)::int as count,
+        COALESCE(SUM(s.revenue), 0)::numeric as total_revenue,
+        COALESCE(SUM(CASE WHEN s.paid = true THEN s.revenue ELSE 0 END), 0)::numeric as paid_revenue,
+        COALESCE(SUM(CASE WHEN COALESCE(s.paid, false) = false AND s.revenue > 0 THEN s.revenue ELSE 0 END), 0)::numeric as pending_revenue,
+        COALESCE((SELECT SUM(sm.total_cost) FROM stock_movements sm WHERE sm.surgery_id = ANY(array_agg(s.id)) AND sm.type = 'usage'), 0)::numeric as stock_cost
       FROM surgeries s
-      LEFT JOIN stock_movements sm ON sm.surgery_id = s.id AND sm.type = 'usage'
       WHERE s.user_id = $1 AND s.status != 'cancelled'
       GROUP BY COALESCE(s.clinic_name, 'Sem clínica')
       ORDER BY total_revenue DESC
