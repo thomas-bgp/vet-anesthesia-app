@@ -90,6 +90,7 @@ export default function AReceber() {
         start_time: quickForm.start_time ? quickForm.start_time + 'T12:00:00' : null,
         patient_species: 'Canino',
         status: 'completed',
+        idempotency_key: crypto.randomUUID(),
       })
       setShowQuickAdd(false)
       setQuickForm({ patient_name: '', procedure_name: '', clinic_name: '', revenue: '', start_time: new Date().toISOString().slice(0, 10) })

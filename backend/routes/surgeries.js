@@ -432,6 +432,19 @@ router.post('/', authenticateToken, async (req, res) => {
 
     const supabase = getSupabase();
 
+    // Idempotency: if client sent a key, check for existing surgery with same key
+    if (b.idempotency_key) {
+      const { data: existing } = await supabase
+        .from('surgeries')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .eq('idempotency_key', b.idempotency_key)
+        .maybeSingle();
+      if (existing) {
+        return res.status(201).json({ message: 'Surgery already created', surgery: existing });
+      }
+    }
+
     const fields = [
       'user_id', 'patient_name', 'patient_species', 'patient_breed', 'patient_weight', 'patient_age',
       'patient_sex', 'owner_name', 'owner_phone', 'procedure_name', 'asa_classification',
@@ -452,7 +465,7 @@ router.post('/', authenticateToken, async (req, res) => {
       'anesthesia_start', 'procedure_start', 'procedure_end', 'anesthesia_end',
       'extubation_time',
       'post_operative', 'recovery_quality',
-      'airway_other', 'ventilation_type', 'custom_vitals_params',
+      'airway_other', 'ventilation_type', 'custom_vitals_params', 'idempotency_key',
     ];
 
     const numericFields = new Set([

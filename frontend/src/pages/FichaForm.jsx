@@ -431,6 +431,7 @@ export default function FichaForm() {
   const initialLoadDone = useRef(false)
   const savingRef = useRef(false)
   const createdIdRef = useRef(null)
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
 
   const [showEmergency, setShowEmergency] = useState(false)
 
@@ -566,6 +567,7 @@ export default function FichaForm() {
       else {
         if (!payload.patient_name) payload.patient_name = 'Rascunho'
         if (!payload.procedure_name) payload.procedure_name = 'A definir'
+        payload.idempotency_key = idempotencyKeyRef.current
         const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId
       }
       clearDraftFromStorage(id); hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
@@ -733,7 +735,7 @@ export default function FichaForm() {
 
       let surgeryId = id || createdIdRef.current
       if (surgeryId) await api.put(`/surgeries/${surgeryId}`, payload)
-      else { const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId }
+      else { payload.idempotency_key = idempotencyKeyRef.current; const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId }
 
       for (const vital of vitals) {
         if (vital.fromServer && !vital.edited) continue
