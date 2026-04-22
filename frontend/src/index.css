@@ -108,6 +108,14 @@ html {
     position: static !important;
   }
 
+  /* Chromium pagination bug workaround: flex-col + break-inside: avoid nos cards
+     insere quebra de página espúria quando há poucos cards (ex.: ficha de eco).
+     Block flow não dispara o bug. Cards ficam em ordem de DOM; perde ordenação
+     custom via `order` no print, mas o default já é o esperado. */
+  .flex.flex-col.gap-3.max-w-lg.mx-auto {
+    display: block !important;
+  }
+
   /* ── Kill app container constraints ── */
   .max-w-lg { max-width: 100% !important; }
   .px-4 { padding-left: 0 !important; padding-right: 0 !important; }
