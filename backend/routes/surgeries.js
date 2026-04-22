@@ -104,11 +104,12 @@ router.get('/unpaid', authenticateToken, async (req, res) => {
   try {
     const surgeries = await queryRows(`
       SELECT id, patient_name, procedure_name, clinic_name, surgeon_name,
-             revenue, start_time, created_at, status, paid, paid_at,
-             (CURRENT_DATE - COALESCE(start_time, created_at)::date)::int as days_ago
+             revenue, start_time, created_at, status, paid, paid_at, due_date,
+             (CURRENT_DATE - COALESCE(start_time, created_at)::date)::int as days_ago,
+             CASE WHEN due_date IS NOT NULL THEN (due_date - CURRENT_DATE)::int END as days_to_due
       FROM surgeries
       WHERE user_id = $1 AND COALESCE(paid, false) = false AND status != 'cancelled' AND revenue > 0
-      ORDER BY clinic_name ASC, start_time DESC
+      ORDER BY clinic_name ASC, due_date ASC NULLS LAST, start_time DESC
     `, [req.user.id]);
 
     const byClinic = {};
@@ -451,6 +452,7 @@ router.post('/', authenticateToken, async (req, res) => {
       'fasting_solid_hours', 'fasting_liquid_hours', 'start_time',
       'pre_anesthesia', 'induction', 'maintenance', 'anesthesia_protocol',
       'clinic_name', 'surgeon_name', 'revenue', 'status', 'complications', 'monitoring_notes',
+      'due_date',
       'pathology', 'fasting_solid', 'fasting_liquid',
       'pre_existing_diseases', 'temperament', 'prior_medications', 'anamnesis_notes',
       'pre_acp', 'pre_fc', 'pre_fr', 'pre_mucosas', 'pre_tpc', 'pre_temperature',
@@ -541,6 +543,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       'pre_anesthesia', 'induction', 'maintenance', 'anesthesia_protocol',
       'monitoring_notes', 'complications', 'outcome',
       'clinic_name', 'surgeon_name', 'revenue', 'status',
+      'due_date',
       'pathology', 'fasting_solid', 'fasting_liquid',
       'pre_existing_diseases', 'temperament', 'prior_medications', 'anamnesis_notes',
       'pre_acp', 'pre_fc', 'pre_fr', 'pre_mucosas', 'pre_tpc', 'pre_temperature',

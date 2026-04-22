@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS surgeries (
   status TEXT DEFAULT 'scheduled',
   paid INTEGER DEFAULT 0,
   paid_at TIMESTAMPTZ,
+  due_date DATE,
   pathology TEXT,
   pre_existing_diseases TEXT,
   temperament TEXT,

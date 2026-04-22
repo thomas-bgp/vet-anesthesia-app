@@ -8,6 +8,19 @@ function daysBadge(days) {
   return 'bg-red-100 text-red-700'
 }
 
+function dueBadge(daysToDue) {
+  if (daysToDue < 0) return 'bg-red-100 text-red-700'
+  if (daysToDue <= 3) return 'bg-amber-100 text-amber-700'
+  return 'bg-green-100 text-green-700'
+}
+
+function dueLabel(daysToDue) {
+  if (daysToDue < 0) return `Vencido ${Math.abs(daysToDue)}d`
+  if (daysToDue === 0) return 'Vence hoje'
+  if (daysToDue === 1) return 'Vence amanhã'
+  return `Vence ${daysToDue}d`
+}
+
 export default function AReceber() {
   const [clinics, setClinics] = useState([])
   const [totalPending, setTotalPending] = useState(0)
@@ -28,6 +41,7 @@ export default function AReceber() {
     clinic_name: '',
     revenue: '',
     start_time: new Date().toISOString().slice(0, 10),
+    due_date: '',
   })
 
   // Pay modal
@@ -88,12 +102,13 @@ export default function AReceber() {
         clinic_name: quickForm.clinic_name.trim() || null,
         revenue: parseFloat(quickForm.revenue) || 0,
         start_time: quickForm.start_time ? quickForm.start_time + 'T12:00:00' : null,
+        due_date: quickForm.due_date || null,
         patient_species: 'Canino',
         status: 'completed',
         idempotency_key: crypto.randomUUID(),
       })
       setShowQuickAdd(false)
-      setQuickForm({ patient_name: '', procedure_name: '', clinic_name: '', revenue: '', start_time: new Date().toISOString().slice(0, 10) })
+      setQuickForm({ patient_name: '', procedure_name: '', clinic_name: '', revenue: '', start_time: new Date().toISOString().slice(0, 10), due_date: '' })
       load()
     } catch {}
     finally { setQuickSaving(false) }
@@ -169,10 +184,17 @@ export default function AReceber() {
                         <p className="text-xs text-slate-500 truncate">{s.procedure_name}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-[11px] text-slate-400">{fmtDate(s.start_time || s.created_at)}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5 ${daysBadge(s.days_ago)}`}>
-                            <Clock size={10} />
-                            {s.days_ago}d
-                          </span>
+                          {s.due_date != null ? (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5 ${dueBadge(s.days_to_due)}`}>
+                              <Clock size={10} />
+                              {dueLabel(s.days_to_due)}
+                            </span>
+                          ) : (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5 ${daysBadge(s.days_ago)}`}>
+                              <Clock size={10} />
+                              {s.days_ago}d
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -308,6 +330,12 @@ export default function AReceber() {
                     onChange={e => setQuickForm(f => ({ ...f, start_time: e.target.value }))}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Vence em <span className="text-slate-400 font-normal">(opcional)</span></label>
+                <input type="date" value={quickForm.due_date}
+                  onChange={e => setQuickForm(f => ({ ...f, due_date: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm min-h-[44px]" />
               </div>
             </div>
 
