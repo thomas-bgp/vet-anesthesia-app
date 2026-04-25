@@ -462,7 +462,6 @@ export default function FichaForm() {
   const idempotencyKeyRef = useRef(crypto.randomUUID())
 
   const [showEmergency, setShowEmergency] = useState(false)
-  const [signedLock, setSignedLock] = useState(null)
   const [conflictModal, setConflictModal] = useState(null)
   const conflictResolverRef = useRef(null)
 
@@ -697,10 +696,6 @@ export default function FichaForm() {
       const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
       setForm(f => ({ ...f, start_time: now.toISOString().slice(0, 16) })); initialLoadDone.current = true; return
     }
-    api.get(`/signatures/surgery/${id}`)
-      .then(res => { if (res.data?.signature) setSignedLock(res.data.signature) })
-      .catch(() => {})
-
     api.get(`/surgeries/${id}`)
       .then(res => {
         const s = res.data.surgery || res.data
@@ -939,29 +934,6 @@ export default function FichaForm() {
     </div>
   )
 
-  if (signedLock) {
-    return (
-      <div className="px-4 py-10 max-w-lg mx-auto">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-3">
-          <h2 className="text-base font-bold text-slate-800">Ficha assinada — edição bloqueada</h2>
-          <p className="text-sm text-slate-600">
-            Esta ficha foi assinada eletronicamente em {new Date(signedLock.signed_at).toLocaleString('pt-BR')} por{' '}
-            <strong>{signedLock.signer_name}</strong>{signedLock.signer_crmv ? ` (${signedLock.signer_crmv})` : ''}.
-            Editar a ficha invalidaria a assinatura, por isso a edição foi bloqueada.
-          </p>
-          <p className="text-sm text-slate-600">
-            Se houver erro na ficha assinada, crie uma nova ficha corrigida e apague (ou cancele) a anterior.
-          </p>
-          <div className="flex gap-2 pt-1">
-            <button type="button" onClick={() => navigate(`/fichas/${id}`)}
-              className="flex-1 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px]">Ver ficha</button>
-            <button type="button" onClick={() => navigate('/fichas')}
-              className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-medium rounded-xl active:bg-slate-300 min-h-[44px]">Voltar</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <form onSubmit={submit} className="pb-6">

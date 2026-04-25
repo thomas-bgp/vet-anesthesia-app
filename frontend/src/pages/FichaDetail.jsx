@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle
+  ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle, CheckCircle
 } from 'lucide-react'
 import api from '../api/axios'
 import { QRCodeSVG } from 'qrcode.react'
@@ -248,6 +248,7 @@ export default function FichaDetail() {
   // Electronic signature
   const [signature, setSignature] = useState(null)
   const [signing, setSigning] = useState(false)
+  const [showSignConfirm, setShowSignConfirm] = useState(false)
 
   // Online status for signature blocking
   const [isOnline, setIsOnline] = useState(navigator.onLine)
@@ -318,16 +319,22 @@ export default function FichaDetail() {
     }
   }
 
-  const handleSign = async () => {
+  // Two-step: button opens confirmation modal, modal triggers the actual API call.
+  // Print is intentionally NOT triggered here — it's a separate user action.
+  const openSignConfirm = () => {
     if (!navigator.onLine) {
       setError('A assinatura eletrônica requer conexão com a internet.')
       return
     }
+    setShowSignConfirm(true)
+  }
+
+  const handleConfirmSign = async () => {
     setSigning(true)
     try {
       const res = await api.post(`/signatures/sign/${id}`)
       setSignature(res.data.signature)
-      setTimeout(() => window.print(), 500)
+      setShowSignConfirm(false)
     } catch { setError('Erro ao assinar.') }
     finally { setSigning(false) }
   }
@@ -402,6 +409,31 @@ export default function FichaDetail() {
         <EmergencyModal surgery={surgery} onClose={() => setShowEmergency(false)} />
       )}
 
+      {/* Confirm-signature modal — separates the "I want to sign" intent from the actual API
+          call, prevents accidental signing, and keeps signing decoupled from PDF printing. */}
+      {showSignConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-no-print>
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-3">
+            <h3 className="text-base font-bold text-slate-800">Confirmar assinatura eletrônica</h3>
+            <p className="text-sm text-slate-600">
+              Esta ação cria uma assinatura digital com hash SHA-256 e código de verificação por QR code.
+              A ficha continua editável depois — alterações posteriores não invalidam o registro da assinatura,
+              mas o conteúdo da ficha pode divergir do que foi assinado.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setShowSignConfirm(false)} disabled={signing}
+                className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-medium rounded-xl active:bg-slate-300 min-h-[44px]">
+                Cancelar
+              </button>
+              <button type="button" onClick={handleConfirmSign} disabled={signing}
+                className="flex-1 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px] disabled:bg-slate-300">
+                {signing ? 'Assinando...' : 'Confirmar assinatura'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Inject theme color as CSS variable for print */}
       <style>{`
         :root { --print-theme: ${profile?.theme_color || '#19B5A0'}; }
@@ -452,29 +484,21 @@ export default function FichaDetail() {
             className="flex items-center justify-center gap-1 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg active:bg-red-700 min-h-[38px]">
             <AlertTriangle size={13} /> SOS
           </button>
-          {!signature ? (
-            <button onClick={handleSign} disabled={signing || !isOnline}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg min-h-[38px] ${!isOnline ? 'bg-slate-300 text-slate-500' : 'bg-teal-600 text-white active:bg-teal-700'}`}>
-              <Printer size={13} /> {signing ? 'Assinando...' : 'Assinar e Imprimir'}
-            </button>
-          ) : (
-            <button onClick={handlePrint}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
-              <Printer size={13} /> Imprimir
-              <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold ml-1">Assinado</span>
+          <button onClick={handlePrint}
+            className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
+            <Printer size={13} /> Imprimir
+            {signature && <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold ml-1">Assinado</span>}
+          </button>
+          {!signature && (
+            <button onClick={openSignConfirm} disabled={!isOnline}
+              className={`flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium rounded-lg min-h-[38px] ${!isOnline ? 'bg-slate-300 text-slate-500' : 'bg-teal-600 text-white active:bg-teal-700'}`}>
+              <CheckCircle size={13} /> Assinar
             </button>
           )}
-          {!signature ? (
-            <button onClick={() => navigate(`/fichas/${id}/edit`)}
-              className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
-              <Edit2 size={13} /> Editar
-            </button>
-          ) : (
-            <span title="Ficha assinada eletronicamente — edição bloqueada para preservar a assinatura."
-              className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg min-h-[38px] cursor-not-allowed">
-              <Edit2 size={13} /> Bloqueada
-            </span>
-          )}
+          <button onClick={() => navigate(`/fichas/${id}/edit`)}
+            className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
+            <Edit2 size={13} /> Editar
+          </button>
           <button onClick={handleDelete}
             className="flex items-center justify-center gap-1 px-3 py-2 bg-red-100 text-red-700 text-xs font-medium rounded-lg active:bg-red-200 min-h-[38px]">
             <Trash2 size={13} />

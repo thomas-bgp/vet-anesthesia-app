@@ -3,19 +3,6 @@ const router = express.Router();
 const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
-// Returns true if the surgery has any electronic signature recorded.
-async function surgeryIsSigned(supabase, surgeryId) {
-  const { data } = await supabase
-    .from('document_signatures')
-    .select('id')
-    .eq('surgery_id', surgeryId)
-    .limit(1)
-    .maybeSingle();
-  return !!data;
-}
-
-const SIGNED_LOCKED_MSG = 'Ficha já assinada eletronicamente. Edição bloqueada para preservar a integridade da assinatura.';
-
 // GET /api/surgeries - list with filters
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -405,10 +392,6 @@ router.post('/:id/vitals', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
-
     const {
       recorded_at,
       fc, fr, spo2, etco2, pam, pas, pad, temperature, notes,
@@ -463,10 +446,6 @@ router.delete('/:id/vitals/:vitalId', authenticateToken, async (req, res) => {
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
-    }
-
-    if (await surgeryIsSigned(supabase, req.params.id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
     }
 
     await supabase
@@ -602,10 +581,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Cannot update a cancelled surgery' });
     }
 
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
-
     const b = req.body;
 
     const updatableFields = [
@@ -693,10 +668,6 @@ router.put('/:id/start', authenticateToken, async (req, res) => {
       });
     }
 
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
-
     const startTime = req.body.start_time || new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     await supabase
@@ -742,10 +713,6 @@ router.put('/:id/end', authenticateToken, async (req, res) => {
       return res.status(400).json({
         error: `Cannot end surgery with status '${surgery.status}'. Surgery must be 'in_progress'.`,
       });
-    }
-
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
     }
 
     const endTime = req.body.end_time || new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -839,10 +806,6 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
 
     if (surgery.status === 'cancelled') {
       return res.status(400).json({ error: 'Cannot add medicines to a cancelled surgery' });
-    }
-
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
     }
 
     let medicine = null;
@@ -952,10 +915,6 @@ router.put('/:id/medicines/:medId', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Surgery not found' });
     }
 
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
-
     const updates = {};
     if (req.body.drug_source !== undefined) updates.drug_source = req.body.drug_source;
     if (req.body.dose !== undefined) updates.dose = parseFloat(req.body.dose);
@@ -998,10 +957,6 @@ router.delete('/:id/medicines/:medId', authenticateToken, async (req, res) => {
 
     if (!surgery) {
       return res.status(404).json({ error: 'Surgery not found' });
-    }
-
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
     }
 
     const { data: sm } = await supabase
@@ -1113,10 +1068,6 @@ router.post('/:id/disposables', authenticateToken, async (req, res) => {
 
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
 
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
-
     const { data: medicine } = await supabase
       .from('medicines')
       .select('*')
@@ -1196,10 +1147,6 @@ router.delete('/:id/disposables/:dispId', authenticateToken, async (req, res) =>
       .maybeSingle();
 
     if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
-
-    if (await surgeryIsSigned(supabase, id)) {
-      return res.status(423).json({ error: SIGNED_LOCKED_MSG, locked: true });
-    }
 
     const { data: sd } = await supabase
       .from('surgery_disposables')
