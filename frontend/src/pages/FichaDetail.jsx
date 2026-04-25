@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle
@@ -185,6 +185,54 @@ export default function FichaDetail() {
   const [vitals, setVitals] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Custom monitoring parameters added by the user during edit (e.g. PIP, ceta/lido/fenta).
+  // Stored on the surgery row as JSON: either { params, order } or a legacy bare array.
+  // FichaForm renders these dynamically; this page (which is also the print/PDF source) used
+  // to ignore them, so the columns vanished from the saved view and PDF.
+  const customParams = useMemo(() => {
+    if (!surgery?.custom_vitals_params) return []
+    try {
+      const parsed = typeof surgery.custom_vitals_params === 'string'
+        ? JSON.parse(surgery.custom_vitals_params)
+        : surgery.custom_vitals_params
+      if (Array.isArray(parsed)) return parsed
+      if (parsed && Array.isArray(parsed.params)) return parsed.params
+    } catch { /* ignore malformed JSON, fall through to empty */ }
+    return []
+  }, [surgery?.custom_vitals_params])
+
+  const paramOrder = useMemo(() => {
+    if (!surgery?.custom_vitals_params) return null
+    try {
+      const parsed = typeof surgery.custom_vitals_params === 'string'
+        ? JSON.parse(surgery.custom_vitals_params)
+        : surgery.custom_vitals_params
+      if (parsed && Array.isArray(parsed.order) && parsed.order.length > 0) return parsed.order
+    } catch { /* ignore */ }
+    return null
+  }, [surgery?.custom_vitals_params])
+
+  const mergedFields = useMemo(() => {
+    const standardByKey = Object.fromEntries(VITAL_FIELDS.map(f => [f.key, f]))
+    const customByKey = Object.fromEntries(
+      customParams.map(p => [p.key, { key: p.key, label: p.label, unit: p.unit || '', type: p.type || 'text', isCustom: true }])
+    )
+    if (paramOrder) {
+      const ordered = paramOrder.map(k => standardByKey[k] || customByKey[k]).filter(Boolean)
+      // Append any custom params missing from the order list (defensive)
+      for (const cp of customParams) if (!paramOrder.includes(cp.key)) ordered.push(customByKey[cp.key])
+      return ordered
+    }
+    return [...VITAL_FIELDS, ...customParams.map(p => customByKey[p.key])]
+  }, [customParams, paramOrder])
+
+  // Reads a custom param value from a vital row, parsing JSON if needed.
+  const customVal = (v, key) => {
+    let cp = v.custom_params
+    if (typeof cp === 'string') { try { cp = JSON.parse(cp) } catch { cp = {} } }
+    return (cp || {})[key] ?? ''
+  }
 
   // Vitals quick-add
   const [showVitals, setShowVitals] = useState(false)
@@ -725,20 +773,32 @@ export default function FichaDetail() {
           {showVitals && (
             <div className="bg-slate-50 rounded-lg p-3 mb-3 space-y-2" data-no-print>
               <div className="grid grid-cols-3 gap-2">
-                {VITAL_FIELDS.map(f => (
-                  <div key={f.key}>
-                    <label className="block text-[10px] font-medium text-slate-500 mb-0.5">{f.label}</label>
-                    <input
-                      type={f.type}
-                      inputMode={f.type === 'number' ? 'decimal' : 'text'}
-                      step="any"
-                      value={newVital[f.key] || ''}
-                      onChange={e => setNewVital(v => ({ ...v, [f.key]: e.target.value }))}
-                      placeholder={f.unit}
-                      className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
-                    />
-                  </div>
-                ))}
+                {mergedFields.map(f => {
+                  const isCustom = f.isCustom
+                  const val = isCustom
+                    ? ((newVital.custom_params || {})[f.key] || '')
+                    : (newVital[f.key] || '')
+                  const onChange = (e) => {
+                    const value = e.target.value
+                    setNewVital(v => isCustom
+                      ? ({ ...v, custom_params: { ...(v.custom_params || {}), [f.key]: value } })
+                      : ({ ...v, [f.key]: value }))
+                  }
+                  return (
+                    <div key={f.key}>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-0.5">{f.label}</label>
+                      <input
+                        type={f.type}
+                        inputMode={f.type === 'number' ? 'decimal' : 'text'}
+                        step="any"
+                        value={val}
+                        onChange={onChange}
+                        placeholder={f.unit}
+                        className="w-full px-2 py-2 border border-slate-200 rounded text-sm min-h-[40px]"
+                      />
+                    </div>
+                  )
+                })}
               </div>
               <div className="flex gap-2 pt-1">
                 <button type="button" onClick={() => { setShowVitals(false); setNewVital({}) }}
@@ -761,7 +821,7 @@ export default function FichaDetail() {
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left py-2 font-semibold text-slate-500 sticky left-0 bg-white">Hora</th>
-                    {VITAL_FIELDS.map(f => (
+                    {mergedFields.map(f => (
                       <th key={f.key} className="text-center py-2 font-semibold text-slate-500 px-1">{f.label}</th>
                     ))}
                     <th className="w-8" data-no-print></th>
@@ -771,7 +831,15 @@ export default function FichaDetail() {
                   {vitals.map((v, i) => (
                     <tr key={v.id || i} className="border-b border-slate-50">
                       <td className="py-2 font-mono text-slate-600 sticky left-0 bg-white">{fmtTime(v.recorded_at)}</td>
-                      {VITAL_FIELDS.map(f => {
+                      {mergedFields.map(f => {
+                        if (f.isCustom) {
+                          const val = customVal(v, f.key)
+                          return (
+                            <td key={f.key} className="py-2 text-center text-slate-700 px-1">
+                              {val !== '' ? val : '-'}
+                            </td>
+                          )
+                        }
                         const noteKeyMap = { pas: 'pas', fr: 'fr', temperature: 'temperature', o2_l_min: 'o2' }
                         const noteKey = noteKeyMap[f.key]
                         let pn = v.param_notes; if (typeof pn === 'string') { try { pn = JSON.parse(pn) } catch { pn = {} } }
