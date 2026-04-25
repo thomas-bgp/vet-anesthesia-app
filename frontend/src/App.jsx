@@ -16,6 +16,7 @@ import AReceber from './pages/AReceber'
 import Controladoria from './pages/Controladoria'
 import Validar from './pages/Validar'
 import FinancasPessoais from './pages/FinancasPessoais'
+import Rascunhos from './pages/Rascunhos'
 
 const router = createBrowserRouter([
   {
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
           { path: '/fichas/new', element: <FichaForm /> },
           { path: '/fichas/:id', element: <FichaDetail /> },
           { path: '/fichas/:id/edit', element: <FichaForm /> },
+          { path: '/rascunhos', element: <Rascunhos /> },
           { path: '/estoque', element: <Estoque /> },
           { path: '/compras', element: <Compras /> },
           { path: '/a-receber', element: <AReceber /> },

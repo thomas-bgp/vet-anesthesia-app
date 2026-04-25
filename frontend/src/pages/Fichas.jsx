@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Search, ChevronRight, FileEdit } from 'lucide-react'
+import { Plus, Search, ChevronRight, FileEdit, AlertTriangle } from 'lucide-react'
 import api from '../api/axios'
+import { countPendingSurgeries } from '../lib/draftStore'
 
 
 function getLocalDraft() {
@@ -22,6 +23,11 @@ export default function Fichas() {
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('data')
   const [localDraft] = useState(() => getLocalDraft())
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    countPendingSurgeries().then(setPendingCount).catch(() => {})
+  }, [location.key])
 
   useEffect(() => {
     setLoading(true)
@@ -98,6 +104,26 @@ export default function Fichas() {
           </button>
         ))}
       </div>
+
+      {/* Pending drafts banner — surfaces any surgery with un-synced local data so the user
+          can recover before the data is forgotten. See /rascunhos. */}
+      {pendingCount > 0 && (
+        <button
+          onClick={() => navigate('/rascunhos')}
+          className="w-full flex items-center gap-3 bg-amber-100 border-2 border-amber-400 rounded-xl p-3 active:bg-amber-200 transition text-left"
+        >
+          <div className="p-2 bg-amber-500 rounded-lg shrink-0">
+            <AlertTriangle size={18} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-amber-900 text-sm">
+              {pendingCount === 1 ? '1 ficha não sincronizada' : `${pendingCount} fichas não sincronizadas`}
+            </p>
+            <p className="text-xs text-amber-700">Toque para revisar e recuperar</p>
+          </div>
+          <ChevronRight size={18} className="text-amber-600 shrink-0" />
+        </button>
+      )}
 
       {/* Local draft banner */}
       {localDraft && (

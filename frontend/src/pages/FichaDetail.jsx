@@ -416,10 +416,17 @@ export default function FichaDetail() {
               <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold ml-1">Assinado</span>
             </button>
           )}
-          <button onClick={() => navigate(`/fichas/${id}/edit`)}
-            className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
-            <Edit2 size={13} /> Editar
-          </button>
+          {!signature ? (
+            <button onClick={() => navigate(`/fichas/${id}/edit`)}
+              className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
+              <Edit2 size={13} /> Editar
+            </button>
+          ) : (
+            <span title="Ficha assinada eletronicamente — edição bloqueada para preservar a assinatura."
+              className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg min-h-[38px] cursor-not-allowed">
+              <Edit2 size={13} /> Bloqueada
+            </span>
+          )}
           <button onClick={handleDelete}
             className="flex items-center justify-center gap-1 px-3 py-2 bg-red-100 text-red-700 text-xs font-medium rounded-lg active:bg-red-200 min-h-[38px]">
             <Trash2 size={13} />

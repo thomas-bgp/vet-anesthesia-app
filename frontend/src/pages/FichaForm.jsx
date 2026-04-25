@@ -4,8 +4,19 @@ import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check,
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import EmergencyModal from '../components/EmergencyModal'
+import {
+  appendSnapshot as idbAppendSnapshot,
+  markLatestAsSynced as idbMarkLatestAsSynced,
+  purgeSurgery as idbPurgeSurgery,
+  rekeySurgery as idbRekeySurgery,
+  makeSurgeryKey,
+} from '../lib/draftStore'
 
 // --- Auto-save helpers ---
+// localStorage is preserved as a fast path for the in-page restore banner. The durable journal
+// of snapshots lives in IndexedDB (see frontend/src/lib/draftStore.js) and is what the
+// /rascunhos page reads from. localStorage can be evicted by Safari ITP after 7 days, so it
+// must NEVER be the only place an in-progress ficha lives.
 const DRAFT_KEY_PREFIX = 'vetanestesia_draft_'
 const DRAFT_LIST_KEY = 'vetanestesia_drafts'
 
@@ -13,7 +24,7 @@ function getDraftKey(id) {
   return `${DRAFT_KEY_PREFIX}${id || 'new'}`
 }
 
-function saveDraftToStorage(id, data) {
+function saveDraftToStorage(id, data, opts = {}) {
   try {
     const key = getDraftKey(id)
     const draft = {
@@ -28,6 +39,13 @@ function saveDraftToStorage(id, data) {
     if (idx >= 0) list[idx] = entry; else list.push(entry)
     localStorage.setItem(DRAFT_LIST_KEY, JSON.stringify(list))
   } catch { /* storage full or unavailable */ }
+
+  // Durable journal in IndexedDB. Fire-and-forget — never block the UI on this. If it fails the
+  // localStorage write above is still our floor; if localStorage failed, IndexedDB still saves.
+  try {
+    idbAppendSnapshot(makeSurgeryKey(id), data, { source: opts.source || 'autosave' })
+      .catch((e) => console.error('[draftStore] appendSnapshot failed', e))
+  } catch (e) { console.error('[draftStore] appendSnapshot threw', e) }
 }
 
 function loadDraftFromStorage(id) {
@@ -44,6 +62,16 @@ function clearDraftFromStorage(id) {
     const list = JSON.parse(localStorage.getItem(DRAFT_LIST_KEY) || '[]')
     localStorage.setItem(DRAFT_LIST_KEY, JSON.stringify(list.filter(d => d.key !== key)))
   } catch { /* storage unavailable */ }
+}
+
+// Called after the server confirms a save (PUT/POST 2xx). Marks the latest IndexedDB snapshot
+// as synced and clears localStorage. Does NOT delete the journal — history is preserved so the
+// user can recover an earlier state from /rascunhos if a later edit goes wrong.
+async function markDraftSynced(id, serverSurgeryId) {
+  try {
+    await idbMarkLatestAsSynced(makeSurgeryKey(id), { serverSurgeryId: serverSurgeryId || null })
+  } catch (e) { console.error('[draftStore] markLatestAsSynced failed', e) }
+  clearDraftFromStorage(id)
 }
 
 // --- Constants ---
@@ -434,6 +462,9 @@ export default function FichaForm() {
   const idempotencyKeyRef = useRef(crypto.randomUUID())
 
   const [showEmergency, setShowEmergency] = useState(false)
+  const [signedLock, setSignedLock] = useState(null)
+  const [conflictModal, setConflictModal] = useState(null)
+  const conflictResolverRef = useRef(null)
 
   const [sections, setSections] = useState({
     paciente: true, anamnese: false, exame: false, exames_comp: false,
@@ -529,7 +560,10 @@ export default function FichaForm() {
   }
 
   const discardDraft = () => {
-    clearDraftFromStorage(id); setShowDraftBanner(false); setDraftData(null); initialLoadDone.current = true
+    clearDraftFromStorage(id)
+    // Explicit user discard: also purge the IndexedDB journal so /rascunhos doesn't keep showing it.
+    idbPurgeSurgery(makeSurgeryKey(id)).catch((e) => console.error('[draftStore] purgeSurgery failed', e))
+    setShowDraftBanner(false); setDraftData(null); initialLoadDone.current = true
   }
 
   useEffect(() => {
@@ -538,9 +572,62 @@ export default function FichaForm() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
 
+  // Defensive saves on lifecycle events the autosave debounce could miss: tab hide, app
+  // backgrounded, network back online. We deliberately bypass the 2s debounce here — these are
+  // the moments the OS is most likely to kill the page.
+  useEffect(() => {
+    const flushNow = () => {
+      if (!initialLoadDone.current) return
+      const data = {
+        form: formRef.current, drugs: drugsRef.current, blocks: blocksRef.current,
+        vitals: vitalsRef.current, complications: complicationsRef.current,
+        sections: sectionsRef.current, disposables: disposablesRef.current,
+        customParams: customParamsRef.current, paramOrder: paramOrderRef.current,
+        priorMeds: priorMedsRef.current,
+      }
+      saveDraftToStorage(id, data, { source: 'lifecycle' })
+    }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushNow() }
+    const onPageHide = () => flushNow()
+    const onOnline = () => flushNow()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [id])
+
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) => hasUnsavedChanges.current && currentLocation.pathname !== nextLocation.pathname
   )
+
+  // Checks for existing surgery of the same patient+procedure to prevent the
+  // accidental-duplicate pattern (creating a new ficha instead of editing).
+  const ensureNoConflict = async (patientName, procedureName) => {
+    const p = (patientName || '').trim()
+    const pr = (procedureName || '').trim()
+    if (!p || !pr) return { action: 'proceed' }
+    try {
+      const res = await api.get('/surgeries/check-conflict', { params: { patient_name: p, procedure_name: pr } })
+      const data = res.data || {}
+      if (data.conflict === 'none' || !data.existing) return { action: 'proceed' }
+      return await new Promise((resolve) => {
+        conflictResolverRef.current = resolve
+        setConflictModal({ type: data.conflict, existing: data.existing })
+      })
+    } catch { return { action: 'proceed' } }
+  }
+
+  const resolveConflict = (action) => {
+    const existingId = conflictModal?.existing?.id
+    const resolver = conflictResolverRef.current
+    conflictResolverRef.current = null
+    setConflictModal(null)
+    if (resolver) resolver({ action, existingId })
+  }
 
   const saveDraftToServer = async () => {
     if (savingRef.current) return
@@ -565,12 +652,31 @@ export default function FichaForm() {
       let surgeryId = id || createdIdRef.current
       if (surgeryId) { await api.put(`/surgeries/${surgeryId}`, payload) }
       else {
+        if (form.patient_name && form.procedure_name) {
+          const r = await ensureNoConflict(form.patient_name, form.procedure_name)
+          if (r.action === 'cancel') return
+          if (r.action === 'overwrite' && r.existingId) {
+            createdIdRef.current = r.existingId
+            surgeryId = r.existingId
+            await api.put(`/surgeries/${surgeryId}`, payload)
+            // The local journal was keyed under 'new' until now — re-key to the surgery we
+            // ended up overwriting so future restores find it.
+            await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
+            await markDraftSynced(surgeryId, surgeryId)
+            hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
+            if (!isEdit) navigate(`/fichas/${surgeryId}/edit`, { replace: true })
+            return
+          }
+        }
         if (!payload.patient_name) payload.patient_name = 'Rascunho'
         if (!payload.procedure_name) payload.procedure_name = 'A definir'
         payload.idempotency_key = idempotencyKeyRef.current
         const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId
+        // First POST just minted a real id — re-key the journal from 'new' to the actual id.
+        await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
       }
-      clearDraftFromStorage(id); hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
+      await markDraftSynced(surgeryId || id, surgeryId)
+      hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
       if (!isEdit) navigate(`/fichas/${surgeryId}/edit`, { replace: true })
     } catch (err) {
       if (!navigator.onLine) { setError('Sem conexão. Dados salvos localmente no celular.'); doAutoSave() }
@@ -591,6 +697,10 @@ export default function FichaForm() {
       const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
       setForm(f => ({ ...f, start_time: now.toISOString().slice(0, 16) })); initialLoadDone.current = true; return
     }
+    api.get(`/signatures/surgery/${id}`)
+      .then(res => { if (res.data?.signature) setSignedLock(res.data.signature) })
+      .catch(() => {})
+
     api.get(`/surgeries/${id}`)
       .then(res => {
         const s = res.data.surgery || res.data
@@ -735,7 +845,23 @@ export default function FichaForm() {
 
       let surgeryId = id || createdIdRef.current
       if (surgeryId) await api.put(`/surgeries/${surgeryId}`, payload)
-      else { payload.idempotency_key = idempotencyKeyRef.current; const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId }
+      else {
+        const r = await ensureNoConflict(form.patient_name, form.procedure_name)
+        if (r.action === 'cancel') { return }
+        if (r.action === 'overwrite' && r.existingId) {
+          createdIdRef.current = r.existingId
+          surgeryId = r.existingId
+          await api.put(`/surgeries/${surgeryId}`, payload)
+          await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
+        } else {
+          payload.idempotency_key = idempotencyKeyRef.current
+          const res = await api.post('/surgeries', payload)
+          surgeryId = res.data.surgery.id
+          createdIdRef.current = surgeryId
+          // First POST minted a real id — re-key the journal so future restores find it.
+          await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
+        }
+      }
 
       for (const vital of vitals) {
         if (vital.fromServer && !vital.edited) continue
@@ -797,7 +923,8 @@ export default function FichaForm() {
         await api.post(`/surgeries/${surgeryId}/disposables`, { medicine_id: Number(disp.medicine_id), quantity: Number(disp.quantity) || 1 })
       }
 
-      clearDraftFromStorage(id); hasUnsavedChanges.current = false
+      await markDraftSynced(surgeryId, surgeryId)
+      hasUnsavedChanges.current = false
       navigate(`/fichas/${surgeryId}`)
     } catch (err) {
       if (!navigator.onLine) { doAutoSave(); setError('Sem conexão. Dados salvos localmente. Tente novamente quando tiver internet.') }
@@ -812,8 +939,83 @@ export default function FichaForm() {
     </div>
   )
 
+  if (signedLock) {
+    return (
+      <div className="px-4 py-10 max-w-lg mx-auto">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-3">
+          <h2 className="text-base font-bold text-slate-800">Ficha assinada — edição bloqueada</h2>
+          <p className="text-sm text-slate-600">
+            Esta ficha foi assinada eletronicamente em {new Date(signedLock.signed_at).toLocaleString('pt-BR')} por{' '}
+            <strong>{signedLock.signer_name}</strong>{signedLock.signer_crmv ? ` (${signedLock.signer_crmv})` : ''}.
+            Editar a ficha invalidaria a assinatura, por isso a edição foi bloqueada.
+          </p>
+          <p className="text-sm text-slate-600">
+            Se houver erro na ficha assinada, crie uma nova ficha corrigida e apague (ou cancele) a anterior.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={() => navigate(`/fichas/${id}`)}
+              className="flex-1 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px]">Ver ficha</button>
+            <button type="button" onClick={() => navigate('/fichas')}
+              className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-medium rounded-xl active:bg-slate-300 min-h-[44px]">Voltar</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <form onSubmit={submit} className="pb-6">
+      {conflictModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-3">
+            {conflictModal.type === 'unsigned' ? (
+              <>
+                <h3 className="text-base font-bold text-slate-800">Já existe uma ficha deste procedimento</h3>
+                <p className="text-sm text-slate-600">
+                  Você já tem uma ficha de <strong>{conflictModal.existing.patient_name}</strong> com procedimento{' '}
+                  <strong>"{conflictModal.existing.procedure_name}"</strong> criada em{' '}
+                  {new Date(conflictModal.existing.created_at).toLocaleString('pt-BR')} e ainda <strong>não assinada</strong>.
+                  Deseja sobrepor (editar a existente)?
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button type="button" onClick={() => resolveConflict('overwrite')}
+                    className="w-full py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 min-h-[44px]">
+                    Sobrepor a ficha existente
+                  </button>
+                  <button type="button" onClick={() => resolveConflict('proceed')}
+                    className="w-full py-2.5 bg-slate-200 text-slate-700 text-sm font-medium rounded-xl active:bg-slate-300 min-h-[44px]">
+                    Criar uma nova mesmo assim
+                  </button>
+                  <button type="button" onClick={() => resolveConflict('cancel')}
+                    className="w-full py-2 text-slate-500 text-sm rounded-xl min-h-[40px]">
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-bold text-slate-800">Ficha deste procedimento já assinada</h3>
+                <p className="text-sm text-slate-600">
+                  Já existe uma ficha de <strong>{conflictModal.existing.patient_name}</strong> com procedimento{' '}
+                  <strong>"{conflictModal.existing.procedure_name}"</strong> que foi assinada em{' '}
+                  {new Date(conflictModal.existing.signed_at).toLocaleString('pt-BR')}.
+                  Recomendamos que você <strong>apague a ficha anterior</strong> antes de criar essa nova, para evitar duplicidade.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button type="button" onClick={() => resolveConflict('proceed')}
+                    className="w-full py-2.5 bg-amber-600 text-white text-sm font-medium rounded-xl active:bg-amber-700 min-h-[44px]">
+                    Criar nova mesmo assim
+                  </button>
+                  <button type="button" onClick={() => resolveConflict('cancel')}
+                    className="w-full py-2 text-slate-500 text-sm rounded-xl min-h-[40px]">
+                    Cancelar e revisar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {blocker.state === 'blocked' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-3">

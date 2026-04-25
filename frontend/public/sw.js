@@ -1,6 +1,8 @@
-const CACHE_NAME = 'anestify-v5';
+const CACHE_NAME = 'anestify-v6';
 const API_CACHE = 'anestify-api-v1';
 const OFFLINE_QUEUE_KEY = 'anestify_offline_queue';
+// Max retries before surfacing the request to the user instead of dropping silently.
+const MAX_QUEUE_RETRIES = 8;
 
 // Assets to cache on install
 const PRECACHE = [
@@ -84,6 +86,8 @@ async function flushQueue() {
 
     console.log(`[SW] Flushing ${items.length} queued requests`);
     const succeeded = [];
+    const retryUpdates = []; // { id, retry_count, last_status, last_error }
+    const stuck = [];        // items that exceeded MAX_QUEUE_RETRIES
 
     for (const item of items) {
       try {
@@ -92,30 +96,62 @@ async function flushQueue() {
           headers: item.headers,
           body: item.body,
         });
-        if (response.ok || response.status < 500) {
+        // CRITICAL: only 2xx counts as success. 4xx (validation/auth) and 5xx
+        // must remain in the queue so data is never silently dropped.
+        if (response.ok) {
           succeeded.push(item.id);
+        } else {
+          const nextRetry = (item.retry_count || 0) + 1;
+          if (nextRetry >= MAX_QUEUE_RETRIES) {
+            stuck.push({ id: item.id, status: response.status });
+          } else {
+            retryUpdates.push({ id: item.id, retry_count: nextRetry, last_status: response.status });
+          }
+          // 401/403 likely means auth expired — stop flushing now, let client re-auth
+          if (response.status === 401 || response.status === 403) break;
         }
       } catch {
-        // Still offline or server down, stop trying
+        // Network failure: keep item in queue, stop trying for now
         break;
       }
     }
 
-    // Remove succeeded items
-    if (succeeded.length > 0) {
+    // Apply updates: remove succeeded, bump retry counters on the rest.
+    if (succeeded.length > 0 || retryUpdates.length > 0) {
       const db2 = await openOfflineDB();
       const tx2 = db2.transaction('queue', 'readwrite');
       const store2 = tx2.objectStore('queue');
-      for (const id of succeeded) {
-        store2.delete(id);
+      for (const id of succeeded) store2.delete(id);
+      for (const upd of retryUpdates) {
+        const getReq = store2.get(upd.id);
+        await new Promise((resolve) => {
+          getReq.onsuccess = () => {
+            const row = getReq.result;
+            if (row) {
+              row.retry_count = upd.retry_count;
+              row.last_status = upd.last_status;
+              row.last_attempt_at = Date.now();
+              store2.put(row);
+            }
+            resolve();
+          };
+          getReq.onerror = () => resolve();
+        });
       }
       await new Promise((resolve) => { tx2.oncomplete = resolve; });
       db2.close();
+    }
 
-      // Notify clients
+    // Notify clients of progress (success + stuck items)
+    if (succeeded.length > 0 || stuck.length > 0) {
       const clients = await self.clients.matchAll();
       clients.forEach((client) => {
-        client.postMessage({ type: 'QUEUE_FLUSHED', count: succeeded.length });
+        client.postMessage({
+          type: 'QUEUE_FLUSHED',
+          count: succeeded.length,
+          stuck: stuck.length,
+          stuckItems: stuck,
+        });
       });
     }
   } catch (e) {
