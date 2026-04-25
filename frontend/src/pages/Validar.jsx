@@ -45,6 +45,43 @@ export default function Validar() {
   const meds = result?.medicines || []
   const vitals = result?.vitals || []
 
+  // Standard vitals columns + any custom params the clinician added during edit
+  // (e.g. PIP, ceta/lido/fenta). Without this the printed ficha and the QR validation page
+  // would silently drop the columns from the table.
+  const STANDARD_VITAL_COLS = [
+    { key: 'fc', label: 'FC' }, { key: 'fr', label: 'FR' }, { key: 'spo2', label: 'SpO2' },
+    { key: 'pas', label: 'PAS' }, { key: 'pam', label: 'PAM' }, { key: 'pad', label: 'PAD' },
+    { key: 'etco2', label: 'ETCO2' }, { key: 'temperature', label: 'T°C' },
+    { key: 'fluid_ml_kg_h', label: 'Fluido' }, { key: 'o2_l_min', label: 'O2' }, { key: 'anesthetic', label: 'Anest.' },
+  ]
+  let customParams = []
+  let paramOrder = null
+  if (s?.custom_vitals_params) {
+    try {
+      const parsed = typeof s.custom_vitals_params === 'string' ? JSON.parse(s.custom_vitals_params) : s.custom_vitals_params
+      if (Array.isArray(parsed)) customParams = parsed
+      else if (parsed && Array.isArray(parsed.params)) {
+        customParams = parsed.params
+        if (Array.isArray(parsed.order) && parsed.order.length > 0) paramOrder = parsed.order
+      }
+    } catch { /* malformed json — fall back to standard columns only */ }
+  }
+  const standardByKey = Object.fromEntries(STANDARD_VITAL_COLS.map(c => [c.key, c]))
+  const customByKey = Object.fromEntries(customParams.map(p => [p.key, { key: p.key, label: p.label, isCustom: true }]))
+  const mergedVitalCols = paramOrder
+    ? paramOrder.map(k => standardByKey[k] || customByKey[k]).filter(Boolean)
+    : [...STANDARD_VITAL_COLS, ...customParams.map(p => customByKey[p.key])]
+  // Ensure any custom param missing from order is still appended
+  for (const cp of customParams) if (!mergedVitalCols.some(c => c.key === cp.key)) mergedVitalCols.push(customByKey[cp.key])
+
+  const readVitalCell = (v, col) => {
+    if (!col.isCustom) return v[col.key] ?? '-'
+    let cp = v.custom_params
+    if (typeof cp === 'string') { try { cp = JSON.parse(cp) } catch { cp = {} } }
+    const val = (cp || {})[col.key]
+    return val !== undefined && val !== '' ? val : '-'
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -191,8 +228,8 @@ export default function Validar() {
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
                             <th className="text-left px-3 py-2 font-semibold text-slate-500">Hora</th>
-                            {['FC','FR','SpO2','PAS','PAM','PAD','ETCO2','T°C','Fluido','O2','Anest.'].map(h => (
-                              <th key={h} className="text-center px-1.5 py-2 font-semibold text-slate-500">{h}</th>
+                            {mergedVitalCols.map(c => (
+                              <th key={c.key} className="text-center px-1.5 py-2 font-semibold text-slate-500">{c.label}</th>
                             ))}
                           </tr>
                         </thead>
@@ -200,8 +237,8 @@ export default function Validar() {
                           {vitals.map((v, i) => (
                             <tr key={i} className="border-b border-slate-50">
                               <td className="px-3 py-1.5 font-mono text-slate-600">{fmtTime(v.recorded_at)}</td>
-                              {['fc','fr','spo2','pas','pam','pad','etco2','temperature','fluid_ml_kg_h','o2_l_min','anesthetic'].map(k => (
-                                <td key={k} className="text-center px-1.5 py-1.5 text-slate-700">{v[k] ?? '-'}</td>
+                              {mergedVitalCols.map(c => (
+                                <td key={c.key} className="text-center px-1.5 py-1.5 text-slate-700">{readVitalCell(v, c)}</td>
                               ))}
                             </tr>
                           ))}

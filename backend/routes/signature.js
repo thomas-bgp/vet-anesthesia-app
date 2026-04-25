@@ -150,7 +150,7 @@ router.get('/validate/:code', async (req, res) => {
               start_time, created_at, anesthesia_start, procedure_start, procedure_end, anesthesia_end,
               extubation_time, post_operative, recovery_quality, complications,
               pre_fc, pre_fr, pre_temperature, pre_pas, pre_mucosas, pre_tpc,
-              airway_type, tube_number, breathing_mode, block_type
+              airway_type, tube_number, breathing_mode, block_type, custom_vitals_params
        FROM surgeries WHERE id = $1`,
       [sig.surgery_id]
     );
@@ -165,7 +165,8 @@ router.get('/validate/:code', async (req, res) => {
     );
 
     const vitals = await queryRows(
-      `SELECT recorded_at, fc, fr, spo2, etco2, pas, pam, pad, temperature, fluid_ml_kg_h, o2_l_min, anesthetic
+      `SELECT recorded_at, fc, fr, spo2, etco2, pas, pam, pad, temperature, fluid_ml_kg_h, o2_l_min, anesthetic,
+              custom_params, param_notes
        FROM monitoring_vitals WHERE surgery_id = $1 ORDER BY recorded_at`,
       [sig.surgery_id]
     );
