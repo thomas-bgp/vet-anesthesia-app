@@ -120,6 +120,7 @@ export default function Estoque() {
   const [successMsg, setSuccessMsg] = useState('')
   const [expanded, setExpanded] = useState({})
   const [activeTab, setActiveTab] = useState('estoque')
+  const [showOkSection, setShowOkSection] = useState(true)
 
   // Purchases tab state
   const [purchases, setPurchases] = useState([])
@@ -141,8 +142,12 @@ export default function Estoque() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get('/bottles')
-      setBottles(res.data?.bottles || res.data || [])
+      // ?status=all so empty/expired bottles still come back — we need them to show "esgotado"
+      // groups at the top of the list. The frontend filters out 'discarded' below since those
+      // are explicit removals the user already chose to forget about.
+      const res = await api.get('/bottles', { params: { status: 'all' } })
+      const list = res.data?.bottles || res.data || []
+      setBottles(list.filter(b => b.status !== 'discarded'))
     } catch {
       setError('Erro ao carregar estoque.')
     } finally {
@@ -225,10 +230,36 @@ export default function Estoque() {
     }
   }
 
-  const groups = Object.values(grouped)
-    .filter(g => (g.sealed.length + g.opened.length) > 0) // hide if only discarded/empty/expired
+  // Classify each medicine group by urgency so the UI can surface what needs attention.
+  // "critical" = nothing usable (no opened, no sealed) OR opened bottle near empty (<5%)
+  // "warning"  = active stock <20% OR there's an opened bottle expiring within 7 days
+  // "ok"       = everything else
+  // Empty/expired bottles are kept on the group so the card can say "esgotado" instead of
+  // disappearing the whole row when stock runs out.
+  function classifyGroup(g) {
+    const active = g.sealed.length + g.opened.length
+    const pct = g.totalVolume > 0 ? (g.totalRemaining / g.totalVolume) * 100 : 0
+    if (active === 0) return 'critical'
+    if (g.opened.length > 0 && pct < 5) return 'critical'
+    if (pct < 20) return 'warning'
+    const soonMs = 7 * 86400000
+    const openedExpiringSoon = g.opened.some(b => {
+      const exp = b.expires_at || b.expiry_date
+      if (!exp) return false
+      const diff = new Date(exp).getTime() - Date.now()
+      return diff > 0 && diff < soonMs
+    })
+    if (openedExpiringSoon) return 'warning'
+    return 'ok'
+  }
+
+  const filteredGroups = Object.values(grouped)
     .filter(g => !search || g.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name))
+  const criticalGroups = filteredGroups.filter(g => classifyGroup(g) === 'critical')
+  const warningGroups = filteredGroups.filter(g => classifyGroup(g) === 'warning')
+  const okGroups = filteredGroups.filter(g => classifyGroup(g) === 'ok')
+  const groups = filteredGroups // kept for any leftover reference (empty state check below)
 
   const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }))
 
@@ -649,40 +680,70 @@ export default function Estoque() {
               <p className="text-slate-500 font-medium">Estoque vazio</p>
               <Link to="/compras" className="text-teal-600 text-sm font-medium">Registrar compra</Link>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {groups.map(g => {
-                const activeCount = g.sealed.length + g.opened.length
-                const pct = g.totalVolume > 0 ? Math.round((g.totalRemaining / g.totalVolume) * 100) : 0
-                const isOpen = expanded[g.medicine_id]
+          ) : (() => {
+            // Card renderer — defined inline so we can use it inside each section without
+            // duplicating ~200 lines. Returns plain JSX (not a component) so React reconciles
+            // each card by its `key` instead of treating "renderGroupCard" as a fresh type.
+            const renderGroupCard = (g, urgency) => {
+              const activeCount = g.sealed.length + g.opened.length
+              const pct = g.totalVolume > 0 ? Math.round((g.totalRemaining / g.totalVolume) * 100) : 0
+              const isOpen = expanded[g.medicine_id]
+              const isEsgotado = activeCount === 0
+              // Border color encodes urgency at a glance — same hierarchy Steve uses on the
+              // weather app's "today vs tomorrow" rows. Heavy enough to scan, not loud enough
+              // to feel like an alert overload.
+              const borderCls = urgency === 'critical'
+                ? 'border-red-300'
+                : urgency === 'warning' ? 'border-amber-300' : 'border-slate-200'
 
-                return (
-                  <div key={g.medicine_id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                    {/* Summary row */}
-                    <button onClick={() => toggle(g.medicine_id)} className="w-full px-4 py-3 active:bg-slate-50 min-h-[64px]">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <h3 className="text-sm font-semibold text-slate-800 truncate">{g.name}</h3>
-                          {g.concentration && <span className="text-[10px] text-slate-400 shrink-0">{g.concentration}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className="flex gap-1">
-                            {g.sealed.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">{g.sealed.length} selado{g.sealed.length > 1 ? 's' : ''}</span>}
-                            {g.opened.length > 0 && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{g.opened.length} aberto{g.opened.length > 1 ? 's' : ''}</span>}
-                          </div>
-                          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-                        </div>
+              return (
+                <div key={g.medicine_id} className={`bg-white rounded-xl border ${borderCls} overflow-hidden`}>
+                  {/* Summary row */}
+                  <button onClick={() => toggle(g.medicine_id)} className="w-full px-4 py-3 active:bg-slate-50 min-h-[64px] text-left">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-sm font-semibold text-slate-800 truncate">{g.name}</h3>
+                        {g.concentration && <span className="text-[10px] text-slate-400 shrink-0">{g.concentration}</span>}
                       </div>
-                      {/* Volume bar */}
-                      {g.totalVolume > 0 && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${pct > 50 ? 'bg-teal-500' : pct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className="text-[10px] text-slate-500 shrink-0 w-16 text-right">{g.totalRemaining.toFixed(0)}/{g.totalVolume.toFixed(0)} mL</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isEsgotado ? (
+                          <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold tracking-wide">ESGOTADO</span>
+                        ) : (
+                          <span className={`text-sm font-bold tabular-nums ${urgency === 'critical' ? 'text-red-700' : urgency === 'warning' ? 'text-amber-700' : 'text-slate-700'}`}>
+                            {g.totalRemaining.toFixed(0)}<span className="text-[10px] font-normal text-slate-400 ml-0.5">mL</span>
+                          </span>
+                        )}
+                        {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                      </div>
+                    </div>
+                    {/* Volume bar — hidden when esgotado since there's nothing to show. */}
+                    {!isEsgotado && g.totalVolume > 0 && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${pct > 50 ? 'bg-teal-500' : pct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
                         </div>
-                      )}
-                    </button>
+                        <span className="text-[10px] text-slate-500 shrink-0">{pct}%</span>
+                      </div>
+                    )}
+                    {/* Counter chips only matter when expanded — keep top row clean otherwise. */}
+                    {isOpen && (g.sealed.length > 0 || g.opened.length > 0) && (
+                      <div className="flex gap-1 mt-2">
+                        {g.opened.length > 0 && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{g.opened.length} aberto{g.opened.length > 1 ? 's' : ''}</span>}
+                        {g.sealed.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">{g.sealed.length} selado{g.sealed.length > 1 ? 's' : ''}</span>}
+                        {g.empty.length > 0 && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{g.empty.length} vazio{g.empty.length > 1 ? 's' : ''}</span>}
+                        {g.expired.length > 0 && <span className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full font-medium">{g.expired.length} vencido{g.expired.length > 1 ? 's' : ''}</span>}
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Quick CTA for esgotado — Steve's "obvious next action" principle. */}
+                  {isEsgotado && (
+                    <div className="px-4 pb-3 -mt-1">
+                      <Link to="/compras" className="block w-full text-center py-2.5 bg-red-600 text-white text-xs font-semibold rounded-lg active:bg-red-700 min-h-[40px]">
+                        + Adicionar frasco
+                      </Link>
+                    </div>
+                  )}
 
                     {/* Expanded: individual bottles */}
                     {isOpen && (
@@ -834,9 +895,53 @@ export default function Estoque() {
                     )}
                   </div>
                 )
-              })}
-            </div>
-          )}
+              }
+
+              return (
+                <div className="space-y-4">
+                  {/* Precisa repor — empty/very-low. Card vermelho com CTA. */}
+                  {criticalGroups.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Precisa repor</span>
+                        <span className="text-[11px] text-red-500">({criticalGroups.length})</span>
+                      </div>
+                      <div className="space-y-2">
+                        {criticalGroups.map(g => renderGroupCard(g, 'critical'))}
+                      </div>
+                    </section>
+                  )}
+                  {/* Atenção — baixo ou vencendo logo. */}
+                  {warningGroups.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Atenção</span>
+                        <span className="text-[11px] text-amber-500">({warningGroups.length})</span>
+                      </div>
+                      <div className="space-y-2">
+                        {warningGroups.map(g => renderGroupCard(g, 'warning'))}
+                      </div>
+                    </section>
+                  )}
+                  {/* Em estoque — colapsável; o que está OK não precisa competir por atenção. */}
+                  {okGroups.length > 0 && (
+                    <section>
+                      <button onClick={() => setShowOkSection(s => !s)} className="flex items-center gap-2 mb-2 px-1 active:opacity-60 min-h-[28px]">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Em estoque</span>
+                        <span className="text-[11px] text-slate-400">({okGroups.length})</span>
+                        {showOkSection ? <ChevronUp size={12} className="text-slate-400" /> : <ChevronDown size={12} className="text-slate-400" />}
+                      </button>
+                      {showOkSection && (
+                        <div className="space-y-2">
+                          {okGroups.map(g => renderGroupCard(g, 'ok'))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+                </div>
+              )
+            })()
+          }
         </>
       ) : (() => {
         const filteredPurchases = purchases.filter(p => {
