@@ -6,6 +6,109 @@ import { getConcUnits, addConcUnit, parseConc, buildConc } from '../concUnits'
 
 const fmt = (v) => `R$ ${(v || 0).toFixed(2).replace('.', ',')}`
 
+// Concentration field. Defined at module scope (NOT inside Estoque) so it isn't recreated on
+// every parent render — recreating it remounts the input, dropping focus and any in-flight edit.
+// That was the cause of "edit concentration doesn't save": each keystroke triggered a remount
+// before the change could propagate. See PROXIMOS_PASSOS.md notes from 2026-05-15.
+function ConcField({ value, unit, onChange, label = 'Concentração' }) {
+  const [adding, setAdding] = useState(false)
+  const [newUnitText, setNewUnitText] = useState('')
+  const [unitsList, setUnitsList] = useState(getConcUnits)
+  const confirmNewUnit = () => {
+    const t = newUnitText.trim()
+    if (t && addConcUnit(t)) setUnitsList(getConcUnits())
+    if (t) onChange({ concUnit: t })
+    setNewUnitText('')
+    setAdding(false)
+  }
+  return (
+    <div>
+      <label className="text-[10px] text-slate-500 mb-0.5 block">{label}</label>
+      <div className="flex gap-1">
+        <input type="number" step="any" value={value}
+          onChange={e => onChange({ concValue: e.target.value })}
+          placeholder="Ex: 10"
+          className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        {adding ? (
+          <div className="flex gap-0.5 items-center">
+            <input type="text" value={newUnitText}
+              onChange={e => setNewUnitText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmNewUnit()}
+              placeholder="Nova unidade" autoFocus
+              className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+            <button type="button" onClick={confirmNewUnit}
+              className="p-1 text-teal-600 active:text-teal-800"><Check size={14} /></button>
+            <button type="button" onClick={() => { setAdding(false); setNewUnitText('') }}
+              className="p-0.5 text-slate-400"><X size={12} /></button>
+          </div>
+        ) : (
+          <select value={unit}
+            onChange={e => { if (e.target.value === '__add__') { setAdding(true); setNewUnitText('') } else onChange({ concUnit: e.target.value }) }}
+            className="w-24 px-1 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
+            {unitsList.map(u => <option key={u}>{u}</option>)}
+            <option value="__add__">+ Nova</option>
+          </select>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Medicine form fields (used for both add and edit). Same reasoning as ConcField — must be at
+// module scope to keep its inputs stable across parent re-renders.
+function MedicineFormFields({ data, onChange, onSave, onCancel, saving, saveLabel }) {
+  return (
+    <div className="p-4 space-y-3 bg-white rounded-xl border border-slate-200">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Nome *</label>
+          <input type="text" value={data.name}
+            onChange={e => onChange({ name: e.target.value })}
+            placeholder="Nome do fármaco"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+        <div className="col-span-2">
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Princípio ativo</label>
+          <input type="text" value={data.active_principle}
+            onChange={e => onChange({ active_principle: e.target.value })}
+            placeholder="Princípio ativo"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+        <div className="col-span-2">
+          <ConcField value={data.concValue} unit={data.concUnit} onChange={onChange} />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Apresentação</label>
+          <select value={data.presentation_type}
+            onChange={e => onChange({ presentation_type: e.target.value })}
+            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
+            <option value="frasco">Frasco</option>
+            <option value="ampola">Ampola</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-500 mb-0.5 block">Volume/unid (mL)</label>
+          <input type="number" step="0.1" value={data.volume_ml}
+            onChange={e => onChange({ volume_ml: e.target.value })}
+            placeholder="Ex: 10"
+            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onSave} disabled={saving || !data.name.trim()}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-teal-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 min-h-[40px]">
+          <Save size={14} />
+          {saving ? 'Salvando...' : saveLabel}
+        </button>
+        <button onClick={onCancel}
+          className="py-2.5 px-4 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[40px]">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Estoque() {
   const [bottles, setBottles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -389,102 +492,6 @@ export default function Estoque() {
     !medicineSearch || (m.name || '').toLowerCase().includes(medicineSearch.toLowerCase()) ||
     (m.active_principle || '').toLowerCase().includes(medicineSearch.toLowerCase())
   ).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-
-  // Concentration field component for reuse
-  const [addingConcUnit, setAddingConcUnit] = useState(false)
-  const [newConcUnitText, setNewConcUnitText] = useState('')
-  const [concUnitsList, setConcUnitsList] = useState(getConcUnits)
-  const confirmNewConcUnit = (onSelect) => {
-    const t = newConcUnitText.trim()
-    if (t && addConcUnit(t)) setConcUnitsList(getConcUnits())
-    if (t) onSelect(t)
-    setNewConcUnitText('')
-    setAddingConcUnit(false)
-  }
-
-  const ConcField = ({ value, unit, onChange, label = 'Concentração' }) => (
-    <div>
-      <label className="text-[10px] text-slate-500 mb-0.5 block">{label}</label>
-      <div className="flex gap-1">
-        <input type="number" step="any" value={value}
-          onChange={e => onChange({ concValue: e.target.value })}
-          placeholder="Ex: 10"
-          className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-        {addingConcUnit ? (
-          <div className="flex gap-0.5 items-center">
-            <input type="text" value={newConcUnitText}
-              onChange={e => setNewConcUnitText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && confirmNewConcUnit(u => onChange({ concUnit: u }))}
-              placeholder="Nova unidade" autoFocus
-              className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-            <button type="button" onClick={() => confirmNewConcUnit(u => onChange({ concUnit: u }))}
-              className="p-1 text-teal-600 active:text-teal-800"><Check size={14} /></button>
-            <button type="button" onClick={() => { setAddingConcUnit(false); setNewConcUnitText('') }}
-              className="p-0.5 text-slate-400"><X size={12} /></button>
-          </div>
-        ) : (
-          <select value={unit}
-            onChange={e => { if (e.target.value === '__add__') { setAddingConcUnit(true); setNewConcUnitText('') } else onChange({ concUnit: e.target.value }) }}
-            className="w-24 px-1 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
-            {concUnitsList.map(u => <option key={u}>{u}</option>)}
-            <option value="__add__">+ Nova</option>
-          </select>
-        )}
-      </div>
-    </div>
-  )
-
-  // Medicine form fields (used for both add and edit)
-  const MedicineFormFields = ({ data, onChange, onSave, onCancel, saving, saveLabel }) => (
-    <div className="p-4 space-y-3 bg-white rounded-xl border border-slate-200">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="text-[10px] text-slate-500 mb-0.5 block">Nome *</label>
-          <input type="text" value={data.name}
-            onChange={e => onChange({ name: e.target.value })}
-            placeholder="Nome do fármaco"
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-        </div>
-        <div className="col-span-2">
-          <label className="text-[10px] text-slate-500 mb-0.5 block">Princípio ativo</label>
-          <input type="text" value={data.active_principle}
-            onChange={e => onChange({ active_principle: e.target.value })}
-            placeholder="Princípio ativo"
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-        </div>
-        <div className="col-span-2">
-          <ConcField value={data.concValue} unit={data.concUnit} onChange={onChange} />
-        </div>
-        <div>
-          <label className="text-[10px] text-slate-500 mb-0.5 block">Apresentação</label>
-          <select value={data.presentation_type}
-            onChange={e => onChange({ presentation_type: e.target.value })}
-            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px] bg-white">
-            <option value="frasco">Frasco</option>
-            <option value="ampola">Ampola</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-[10px] text-slate-500 mb-0.5 block">Volume/unid (mL)</label>
-          <input type="number" step="0.1" value={data.volume_ml}
-            onChange={e => onChange({ volume_ml: e.target.value })}
-            placeholder="Ex: 10"
-            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-sm min-h-[40px]" />
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={onSave} disabled={saving || !data.name.trim()}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-teal-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 min-h-[40px]">
-          <Save size={14} />
-          {saving ? 'Salvando...' : saveLabel}
-        </button>
-        <button onClick={onCancel}
-          className="py-2.5 px-4 border border-slate-200 text-slate-500 text-xs rounded-lg min-h-[40px]">
-          Cancelar
-        </button>
-      </div>
-    </div>
-  )
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
