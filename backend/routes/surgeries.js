@@ -2,6 +2,100 @@ const express = require('express');
 const router = express.Router();
 const { getSupabase, queryRows } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { computeMlUsed } = require('../utils/stockMath');
+
+// Marker stored in bottle_usages.notes so we can find the auto-debit row that belongs to a
+// specific surgery_medicines row, without requiring a schema migration. Format is stable —
+// changing it breaks idempotency and reverse-on-delete, so keep it.
+function autoDebitNote(surgeryMedicineId) {
+  return `auto-debit sm=${surgeryMedicineId}`;
+}
+
+// Try to draw `mlNeeded` from the user's oldest 'opened' bottle of `medicineId`. Best-effort:
+// records the usage, updates remaining_ml, marks 'empty' when it reaches zero. Never throws —
+// stock accuracy must not block saving a ficha (the surgical record is the source of truth).
+async function tryAutoDecrementBottle({ supabase, userId, medicineId, mlNeeded, surgeryId, surgeryMedicineId }) {
+  try {
+    if (!medicineId || !surgeryMedicineId || !(mlNeeded > 0)) return;
+
+    // Idempotency: if we've already auto-debited for this surgery_medicines row, skip.
+    const note = autoDebitNote(surgeryMedicineId);
+    const { data: existing } = await supabase
+      .from('bottle_usages')
+      .select('id')
+      .eq('surgery_id', surgeryId)
+      .eq('notes', note)
+      .limit(1);
+    if (existing && existing.length > 0) return;
+
+    const { data: bottles } = await supabase
+      .from('medicine_bottles')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('medicine_id', medicineId)
+      .eq('status', 'opened')
+      .gt('remaining_ml', 0)
+      .order('opened_at', { ascending: true, nullsFirst: false })
+      .limit(1);
+    if (!bottles || bottles.length === 0) return;
+
+    const bottle = bottles[0];
+    const drawn = Math.min(mlNeeded, bottle.remaining_ml);
+    const newRemaining = Math.max(0, bottle.remaining_ml - drawn);
+    const newStatus = newRemaining <= 0 ? 'empty' : 'opened';
+
+    await supabase
+      .from('medicine_bottles')
+      .update({ remaining_ml: newRemaining, status: newStatus })
+      .eq('id', bottle.id);
+
+    await supabase.from('bottle_usages').insert({
+      bottle_id: bottle.id,
+      surgery_id: surgeryId,
+      user_id: userId,
+      ml_used: drawn,
+      cost: drawn * (bottle.cost_per_ml || 0),
+      notes: note,
+    });
+  } catch (err) {
+    console.error('tryAutoDecrementBottle failed (non-fatal):', err);
+  }
+}
+
+async function tryRestoreBottle({ supabase, surgeryId, surgeryMedicineId }) {
+  try {
+    if (!surgeryMedicineId) return;
+    const note = autoDebitNote(surgeryMedicineId);
+    const { data: usages } = await supabase
+      .from('bottle_usages')
+      .select('*')
+      .eq('surgery_id', surgeryId)
+      .eq('notes', note);
+    if (!usages || usages.length === 0) return;
+    for (const u of usages) {
+      const { data: bottle } = await supabase
+        .from('medicine_bottles')
+        .select('remaining_ml, volume_ml, status')
+        .eq('id', u.bottle_id)
+        .maybeSingle();
+      if (!bottle) continue;
+      const restored = Math.min(bottle.volume_ml, bottle.remaining_ml + u.ml_used);
+      // If we restore liquid, the bottle is no longer empty.
+      const newStatus = bottle.status === 'empty' ? 'opened' : bottle.status;
+      await supabase
+        .from('medicine_bottles')
+        .update({ remaining_ml: restored, status: newStatus })
+        .eq('id', u.bottle_id);
+    }
+    await supabase
+      .from('bottle_usages')
+      .delete()
+      .eq('surgery_id', surgeryId)
+      .eq('notes', note);
+  } catch (err) {
+    console.error('tryRestoreBottle failed (non-fatal):', err);
+  }
+}
 
 // GET /api/surgeries - list with filters
 router.get('/', authenticateToken, async (req, res) => {
@@ -873,6 +967,27 @@ router.post('/:id/medicines', authenticateToken, async (req, res) => {
           })
           .eq('id', medicine_id);
       }
+
+      // Best-effort: also draw the equivalent volume from the user's oldest opened bottle so
+      // the visible "Estoque" tab reflects ficha usage. Only fires when dose+unit+concentration
+      // is enough to compute mL — otherwise the user still has to register the use manually.
+      const mlNeeded = computeMlUsed({
+        dose: doseNum,
+        dose_unit,
+        concentration_str: medicine.concentration,
+        patient_weight: surgery.patient_weight,
+        infusion_minutes,
+      });
+      if (mlNeeded > 0) {
+        await tryAutoDecrementBottle({
+          supabase,
+          userId: req.user.id,
+          medicineId: medicine_id,
+          mlNeeded,
+          surgeryId: id,
+          surgeryMedicineId: surgeryMedInserted.id,
+        });
+      }
     }
 
     // Fetch the full surgery medicine record with joins
@@ -1007,6 +1122,9 @@ router.delete('/:id/medicines/:medId', authenticateToken, async (req, res) => {
           .eq('id', movement.id);
       }
     }
+
+    // Refund the bottle if there was an auto-debit when this medicine was added to the ficha.
+    await tryRestoreBottle({ supabase, surgeryId: id, surgeryMedicineId: sm.id });
 
     await supabase
       .from('surgery_medicines')
