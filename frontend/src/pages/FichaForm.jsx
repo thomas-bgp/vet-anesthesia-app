@@ -771,6 +771,9 @@ export default function FichaForm() {
         const meds = res.data.medicines || []
         const grouped = { mpa: [], inducao: [], manutencao_inalatoria: [], manutencao_tiva: [], manutencao: [], infusao: [], transoperatorio: [], pos_operatorio: [] }
         meds.forEach(m => {
+          // Skip phase='bloqueio' meds — they're an internal shadow of block_type used only for
+          // stock auto-debit. The visible bloqueio UI is reconstructed from block_type JSON.
+          if (m.phase === 'bloqueio') return
           const phase = m.phase || 'mpa'
           const key = grouped[phase] !== undefined ? phase : 'mpa'
           const isAE = m.dose_unit === 'AE' || String(m.dose || '') === 'AE'
@@ -920,6 +923,33 @@ export default function FichaForm() {
         if (disp.existing) continue
         if (!disp.medicine_id) continue
         await api.post(`/surgeries/${surgeryId}/disposables`, { medicine_id: Number(disp.medicine_id), quantity: Number(disp.quantity) || 1 })
+      }
+
+      // Blocos: a fonte de verdade visual continua sendo o JSON em block_type. Mas pra fechar
+      // a conta do estoque, cada drug com medicine_id também vira surgery_medicines com
+      // phase='bloqueio' — daí o auto-debit FIFO do backend desconta do frasco. Replace pattern:
+      // limpa tudo e recria, evitando dedup por id (que blocks nem têm).
+      try {
+        await api.delete(`/surgeries/${surgeryId}/medicines/by-phase/bloqueio`)
+      } catch { /* non-fatal — POST abaixo ainda salva, só fica sem dedup */ }
+      const dateForBlocks = (form.start_time || new Date().toISOString()).slice(0, 10)
+      for (const block of blocks) {
+        const blockAdminAt = block.time ? `${dateForBlocks}T${block.time}` : null
+        for (const drug of (block.drugs || [])) {
+          if (!drug.medicine_id) continue // texto livre não desconta estoque
+          if (!drug.dose) continue
+          try {
+            await api.post(`/surgeries/${surgeryId}/medicines`, {
+              medicine_id: Number(drug.medicine_id),
+              dose: Number(drug.dose),
+              dose_unit: drug.dose_unit || 'mL',
+              route: 'Bloqueio',
+              administered_at: blockAdminAt,
+              drug_source: drug.drug_source || 'proprio',
+              phase: 'bloqueio',
+            })
+          } catch { /* per-drug failures don't block the save */ }
+        }
       }
 
       await markDraftSynced(surgeryId, surgeryId)
@@ -1277,9 +1307,21 @@ export default function FichaForm() {
                   <label className="block text-xs font-medium text-slate-500">Fármacos</label>
                   {(blk.drugs || []).map((drug, di) => (
                     <div key={di} className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <input type="text" value={drug.name || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, name: e.target.value } : d) } : item))} className={`${inp} flex-1`} placeholder="Fármaco" />
-                        {(blk.drugs || []).length > 1 && <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.filter((_, dIdx) => dIdx !== di) } : item))} className="p-1 text-slate-400 active:text-red-500 shrink-0"><X size={14} /></button>}
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 space-y-1">
+                          <select value={drug.medicine_id || ''} onChange={e => {
+                            const v = e.target.value
+                            const picked = v ? allMedicines.find(m => String(m.id) === v) : null
+                            setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, medicine_id: v || null, name: picked ? picked.name : d.name } : d) } : item))
+                          }} className={`${sel} w-full`}>
+                            <option value="">Selecione ou digite abaixo...</option>
+                            {allMedicines.map(m => <option key={m.id} value={m.id}>{m.name} {m.concentration || ''} {m.presentation_type === 'ampola' ? '(amp)' : ''}</option>)}
+                          </select>
+                          {!drug.medicine_id && (
+                            <input type="text" value={drug.name || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, name: e.target.value } : d) } : item))} className={inp} placeholder="Fármaco (fora do cadastro)" />
+                          )}
+                        </div>
+                        {(blk.drugs || []).length > 1 && <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.filter((_, dIdx) => dIdx !== di) } : item))} className="p-1 mt-2 text-slate-400 active:text-red-500 shrink-0"><X size={14} /></button>}
                       </div>
                       <div className="flex items-center gap-2">
                         <input type="text" inputMode="decimal" value={drug.dose || drug.dose_volume || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, drugs: item.drugs.map((d, dIdx) => dIdx === di ? { ...d, dose: e.target.value, dose_volume: '' } : d) } : item))} className={`${inp} flex-1`} placeholder="Dose" />

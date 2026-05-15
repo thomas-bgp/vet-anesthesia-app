@@ -1057,6 +1057,47 @@ router.put('/:id/medicines/:medId', authenticateToken, async (req, res) => {
   }
 });
 
+// DELETE /api/surgeries/:id/medicines/by-phase/:phase - bulk replace pattern.
+// Used by FichaForm.submit() before re-POSTing the current block drugs: by clearing all the
+// previous phase='bloqueio' rows we avoid duplicates without needing per-drug IDs (the source
+// of truth for blocks is the JSON in surgeries.block_type). Each row's auto-debit on a bottle
+// is restored via tryRestoreBottle before deletion, so the round-trip leaves stock consistent.
+router.delete('/:id/medicines/by-phase/:phase', authenticateToken, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { id, phase } = req.params;
+
+    const { data: surgery } = await supabase
+      .from('surgeries')
+      .select('id, status')
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (!surgery) return res.status(404).json({ error: 'Surgery not found' });
+
+    const { data: rows } = await supabase
+      .from('surgery_medicines')
+      .select('id')
+      .eq('surgery_id', id)
+      .eq('phase', phase);
+
+    for (const r of (rows || [])) {
+      await tryRestoreBottle({ supabase, surgeryId: id, surgeryMedicineId: r.id });
+    }
+
+    await supabase
+      .from('surgery_medicines')
+      .delete()
+      .eq('surgery_id', id)
+      .eq('phase', phase);
+
+    res.json({ message: 'Phase medicines cleared', removed: (rows || []).length });
+  } catch (err) {
+    console.error('Delete medicines by phase error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // DELETE /api/surgeries/:id/medicines/:medId - remove medicine from surgery
 router.delete('/:id/medicines/:medId', authenticateToken, async (req, res) => {
   try {

@@ -393,12 +393,16 @@ export default function FichaDetail() {
   const st = STATUS[surgery.status] || STATUS.scheduled
   const groupedMeds = {}
   medicines.forEach(m => {
+    // phase='bloqueio' rows are written by FichaForm.submit so the bottle auto-debit fires,
+    // but they're a duplicate of what the Bloqueios card already shows. Skip them here to
+    // avoid the same drug appearing twice in the printed ficha.
+    if (m.phase === 'bloqueio') return
     const phase = m.phase || 'mpa'
     if (!groupedMeds[phase]) groupedMeds[phase] = []
     groupedMeds[phase].push(m)
   })
   const phaseLabels = { mpa: 'MPA', inducao: 'Indução', manutencao: 'Manutenção', manutencao_inalatoria: 'Manut. Inalatória', manutencao_tiva: 'Manut. TIVA', infusao: 'Infusão Contínua', bloqueio: 'Bloqueio', transoperatorio: 'Trans-op', pos_operatorio: 'Pós-operatório' }
-  const PHASE_ORDER = ['mpa', 'inducao', 'manutencao_inalatoria', 'manutencao_tiva', 'manutencao', 'infusao', 'bloqueio', 'transoperatorio', 'pos_operatorio']
+  const PHASE_ORDER = ['mpa', 'inducao', 'manutencao_inalatoria', 'manutencao_tiva', 'manutencao', 'infusao', 'transoperatorio', 'pos_operatorio']
   const orderedPhases = PHASE_ORDER.filter(p => groupedMeds[p]).map(p => [p, groupedMeds[p]])
 
   // Layout configuration — determines section visibility and order
