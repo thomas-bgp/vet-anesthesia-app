@@ -389,6 +389,19 @@ export async function purgeSurgery(surgeryKey) {
 
   store(STORE_SURGERIES).delete(key);
   await awaitTx(t);
+
+  // Also clear the localStorage fallback. Without this, migrateFromLocalStorage on the next boot
+  // would re-import the localStorage draft and the "discarded" surgery would come back as a zombie.
+  try {
+    const lsKey = `vetanestesia_draft_${key}`;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(lsKey);
+      try {
+        const list = JSON.parse(localStorage.getItem('vetanestesia_drafts') || '[]');
+        localStorage.setItem('vetanestesia_drafts', JSON.stringify(list.filter((d) => d.key !== lsKey)));
+      } catch { /* malformed list — leave as is */ }
+    }
+  } catch { /* localStorage unavailable */ }
 }
 
 /**
