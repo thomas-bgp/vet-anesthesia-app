@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle, CheckCircle
 } from 'lucide-react'
@@ -179,12 +179,14 @@ function Card({ title, icon: Icon, children, ...rest }) {
 export default function FichaDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [surgery, setSurgery] = useState(null)
   const [medicines, setMedicines] = useState([])
   const [vitals, setVitals] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const autoPrintedRef = useRef(false)
 
   // Custom monitoring parameters added by the user during edit (e.g. PIP, ceta/lido/fenta).
   // Stored on the surgery row as JSON: either { params, order } or a legacy bare array.
@@ -282,6 +284,22 @@ export default function FichaDetail() {
   }
 
   useEffect(() => { load() }, [id])
+
+  // Auto-print when the URL has ?print=1 — used by the "Visualizar PDF" button in FichaForm,
+  // which saves and then redirects here so the user can review/print without leaving the editor.
+  // Guard with autoPrintedRef so re-renders or back-button doesn't re-trigger the dialog. Strip
+  // the param from the URL so a refresh doesn't print again.
+  useEffect(() => {
+    if (loading || !surgery) return
+    if (autoPrintedRef.current) return
+    if (searchParams.get('print') !== '1') return
+    autoPrintedRef.current = true
+    const next = new URLSearchParams(searchParams)
+    next.delete('print')
+    setSearchParams(next, { replace: true })
+    // Slight delay so layout settles (vitals tables, QR code) before the print snapshot.
+    setTimeout(() => window.print(), 300)
+  }, [loading, surgery, searchParams, setSearchParams])
 
   const addVitals = async () => {
     try {
@@ -667,6 +685,7 @@ export default function FichaDetail() {
               {parsedBlocks.map((blk, i) => (
                 <div key={i} className={`${i > 0 ? 'mt-3 pt-3 border-t border-slate-100' : ''}`}>
                   <InfoRow label="Tipo" value={blk.type === 'Outro' && blk.other_type ? `Outro: ${blk.other_type}` : blk.type} />
+                  {blk.time && <InfoRow label="Horário" value={blk.time} />}
                   {blk.drugs && Array.isArray(blk.drugs) ? (
                     blk.drugs.map((drug, di) => (
                       <div key={di} className="ml-2">

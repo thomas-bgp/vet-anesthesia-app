@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams, useBlocker } from 'react-router-dom'
-import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle, Printer } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import EmergencyModal from '../components/EmergencyModal'
@@ -815,8 +815,12 @@ export default function FichaForm() {
 
   const updateDrug = (phase, index, med) => { setDrugs(d => ({ ...d, [phase]: d[phase].map((m, i) => i === index ? { ...med, edited: med.existing ? true : med.edited } : m) })); hasUnsavedChanges.current = true }
   const removeDrug = (phase, index) => { setDrugs(d => ({ ...d, [phase]: d[phase].filter((_, i) => i !== index) })); hasUnsavedChanges.current = true }
-  const submit = async (e) => {
-    e.preventDefault()
+  // afterSave: 'detail' (default) navigates to /fichas/:id; 'print' navigates to /fichas/:id?print=1
+  // which auto-triggers window.print() once the detail page finishes loading. Used by the
+  // "Visualizar PDF" button so the user can review the printed ficha without leaving the editor.
+  const submit = async (e, opts = {}) => {
+    const afterSave = opts.afterSave || 'detail'
+    if (e && typeof e.preventDefault === 'function') e.preventDefault()
     if (savingRef.current) return
     setError('')
     if (!form.patient_name || !form.procedure_name) { setError('Preencha pelo menos o nome do paciente e o procedimento.'); window.scrollTo(0, 0); return }
@@ -920,7 +924,7 @@ export default function FichaForm() {
 
       await markDraftSynced(surgeryId, surgeryId)
       hasUnsavedChanges.current = false
-      navigate(`/fichas/${surgeryId}`)
+      navigate(afterSave === 'print' ? `/fichas/${surgeryId}?print=1` : `/fichas/${surgeryId}`)
     } catch (err) {
       if (!navigator.onLine) { doAutoSave(); setError('Sem conexão. Dados salvos localmente. Tente novamente quando tiver internet.') }
       else setError(err.response?.data?.error || 'Erro ao salvar ficha.')
@@ -1261,6 +1265,14 @@ export default function FichaForm() {
                   <div><label className="block text-xs font-medium text-slate-500 mb-1">Descrever tipo</label>
                     <input type="text" value={blk.other_type || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, other_type: e.target.value } : item))} className={inp} placeholder="Ex: TAP block, RUMM..." /></div>
                 )}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Horário</label>
+                  <div className="flex items-center gap-2">
+                    <input type="time" value={blk.time || ''} onChange={e => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, time: e.target.value } : item))} className={`${inp} flex-1`} />
+                    <button type="button" onClick={() => setBlocks(b => b.map((item, idx) => idx === i ? { ...item, time: currentTimeHHMM() } : item))}
+                      className="px-3 py-2 text-xs font-medium rounded-lg bg-slate-100 text-slate-600 active:bg-slate-200 min-h-[40px] shrink-0">Agora</button>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <label className="block text-xs font-medium text-slate-500">Fármacos</label>
                   {(blk.drugs || []).map((drug, di) => (
@@ -1298,7 +1310,7 @@ export default function FichaForm() {
                 </div>
               </div>
             ))}
-            <button type="button" onClick={() => setBlocks(b => [...b, { type: '', other_type: '', drugs: [{ name: '', dose: '', dose_unit: 'mg/kg' }] }])}
+            <button type="button" onClick={() => setBlocks(b => [...b, { type: '', other_type: '', time: '', drugs: [{ name: '', dose: '', dose_unit: 'mg/kg' }] }])}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-teal-400 text-teal-600 text-xs font-medium rounded-lg active:bg-teal-50 min-h-[44px]"><Plus size={14} /> Adicionar bloqueio</button>
           </div>
         </Section>}
@@ -1487,10 +1499,16 @@ export default function FichaForm() {
           <Field label="Observações gerais"><textarea name="monitoring_notes" value={form.monitoring_notes} onChange={handle} rows={4} className={inp} /></Field>
         </Section>}
 
-        <button type="submit" disabled={saving}
-          className="w-full flex items-center justify-center gap-2 py-3.5 bg-teal-600 text-white font-medium rounded-xl active:bg-teal-700 transition min-h-[52px] text-sm">
-          {saving ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <><Save size={18} />Salvar Ficha</>}
-        </button>
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-teal-600 text-white font-medium rounded-xl active:bg-teal-700 transition min-h-[52px] text-sm">
+            {saving ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <><Save size={18} />Salvar Ficha</>}
+          </button>
+          <button type="button" disabled={saving} onClick={() => submit(null, { afterSave: 'print' })}
+            className="flex items-center justify-center gap-2 px-4 py-3.5 bg-slate-200 text-slate-700 font-medium rounded-xl active:bg-slate-300 transition min-h-[52px] text-sm disabled:opacity-50">
+            <Printer size={18} />Visualizar PDF
+          </button>
+        </div>
       </div>
     </form>
   )
