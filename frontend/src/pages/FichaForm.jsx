@@ -865,20 +865,28 @@ export default function FichaForm() {
         }
       }
 
+      // Por-vital try/catch: um vital com valor que o backend rejeita (ex: decimal num campo
+      // que ainda é integer no schema) não pode derrubar o save da ficha inteira. O draft
+      // local preserva o que não foi pra cima.
+      const vitalsFailures = []
       for (const vital of vitals) {
         if (vital.fromServer && !vital.edited) continue
-        // If edited from server, delete old and recreate
-        if (vital.fromServer && vital.edited) {
-          try { await api.delete(`/surgeries/${surgeryId}/vitals/${vital.id}`) } catch {}
+        try {
+          if (vital.fromServer && vital.edited) {
+            try { await api.delete(`/surgeries/${surgeryId}/vitals/${vital.id}`) } catch {}
+          }
+          await api.post(`/surgeries/${surgeryId}/vitals`, {
+            recorded_at: vital.recorded_at, fc: vital.fc || null, fr: vital.fr || null,
+            spo2: vital.spo2 || null, etco2: vital.etco2 || null,
+            pas: vital.pas || null, pam: vital.pam || null, pad: vital.pad || null,
+            temperature: vital.temperature || null, fluid_ml_kg_h: vital.fluid_ml_kg_h || null,
+            anesthetic: vital.anesthetic || null, o2_l_min: vital.o2_l_min || null,
+            notes: vital.notes || null, custom_params: vital.custom_params || null, param_notes: vital.param_notes || null,
+          })
+        } catch (vitalErr) {
+          vitalsFailures.push({ recorded_at: vital.recorded_at, err: vitalErr?.response?.data?.error || vitalErr?.message })
+          console.error('Falha ao salvar vital:', vital, vitalErr)
         }
-        await api.post(`/surgeries/${surgeryId}/vitals`, {
-          recorded_at: vital.recorded_at, fc: vital.fc || null, fr: vital.fr || null,
-          spo2: vital.spo2 || null, etco2: vital.etco2 || null,
-          pas: vital.pas || null, pam: vital.pam || null, pad: vital.pad || null,
-          temperature: vital.temperature || null, fluid_ml_kg_h: vital.fluid_ml_kg_h || null,
-          anesthetic: vital.anesthetic || null, o2_l_min: vital.o2_l_min || null,
-          notes: vital.notes || null, custom_params: vital.custom_params || null, param_notes: vital.param_notes || null,
-        })
       }
 
       const allDrugs = [

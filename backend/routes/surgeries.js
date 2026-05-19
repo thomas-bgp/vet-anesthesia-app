@@ -494,23 +494,37 @@ router.post('/:id/vitals', authenticateToken, async (req, res) => {
       param_notes,
     } = req.body;
 
+    // Strings vindas do form (ex: "1.5") quebram o INSERT direto: fc/fr são integer no
+    // schema, demais numéricos são real. Parse defensivo aqui evita 500 e preserva o save
+    // da ficha mesmo quando a usuária digita decimal num campo inteiro. fc/fr ainda
+    // arredondam até a coluna virar real no Supabase.
+    const numOrNull = (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const intOrNull = (v) => {
+      const n = numOrNull(v);
+      return n === null ? null : Math.round(n);
+    };
+
     const { data: vital, error } = await supabase
       .from('monitoring_vitals')
       .insert({
         surgery_id: id,
         recorded_at: recorded_at || new Date().toISOString(),
-        fc: fc || null,
-        fr: fr || null,
-        spo2: spo2 || null,
-        etco2: etco2 || null,
-        pam: pam || null,
-        pas: pas || null,
-        pad: pad || null,
-        temperature: temperature || null,
+        fc: intOrNull(fc),
+        fr: intOrNull(fr),
+        spo2: numOrNull(spo2),
+        etco2: numOrNull(etco2),
+        pam: numOrNull(pam),
+        pas: numOrNull(pas),
+        pad: numOrNull(pad),
+        temperature: numOrNull(temperature),
         notes: notes || null,
-        fluid_ml_kg_h: fluid_ml_kg_h || null,
+        fluid_ml_kg_h: numOrNull(fluid_ml_kg_h),
         anesthetic: anesthetic || null,
-        o2_l_min: o2_l_min || null,
+        o2_l_min: numOrNull(o2_l_min),
         custom_params: custom_params ? (typeof custom_params === 'string' ? custom_params : JSON.stringify(custom_params)) : null,
         param_notes: param_notes ? (typeof param_notes === 'string' ? param_notes : JSON.stringify(param_notes)) : null,
       })
