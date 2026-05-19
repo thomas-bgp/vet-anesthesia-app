@@ -1,11 +1,16 @@
-// Local-first draft store for surgery fichas.
+// Local-first store for surgery fichas.
 //
-// Why this exists: see PROXIMOS_PASSOS.md → Sprint 0. localStorage is unreliable on iOS Safari
-// (7-day eviction, quota pressure) and stored a single overwriting key per surgery, so any bug
-// could wipe hours of in-surgery data. This module replaces that with an IndexedDB journal of
-// snapshots, plus a per-surgery metadata index. Only the snapshots reaching the server through
-// confirmed PUT/POST get marked as `synced`; everything else stays on the device until the user
-// either restores it or explicitly discards it.
+// Conceitualmente, NÃO existe "rascunho" e "ficha". Existe só uma ficha — ela nasce no
+// dispositivo e tenta se sincronizar com o servidor; se cair, fica no celular até subir. Esta
+// camada é a durabilidade local (IndexedDB journal de snapshots + metadata por ficha), e o
+// servidor é a eventual consistency. A UI mostra um único conceito ("Ficha") com um indicador
+// inline de status de sync — nada de páginas separadas pra "rascunhos".
+//
+// Por que existe: ver PROXIMOS_PASSOS.md → Sprint 0. localStorage é instável no iOS Safari (7d
+// eviction, pressure de quota) e guardava só 1 chave por ficha — qualquer bug podia apagar horas
+// de dados de cirurgia. Aqui temos journal append-only, snapshot anti-zero, e idempotency_key
+// estável por ficha (não muda entre remounts do FichaForm — evita duplicidade quando POST cai e
+// o usuário reabre o app).
 
 const DB_NAME = 'vetanestesia_drafts';
 const DB_VERSION = 1;
@@ -255,8 +260,8 @@ export async function listSnapshots(surgeryKey) {
 }
 
 /**
- * Lists every surgery that has at least one snapshot whose syncStatus is not 'synced'. This
- * powers the "Rascunhos" page badge.
+ * Lists every surgery that has at least one snapshot whose syncStatus is not 'synced'. Mantido
+ * para diagnóstico interno; a UI atual usa `listAllFichaKeys` para mesclar com a lista server.
  */
 export async function listPendingSurgeries() {
   const db = await openDB();
@@ -276,10 +281,91 @@ export async function listPendingSurgeries() {
   return all.sort((a, b) => (b.lastEditAt || '').localeCompare(a.lastEditAt || ''));
 }
 
-/** Total count of pending surgeries — used for the nav badge. Cheap call. */
+/** Total count of pending surgeries — usado só por diagnóstico. UI não exibe mais. */
 export async function countPendingSurgeries() {
   const list = await listPendingSurgeries();
   return list.length;
+}
+
+/**
+ * Lista TODAS as fichas conhecidas localmente (independente de sync status). Usada por /fichas
+ * para mesclar com a lista do servidor — sem essa união, fichas criadas offline ficavam
+ * invisíveis até subir.
+ */
+export async function listAllFichaKeys() {
+  const db = await openDB();
+  const { t, store } = tx(db, [STORE_SURGERIES], 'readonly');
+  const all = await new Promise((resolve) => {
+    const acc = [];
+    const req = store(STORE_SURGERIES).openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return resolve(acc);
+      acc.push(cursor.value);
+      cursor.continue();
+    };
+    req.onerror = () => resolve(acc);
+  });
+  await awaitTx(t);
+  return all.sort((a, b) => (b.lastEditAt || '').localeCompare(a.lastEditAt || ''));
+}
+
+/**
+ * Devolve a metadata local de uma ficha (incluindo idempotencyKey e lastEditAt). null se nunca
+ * houve snapshot dela neste dispositivo.
+ */
+export async function getFichaMeta(surgeryKey) {
+  const key = makeSurgeryKey(surgeryKey);
+  const db = await openDB();
+  const { t, store } = tx(db, [STORE_SURGERIES], 'readonly');
+  const meta = await new Promise((resolve) => {
+    const req = store(STORE_SURGERIES).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+  });
+  await awaitTx(t);
+  return meta;
+}
+
+/**
+ * Pega (ou cria, se não existir) o idempotency_key da ficha. Esse key precisa ser ESTÁVEL pela
+ * vida da ficha local — não pode mudar entre remounts do FichaForm, senão um POST que cai +
+ * usuário reabrindo o app gera 2 fichas no servidor.
+ *
+ * O key é guardado no metadata da surgery em STORE_SURGERIES. Se já existe, retornamos. Se não,
+ * geramos um UUID e gravamos.
+ */
+export async function getStableIdempotencyKey(surgeryKey) {
+  const key = makeSurgeryKey(surgeryKey);
+  const db = await openDB();
+
+  // Primeiro tenta ler
+  const existing = await new Promise((resolve) => {
+    const { t, store } = tx(db, [STORE_SURGERIES], 'readonly');
+    const req = store(STORE_SURGERIES).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+    awaitTx(t).catch(() => {});
+  });
+  if (existing?.idempotencyKey) return existing.idempotencyKey;
+
+  // Não existe — gera e grava
+  const newKey =
+    (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+    `key-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const { t, store } = tx(db, [STORE_SURGERIES], 'readwrite');
+  await new Promise((resolve) => {
+    const getReq = store(STORE_SURGERIES).get(key);
+    getReq.onsuccess = () => {
+      const meta = getReq.result || { surgeryKey: key, lastEditAt: null, lastSyncStatus: 'pending' };
+      meta.idempotencyKey = newKey;
+      store(STORE_SURGERIES).put(meta);
+      resolve();
+    };
+    getReq.onerror = () => resolve();
+  });
+  await awaitTx(t);
+  return newKey;
 }
 
 /**

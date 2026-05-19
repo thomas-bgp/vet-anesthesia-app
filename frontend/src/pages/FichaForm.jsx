@@ -7,8 +7,8 @@ import EmergencyModal from '../components/EmergencyModal'
 import {
   appendSnapshot as idbAppendSnapshot,
   markLatestAsSynced as idbMarkLatestAsSynced,
-  purgeSurgery as idbPurgeSurgery,
   rekeySurgery as idbRekeySurgery,
+  getStableIdempotencyKey as idbGetStableIdempotencyKey,
   makeSurgeryKey,
 } from '../lib/draftStore'
 
@@ -449,8 +449,6 @@ export default function FichaForm() {
     })
   }
 
-  const [showDraftBanner, setShowDraftBanner] = useState(false)
-  const [draftData, setDraftData] = useState(null)
   const [autoSaveStatus, setAutoSaveStatus] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [savingDraft, setSavingDraft] = useState(false)
@@ -459,7 +457,28 @@ export default function FichaForm() {
   const initialLoadDone = useRef(false)
   const savingRef = useRef(false)
   const createdIdRef = useRef(null)
-  const idempotencyKeyRef = useRef(crypto.randomUUID())
+  // idempotency_key precisa ser ESTÁVEL ao longo da vida da ficha (não muda entre remounts):
+  // POST que cai + usuário reabre o app não pode gerar 2 fichas. O key vive no IndexedDB
+  // metadata da ficha (getStableIdempotencyKey). Hidratado abaixo no useEffect inicial e
+  // garantido por ensureIdempotencyKey() antes de qualquer POST.
+  const idempotencyKeyRef = useRef(null)
+  const ensureIdempotencyKey = useCallback(async () => {
+    if (idempotencyKeyRef.current) return idempotencyKeyRef.current
+    try {
+      const key = await idbGetStableIdempotencyKey(makeSurgeryKey(id))
+      idempotencyKeyRef.current = key
+      return key
+    } catch (e) {
+      // Fallback de emergência: gera um aqui. Não é tão bom (perde estabilidade entre remounts
+      // se IndexedDB voltar a funcionar), mas é melhor do que enviar null e causar duplicata.
+      console.error('[idempotency] fallback to in-memory key:', e)
+      const fallback = (crypto?.randomUUID && crypto.randomUUID()) || `key-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      idempotencyKeyRef.current = fallback
+      return fallback
+    }
+  }, [id])
+
+  useEffect(() => { ensureIdempotencyKey().catch(() => {}) }, [ensureIdempotencyKey])
 
   const [showEmergency, setShowEmergency] = useState(false)
   const [conflictModal, setConflictModal] = useState(null)
@@ -530,40 +549,41 @@ export default function FichaForm() {
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [form, drugs, blocks, vitals, complications, disposables, customParams, paramOrder, priorMeds, doAutoSave])
 
+  // Modelo unificado: NÃO existe rascunho separado. Se há dados locais salvos pra esta ficha
+  // (id ou 'new'), restauramos silenciosamente — ela "É" a ficha. Critério de quando aplicar:
+  //   - Ficha nova ('new') sem id de servidor: sempre restaura se tem conteúdo.
+  //   - Ficha existente (id de servidor): restaura só se o snapshot local é mais novo que o
+  //     servidor; caso contrário o api.get(`/surgeries/${id}`) que roda em outro useEffect já
+  //     hidrata com o estado do servidor (verdade mais recente).
+  // O restore acontece sem perguntar nada à anestesista. Era o comportamento confuso que ela
+  // mais reclamava (banner "Restaurar rascunho?" toda hora).
   useEffect(() => {
     const draft = loadDraftFromStorage(id)
-    if (draft && !isEdit) {
+    if (!draft) return
+    const applyDraft = () => {
+      if (draft.form) setForm(draft.form)
+      if (draft.drugs) setDrugs(draft.drugs)
+      if (draft.blocks) setBlocks(draft.blocks)
+      if (draft.vitals) setVitals(draft.vitals)
+      if (draft.complications) setComplications(draft.complications)
+      if (draft.sections) setSections(draft.sections)
+      if (draft.disposables) setDisposables(draft.disposables)
+      if (draft.customParams) setCustomParams(draft.customParams)
+      if (draft.paramOrder) setParamOrder(draft.paramOrder)
+      if (draft.priorMeds) setPriorMeds(draft.priorMeds)
+    }
+    if (!isEdit) {
       const hasContent = draft.form?.patient_name || draft.form?.procedure_name
-      if (hasContent) { setDraftData(draft); setShowDraftBanner(true); return }
+      if (hasContent) applyDraft()
+    } else {
+      // O carregamento do servidor (useEffect mais abaixo) já vai por cima. Por enquanto só
+      // aplicamos o snapshot local se ele for marcadamente mais novo — janela de 5min serve
+      // como folga pra clock-drift entre dispositivos.
+      const serverLoadTime = Date.now()
+      const draftMs = draft._savedAt ? new Date(draft._savedAt).getTime() : 0
+      if (draftMs && draftMs > serverLoadTime - 5 * 60 * 1000) applyDraft()
     }
-    if (draft && isEdit) {
-      const serverLoadTime = new Date().toISOString()
-      if (draft._savedAt > serverLoadTime) { setDraftData(draft); setShowDraftBanner(true); return }
-    }
-  }, [])
-
-  const restoreDraft = () => {
-    if (draftData) {
-      if (draftData.form) setForm(draftData.form)
-      if (draftData.drugs) setDrugs(draftData.drugs)
-      if (draftData.blocks) setBlocks(draftData.blocks)
-      if (draftData.vitals) setVitals(draftData.vitals)
-      if (draftData.complications) setComplications(draftData.complications)
-      if (draftData.sections) setSections(draftData.sections)
-      if (draftData.disposables) setDisposables(draftData.disposables)
-      if (draftData.customParams) setCustomParams(draftData.customParams)
-      if (draftData.paramOrder) setParamOrder(draftData.paramOrder)
-      if (draftData.priorMeds) setPriorMeds(draftData.priorMeds)
-    }
-    setShowDraftBanner(false); initialLoadDone.current = true
-  }
-
-  const discardDraft = () => {
-    clearDraftFromStorage(id)
-    // Explicit user discard: also purge the IndexedDB journal so /rascunhos doesn't keep showing it.
-    idbPurgeSurgery(makeSurgeryKey(id)).catch((e) => console.error('[draftStore] purgeSurgery failed', e))
-    setShowDraftBanner(false); setDraftData(null); initialLoadDone.current = true
-  }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = (e) => { if (hasUnsavedChanges.current) { e.preventDefault(); e.returnValue = '' } }
@@ -669,7 +689,7 @@ export default function FichaForm() {
         }
         if (!payload.patient_name) payload.patient_name = 'Rascunho'
         if (!payload.procedure_name) payload.procedure_name = 'A definir'
-        payload.idempotency_key = idempotencyKeyRef.current
+        payload.idempotency_key = await ensureIdempotencyKey()
         const res = await api.post('/surgeries', payload); surgeryId = res.data.surgery.id; createdIdRef.current = surgeryId
         // First POST just minted a real id — re-key the journal from 'new' to the actual id.
         await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
@@ -856,7 +876,7 @@ export default function FichaForm() {
           await api.put(`/surgeries/${surgeryId}`, payload)
           await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
         } else {
-          payload.idempotency_key = idempotencyKeyRef.current
+          payload.idempotency_key = await ensureIdempotencyKey()
           const res = await api.post('/surgeries', payload)
           surgeryId = res.data.surgery.id
           createdIdRef.current = surgeryId
@@ -1074,17 +1094,6 @@ export default function FichaForm() {
       </div>
 
       <div className="px-4 pt-4 space-y-3 max-w-lg mx-auto">
-
-        {showDraftBanner && draftData && (
-          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
-            <p className="text-sm font-medium text-amber-800">Rascunho encontrado{draftData.form?.patient_name ? ` — ${draftData.form.patient_name}` : ''}</p>
-            <p className="text-xs text-amber-600">Salvo em {new Date(draftData._savedAt).toLocaleString('pt-BR')}</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={restoreDraft} className="flex-1 py-2 bg-amber-600 text-white text-xs font-medium rounded-lg active:bg-amber-700 min-h-[40px]">Restaurar rascunho</button>
-              <button type="button" onClick={discardDraft} className="flex-1 py-2 bg-white border border-amber-300 text-amber-700 text-xs font-medium rounded-lg active:bg-amber-50 min-h-[40px]">Descartar</button>
-            </div>
-          </div>
-        )}
 
         {!isOnline && (
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2">

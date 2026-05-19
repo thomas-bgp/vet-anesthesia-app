@@ -1,49 +1,116 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Search, ChevronRight, FileEdit, AlertTriangle } from 'lucide-react'
+import { Plus, Search, ChevronRight, Cloud, CloudOff } from 'lucide-react'
 import api from '../api/axios'
-import { countPendingSurgeries } from '../lib/draftStore'
+import { listAllFichaKeys, getFichaMeta } from '../lib/draftStore'
 
+// Modelo unificado: existe APENAS o conceito de "ficha". Esta tela mescla:
+//   - Fichas do servidor (GET /surgeries)
+//   - Fichas locais que ainda não chegaram ao servidor (IndexedDB, sem surgeryId)
+//   - Fichas do servidor com edições locais não sincronizadas (existem dos dois lados,
+//     marcamos como pendente pra que a anestesista veja o status real do upload)
+// O status de sync vira um indicador inline (☁ verde sincronizada / ☁! amarelo pendente),
+// estilo Steam. Não há mais página /rascunhos nem banners de "ficha não sincronizada".
 
-function getLocalDraft() {
-  try {
-    const raw = localStorage.getItem('vetanestesia_draft_new')
-    if (!raw) return null
-    const draft = JSON.parse(raw)
-    if (draft.form?.patient_name || draft.form?.procedure_name) return draft
-    return null
-  } catch { return null }
+function syncStatusFor(serverFicha, localMeta) {
+  // Sem local meta → veio só do servidor → sincronizada.
+  if (!localMeta) return 'synced'
+  if (localMeta.lastSyncStatus === 'synced') return 'synced'
+  // Tem local meta marcando pendente → ainda não subiu (POST/PUT incompleto)
+  return 'pending'
+}
+
+function CloudBadge({ status }) {
+  if (status === 'synced') {
+    return (
+      <span title="Sincronizada com a nuvem" className="text-teal-500 shrink-0">
+        <Cloud size={16} strokeWidth={2} />
+      </span>
+    )
+  }
+  // pending / error
+  return (
+    <span title="Salva no celular, ainda não enviada" className="relative text-amber-500 shrink-0">
+      <CloudOff size={16} strokeWidth={2} />
+      <span className="absolute -top-1 -right-1 text-[9px] font-bold leading-none text-amber-700 bg-amber-100 rounded-full w-3 h-3 flex items-center justify-center border border-amber-400">!</span>
+    </span>
+  )
 }
 
 export default function Fichas() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [surgeries, setSurgeries] = useState([])
+  const [items, setItems] = useState([]) // lista unificada (server + local)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('data')
-  const [localDraft] = useState(() => getLocalDraft())
-  const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
-    countPendingSurgeries().then(setPendingCount).catch(() => {})
-  }, [location.key])
-
-  useEffect(() => {
+    let cancelled = false
     setLoading(true)
-    api.get('/surgeries', { params: { limit: 100 } })
-      .then(res => setSurgeries(res.data.surgeries || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+
+    Promise.all([
+      api.get('/surgeries', { params: { limit: 100 } })
+        .then((res) => res.data.surgeries || [])
+        .catch(() => []),
+      listAllFichaKeys().catch(() => []),
+    ]).then(async ([serverFichas, localMetas]) => {
+      if (cancelled) return
+
+      // Index local metadata: por surgeryId (servidor) e separado pro 'new'.
+      const localByServerId = new Map()
+      let localNew = null
+      for (const m of localMetas) {
+        if (m.surgeryKey === 'new') {
+          if (m.patientName || m.procedureName) localNew = m
+        } else if (m.surgeryId) {
+          localByServerId.set(String(m.surgeryId), m)
+        }
+      }
+
+      const merged = []
+
+      // Ficha local 'new' (sem id de servidor) primeiro, pra anestesista achar fácil.
+      if (localNew) {
+        merged.push({
+          _key: 'new',
+          id: null,
+          patient_name: localNew.patientName || '(rascunho)',
+          procedure_name: localNew.procedureName || '',
+          clinic_name: '',
+          patient_species: '',
+          start_time: localNew.lastEditAt || null,
+          created_at: localNew.lastEditAt || null,
+          _syncStatus: 'pending',
+          _localOnly: true,
+        })
+      }
+
+      // Fichas do servidor, decoradas com sync status local.
+      for (const f of serverFichas) {
+        const lm = localByServerId.get(String(f.id))
+        merged.push({
+          ...f,
+          _key: String(f.id),
+          _syncStatus: syncStatusFor(f, lm),
+          _localOnly: false,
+        })
+      }
+
+      setItems(merged)
+      setLoading(false)
+    })
+
+    return () => { cancelled = true }
   }, [location.key])
 
   const filtered = (search
-    ? surgeries.filter(s =>
-        (s.patient_name + s.procedure_name + s.owner_name + s.clinic_name)
+    ? items.filter((s) =>
+        ((s.patient_name || '') + (s.procedure_name || '') + (s.owner_name || '') + (s.clinic_name || ''))
           .toLowerCase()
           .includes(search.toLowerCase())
       )
-    : surgeries
+    : items
   ).slice().sort((a, b) => {
     if (sortBy === 'nome') return (a.patient_name || '').localeCompare(b.patient_name || '', 'pt-BR')
     if (sortBy === 'clinica') {
@@ -52,8 +119,9 @@ export default function Fichas() {
       if (ca && !cb) return -1
       return ca.localeCompare(cb, 'pt-BR')
     }
-    // 'data' — newest first
-    const da = a.start_time || a.created_at || '', db = b.start_time || b.created_at || ''
+    // 'data' — newest first; local-only sobe pro topo (sem data confiável vai pra start_time/lastEditAt)
+    const da = a.start_time || a.created_at || ''
+    const db = b.start_time || b.created_at || ''
     return db.localeCompare(da)
   })
 
@@ -61,6 +129,14 @@ export default function Fichas() {
     if (!v) return ''
     const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/)
     return m ? `${m[3]}/${m[2]}` : ''
+  }
+
+  const openRow = (row) => {
+    if (row._localOnly) {
+      navigate('/fichas/new') // FichaForm restaura a 'new' local automaticamente
+    } else {
+      navigate(`/fichas/${row.id}`)
+    }
   }
 
   return (
@@ -82,7 +158,7 @@ export default function Fichas() {
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar paciente, tutor, clínica..."
           className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[48px]"
         />
@@ -105,48 +181,6 @@ export default function Fichas() {
         ))}
       </div>
 
-      {/* Pending drafts banner — surfaces any surgery with un-synced local data so the user
-          can recover before the data is forgotten. See /rascunhos. */}
-      {pendingCount > 0 && (
-        <button
-          onClick={() => navigate('/rascunhos')}
-          className="w-full flex items-center gap-3 bg-amber-100 border-2 border-amber-400 rounded-xl p-3 active:bg-amber-200 transition text-left"
-        >
-          <div className="p-2 bg-amber-500 rounded-lg shrink-0">
-            <AlertTriangle size={18} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-amber-900 text-sm">
-              {pendingCount === 1 ? '1 ficha não sincronizada' : `${pendingCount} fichas não sincronizadas`}
-            </p>
-            <p className="text-xs text-amber-700">Toque para revisar e recuperar</p>
-          </div>
-          <ChevronRight size={18} className="text-amber-600 shrink-0" />
-        </button>
-      )}
-
-      {/* Local draft banner */}
-      {localDraft && (
-        <button
-          onClick={() => navigate('/fichas/new')}
-          className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-xl p-4 active:bg-amber-100 transition text-left"
-        >
-          <div className="p-2 bg-amber-200 rounded-lg shrink-0">
-            <FileEdit size={18} className="text-amber-700" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-amber-800 text-sm">Rascunho não salvo</p>
-            <p className="text-xs text-amber-600 truncate">
-              {localDraft.form?.patient_name || 'Sem nome'} — {localDraft.form?.procedure_name || ''}
-            </p>
-            <p className="text-[10px] text-amber-500 mt-0.5">
-              {new Date(localDraft._savedAt).toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <ChevronRight size={18} className="text-amber-400 shrink-0" />
-        </button>
-      )}
-
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-12">
@@ -160,23 +194,26 @@ export default function Fichas() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(s => (
-              <button
-                key={s.id}
-                onClick={() => navigate(`/fichas/${s.id}`)}
-                className="w-full flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-4 active:bg-slate-50 transition text-left min-h-[72px]"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-800 text-sm truncate mb-0.5">{s.patient_name}</p>
-                  <p className="text-xs text-slate-500 truncate">{s.procedure_name}</p>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
-                    {s.clinic_name && <span>{s.clinic_name}</span>}
-                    <span>{fmtDate(s.start_time || s.created_at)}</span>
-                    {s.patient_species && <span>{s.patient_species}</span>}
-                  </div>
+          {filtered.map((s) => (
+            <button
+              key={s._key}
+              onClick={() => openRow(s)}
+              className="w-full flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-4 active:bg-slate-50 transition text-left min-h-[72px]"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-slate-800 text-sm truncate">{s.patient_name || '(sem nome)'}</p>
+                  <CloudBadge status={s._syncStatus} />
                 </div>
-                <ChevronRight size={18} className="text-slate-300 shrink-0" />
-              </button>
+                <p className="text-xs text-slate-500 truncate">{s.procedure_name || '(sem procedimento)'}</p>
+                <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                  {s.clinic_name && <span>{s.clinic_name}</span>}
+                  <span>{fmtDate(s.start_time || s.created_at)}</span>
+                  {s.patient_species && <span>{s.patient_species}</span>}
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-slate-300 shrink-0" />
+            </button>
           ))}
         </div>
       )}
