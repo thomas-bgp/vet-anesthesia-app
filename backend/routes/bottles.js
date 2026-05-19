@@ -10,13 +10,9 @@ router.get('/', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { status, medicine_id, medicine_type } = req.query;
 
-    // Auto-mark expired bottles
-    await supabase
-      .from('medicine_bottles')
-      .update({ status: 'expired' })
-      .eq('user_id', userId)
-      .eq('status', 'opened')
-      .lt('expires_at', new Date().toISOString());
+    // NÃO auto-marcar como expired. A decisão de "jogar fora" é da anestesista — o frasco
+    // continua disponível pra uso até ela explicitamente clicar Descartar. O frontend mostra
+    // uma badge "vencido pós-abertura" como aviso quando expires_at já passou.
 
     let sql = `
       SELECT mb.*, m.name as medicine_name, m.active_principle, m.concentration,

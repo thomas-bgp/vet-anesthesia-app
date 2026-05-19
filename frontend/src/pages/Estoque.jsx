@@ -750,14 +750,24 @@ export default function Estoque() {
                           const rem = parseFloat(b.remaining_ml) || 0
                           const bpct = vol > 0 ? Math.max(0, Math.min(100, (rem / vol) * 100)) : 0
                           const isSealed = b.status === 'sealed'
+                          // Flag visual de idade: frasco aberto cuja validade pós-abertura
+                          // (expires_at) já passou. NÃO marca como vencido automaticamente —
+                          // só avisa. A anestesista decide se quer Descartar.
+                          const expAt = b.expires_at ? new Date(b.expires_at) : null
+                          const isStale = !isSealed && expAt && expAt.getTime() < Date.now()
                           const barColor = isSealed
                             ? 'bg-blue-400'
-                            : (bpct > 50 ? 'bg-teal-500' : bpct > 20 ? 'bg-amber-500' : 'bg-red-500')
+                            : isStale
+                              ? 'bg-slate-400'
+                              : (bpct > 50 ? 'bg-teal-500' : bpct > 20 ? 'bg-amber-500' : 'bg-red-500')
                           return (
-                            <div key={b.id} className="flex items-center gap-2" title={`${isSealed ? 'Selado' : 'Aberto'} — ${rem.toFixed(0)}/${vol.toFixed(0)} mL`}>
+                            <div key={b.id} className="flex items-center gap-2" title={`${isSealed ? 'Selado' : 'Aberto'} — ${rem.toFixed(0)}/${vol.toFixed(0)} mL${isStale ? ' (passou da validade pós-abertura)' : ''}`}>
                               <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div className={`h-full rounded-full ${barColor}`} style={{ width: `${bpct}%` }} />
                               </div>
+                              {isStale && (
+                                <span className="text-[9px] text-slate-500 bg-slate-100 px-1 py-px rounded font-medium shrink-0">vencido?</span>
+                              )}
                               <span className="text-[10px] text-slate-500 shrink-0 tabular-nums w-12 text-right">
                                 {isSealed ? `${vol.toFixed(0)} mL` : `${rem.toFixed(0)} mL`}
                               </span>
