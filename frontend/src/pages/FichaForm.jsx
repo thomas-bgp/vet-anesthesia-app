@@ -961,14 +961,29 @@ export default function FichaForm() {
         await api.delete(`/surgeries/${surgeryId}/medicines/by-phase/bloqueio`)
       } catch { /* non-fatal — POST abaixo ainda salva, só fica sem dedup */ }
       const dateForBlocks = (form.start_time || new Date().toISOString()).slice(0, 10)
+      // Fuzzy-match fármaco do bloqueio com o cadastro: a anestesista costuma digitar o nome
+      // direto no campo texto livre em vez de escolher no dropdown — daí o medicine_id fica
+      // null e a auto-debit do estoque nunca roda. Se o nome bate (case/acento/espaço
+      // ignorados) com algum medicamento cadastrado, assumimos que é o mesmo e usamos o
+      // medicine_id. Match exato só — sem prefixo/substring pra não casar coisa errada.
+      const normalizeName = (s) =>
+        (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      const resolveBlockMedicineId = (drug) => {
+        if (drug.medicine_id) return drug.medicine_id
+        const target = normalizeName(drug.name)
+        if (!target) return null
+        const match = allMedicines.find((m) => normalizeName(m.name) === target)
+        return match ? match.id : null
+      }
       for (const block of blocks) {
         const blockAdminAt = block.time ? `${dateForBlocks}T${block.time}` : null
         for (const drug of (block.drugs || [])) {
-          if (!drug.medicine_id) continue // texto livre não desconta estoque
           if (!drug.dose) continue
+          const resolvedMedId = resolveBlockMedicineId(drug)
+          if (!resolvedMedId) continue // realmente texto livre fora do cadastro
           try {
             await api.post(`/surgeries/${surgeryId}/medicines`, {
-              medicine_id: Number(drug.medicine_id),
+              medicine_id: Number(resolvedMedId),
               dose: Number(drug.dose),
               dose_unit: drug.dose_unit || 'mL',
               route: 'Bloqueio',
