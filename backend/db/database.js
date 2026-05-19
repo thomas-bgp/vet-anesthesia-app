@@ -1,8 +1,16 @@
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
+const WebSocket = require('ws');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://sgxobcmzoptayhgctsqg.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneG9iY216b3B0YXloZ2N0c3FnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTA1NDk2MywiZXhwIjoyMDkwNjMwOTYzfQ.1rFtT1n38NaRses-iIYa9PnQU2ZNzgXLW8L-0wDzriw';
+
+// Node 20 nao tem WebSocket nativo, e @supabase/supabase-js >=2.50 inicia o RealtimeClient
+// imediatamente em createClient — sem isto o boot da API quebra com "Node.js 20 detected
+// without native WebSocket support". Mesmo sem usarmos realtime, precisa do construtor.
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = WebSocket;
+}
 
 let supabase;
 
@@ -10,6 +18,7 @@ function getSupabase() {
   if (!supabase) {
     supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
+      realtime: { transport: WebSocket },
     });
   }
   return supabase;
