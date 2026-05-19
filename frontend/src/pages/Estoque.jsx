@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil, Calendar, Save, Pill, Plus } from 'lucide-react'
+import { Search, Package, Droplets, X, Check, ChevronDown, ChevronUp, ShoppingCart, Trash2, Pencil, Calendar, Save, Pill, Plus, TestTube } from 'lucide-react'
 import api from '../api/axios'
 import { getConcUnits, addConcUnit, parseConc, buildConc } from '../concUnits'
 
@@ -207,6 +207,9 @@ export default function Estoque() {
         name: b.medicine_name || 'Sem nome',
         concentration: b.concentration,
         medicine_type: b.medicine_type || 'farmaco',
+        // 'frasco' (default) ou 'ampola' — define se a barra é contínua por frasco ou ícone
+        // discreto por unidade. Vem do JOIN com medicines.presentation_type no /bottles.
+        presentation_type: b.presentation_type || 'frasco',
         sealed: [],
         opened: [],
         expired: [],
@@ -686,7 +689,6 @@ export default function Estoque() {
             // each card by its `key` instead of treating "renderGroupCard" as a fresh type.
             const renderGroupCard = (g, urgency) => {
               const activeCount = g.sealed.length + g.opened.length
-              const pct = g.totalVolume > 0 ? Math.round((g.totalRemaining / g.totalVolume) * 100) : 0
               const isOpen = expanded[g.medicine_id]
               const isEsgotado = activeCount === 0
               // Border color encodes urgency at a glance — same hierarchy Steve uses on the
@@ -716,13 +718,55 @@ export default function Estoque() {
                         {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                       </div>
                     </div>
-                    {/* Volume bar — hidden when esgotado since there's nothing to show. */}
-                    {!isEsgotado && g.totalVolume > 0 && (
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${pct > 50 ? 'bg-teal-500' : pct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                    {/* Display de estoque — diferente pra ampola e pra frasco:
+                        - Ampola: cada unidade é discreta. Ícone de tubinho por ampola ativa (até
+                          20 visíveis; "+N" se passar). Não faz sentido mostrar barra contínua —
+                          ampola tá ou inteira ou consumida.
+                        - Frasco: cada frasco vira uma mini-barra independente. Aberto mostra %
+                          restante (verde→âmbar→vermelho conforme nível). Selado fica cheio em
+                          azul. Anestesistas reclamaram da barra única que dava 100% mesmo com
+                          frascos pela metade — fica enganoso. */}
+                    {!isEsgotado && g.presentation_type === 'ampola' && (() => {
+                      const activeCount = g.opened.length + g.sealed.length
+                      const MAX_ICONS = 20
+                      const visible = Math.min(activeCount, MAX_ICONS)
+                      const overflow = activeCount - visible
+                      return (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {Array.from({ length: visible }).map((_, i) => (
+                            <TestTube key={i} size={14} strokeWidth={2} className="text-slate-500 shrink-0" />
+                          ))}
+                          {overflow > 0 && (
+                            <span className="text-[10px] text-slate-500 font-medium ml-1">+{overflow}</span>
+                          )}
+                          <span className="text-[10px] text-slate-400 ml-auto">{activeCount} {activeCount === 1 ? 'amp.' : 'amp.'}</span>
                         </div>
-                        <span className="text-[10px] text-slate-500 shrink-0">{pct}%</span>
+                      )
+                    })()}
+                    {!isEsgotado && g.presentation_type !== 'ampola' && (g.opened.length + g.sealed.length) > 0 && (
+                      <div className="space-y-1">
+                        {[...g.opened, ...g.sealed].slice(0, 6).map((b) => {
+                          const vol = parseFloat(b.volume_ml) || 0
+                          const rem = parseFloat(b.remaining_ml) || 0
+                          const bpct = vol > 0 ? Math.max(0, Math.min(100, (rem / vol) * 100)) : 0
+                          const isSealed = b.status === 'sealed'
+                          const barColor = isSealed
+                            ? 'bg-blue-400'
+                            : (bpct > 50 ? 'bg-teal-500' : bpct > 20 ? 'bg-amber-500' : 'bg-red-500')
+                          return (
+                            <div key={b.id} className="flex items-center gap-2" title={`${isSealed ? 'Selado' : 'Aberto'} — ${rem.toFixed(0)}/${vol.toFixed(0)} mL`}>
+                              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${bpct}%` }} />
+                              </div>
+                              <span className="text-[10px] text-slate-500 shrink-0 tabular-nums w-12 text-right">
+                                {isSealed ? `${vol.toFixed(0)} mL` : `${rem.toFixed(0)} mL`}
+                              </span>
+                            </div>
+                          )
+                        })}
+                        {(g.opened.length + g.sealed.length) > 6 && (
+                          <span className="text-[10px] text-slate-400">+{(g.opened.length + g.sealed.length) - 6} frasco{((g.opened.length + g.sealed.length) - 6) > 1 ? 's' : ''}</span>
+                        )}
                       </div>
                     )}
                     {/* Counter chips only matter when expanded — keep top row clean otherwise. */}

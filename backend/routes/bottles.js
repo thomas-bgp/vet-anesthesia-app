@@ -20,7 +20,8 @@ router.get('/', authenticateToken, async (req, res) => {
 
     let sql = `
       SELECT mb.*, m.name as medicine_name, m.active_principle, m.concentration,
-             COALESCE(m.medicine_type, 'farmaco') as medicine_type
+             COALESCE(m.medicine_type, 'farmaco') as medicine_type,
+             COALESCE(m.presentation_type, 'frasco') as presentation_type
       FROM medicine_bottles mb
       JOIN medicines m ON mb.medicine_id = m.id
       WHERE mb.user_id = $1
