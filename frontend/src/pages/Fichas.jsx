@@ -144,7 +144,7 @@ export default function Fichas() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">Fichas Anestésicas</h1>
         <button
-          onClick={() => navigate('/fichas/new')}
+          onClick={() => navigate('/fichas/new?fresh=1')}
           className="flex items-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 transition min-h-[44px]"
         >
           <Plus size={18} />

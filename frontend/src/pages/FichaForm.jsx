@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useParams, useBlocker } from 'react-router-dom'
+import { useNavigate, useParams, useBlocker, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle, Printer } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -8,6 +8,7 @@ import {
   appendSnapshot as idbAppendSnapshot,
   markLatestAsSynced as idbMarkLatestAsSynced,
   rekeySurgery as idbRekeySurgery,
+  purgeSurgery as idbPurgeSurgery,
   getStableIdempotencyKey as idbGetStableIdempotencyKey,
   makeSurgeryKey,
 } from '../lib/draftStore'
@@ -398,6 +399,11 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, 
 export default function FichaForm() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  // ?fresh=1 sinaliza que a anestesista clicou "Nova ficha" — ela quer COMEÇAR DO ZERO. Sem
+  // isto o auto-restore puxa o draft local da 'new' (cachorro antigo de ficha que nunca foi
+  // postada) e ela nao consegue criar uma nova mesmo. Aplica-se so quando isEdit=false.
+  const isFresh = searchParams.get('fresh') === '1'
   const isEdit = Boolean(id)
   const { user: authUser } = useAuth()
 
@@ -551,13 +557,21 @@ export default function FichaForm() {
 
   // Modelo unificado: NÃO existe rascunho separado. Se há dados locais salvos pra esta ficha
   // (id ou 'new'), restauramos silenciosamente — ela "É" a ficha. Critério de quando aplicar:
-  //   - Ficha nova ('new') sem id de servidor: sempre restaura se tem conteúdo.
+  //   - ?fresh=1 vindo de "Nova ficha": NUNCA restaura. Purga 'new' e começa em branco.
+  //   - Ficha nova ('new') sem id de servidor: restaura se tem conteúdo.
   //   - Ficha existente (id de servidor): restaura só se o snapshot local é mais novo que o
   //     servidor; caso contrário o api.get(`/surgeries/${id}`) que roda em outro useEffect já
   //     hidrata com o estado do servidor (verdade mais recente).
   // O restore acontece sem perguntar nada à anestesista. Era o comportamento confuso que ela
   // mais reclamava (banner "Restaurar rascunho?" toda hora).
   useEffect(() => {
+    if (isFresh && !isEdit) {
+      // Anestesista clicou "Nova ficha" — limpa qualquer rascunho 'new' antigo (localStorage +
+      // IndexedDB) pra ela começar do zero. Sem isto, draft de outro paciente reaparece.
+      clearDraftFromStorage(id)
+      idbPurgeSurgery(makeSurgeryKey(id)).catch(() => {})
+      return
+    }
     const draft = loadDraftFromStorage(id)
     if (!draft) return
     const applyDraft = () => {
