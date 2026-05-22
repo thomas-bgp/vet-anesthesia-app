@@ -57,6 +57,14 @@ export default function Fichas() {
     ]).then(async ([serverFichas, localMetas]) => {
       if (cancelled) return
 
+      // Set de idempotency_keys já no servidor — usado pra deduplicar: se o backend já tem
+      // surgery com idempotency_key=UUID, NÃO mostra a entry local-only de mesmo UUID.
+      // Cobre 2 cenários: (a) rekey IDB falhou silenciosamente após POST sucesso; (b) race
+      // entre autosave debounce e POST recria a meta sob o UUID depois do rekey.
+      const serverIdempotencyKeys = new Set(
+        serverFichas.map((f) => f.idempotency_key).filter(Boolean).map(String)
+      )
+
       // Classifica cada local meta: surgeryKey numérico -> ficha já sincronizada com servidor
       // (decora server fichas com sync status). surgeryKey UUID/string não-numérica -> ficha
       // local-only que ainda não foi POSTada. surgeryKey 'new' legacy -> trata como UUID
@@ -72,8 +80,10 @@ export default function Fichas() {
         } else if (m.surgeryId && isNumericKey(m.surgeryId)) {
           // UUID local mas tem mapping pra server id (POST passou, rekey ainda não fechou)
           localByServerId.set(String(m.surgeryId), m)
-        } else if (hasContent) {
-          // UUID local-only com conteúdo — vai aparecer na lista pra ela continuar
+        } else if (hasContent && !serverIdempotencyKeys.has(String(m.surgeryKey))) {
+          // UUID local-only com conteúdo E ainda não chegou ao servidor com este idempotency.
+          // Filtro pelo idempotency_key fecha duplicação caso a meta local não tenha sido
+          // movida após POST bem-sucedido.
           localOnly.push(m)
         }
       }

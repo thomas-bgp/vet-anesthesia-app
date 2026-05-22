@@ -519,6 +519,9 @@ export default function FichaForm() {
 
   const doAutoSave = useCallback(() => {
     if (!initialLoadDone.current) return
+    // Não autosave durante POST/PUT em andamento: o rekey IDB UUID->numeric já rodou (ou está
+    // rodando), e um autosave aqui recria a meta sob o UUID velho e gera duplicata na lista.
+    if (savingRef.current) return
     const data = {
       form: formRef.current, drugs: drugsRef.current, blocks: blocksRef.current,
       vitals: vitalsRef.current, complications: complicationsRef.current,
@@ -583,6 +586,7 @@ export default function FichaForm() {
   useEffect(() => {
     const flushNow = () => {
       if (!initialLoadDone.current) return
+      if (savingRef.current) return // não escrever sob UUID velho durante POST/rekey em curso
       const data = {
         form: formRef.current, drugs: drugsRef.current, blocks: blocksRef.current,
         vitals: vitalsRef.current, complications: complicationsRef.current,
