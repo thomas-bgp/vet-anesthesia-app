@@ -557,7 +557,10 @@ export default function FichaForm() {
 
   // Modelo unificado: NÃO existe rascunho separado. Se há dados locais salvos pra esta ficha
   // (id ou 'new'), restauramos silenciosamente — ela "É" a ficha. Critério de quando aplicar:
-  //   - ?fresh=1 vindo de "Nova ficha": NUNCA restaura. Purga 'new' e começa em branco.
+  //   - ?fresh=1 vindo de "Nova ficha": começa em branco. Se há rascunho 'new' com conteúdo,
+  //     REKEY pra UUID (preserva os dados, aparecem como linha local-only no /fichas pra ela
+  //     recuperar) em vez de purgar. Princípio Sprint 0: dado digitado nunca pode sumir sem
+  //     confirmação explícita.
   //   - Ficha nova ('new') sem id de servidor: restaura se tem conteúdo.
   //   - Ficha existente (id de servidor): restaura só se o snapshot local é mais novo que o
   //     servidor; caso contrário o api.get(`/surgeries/${id}`) que roda em outro useEffect já
@@ -566,10 +569,28 @@ export default function FichaForm() {
   // mais reclamava (banner "Restaurar rascunho?" toda hora).
   useEffect(() => {
     if (isFresh && !isEdit) {
-      // Anestesista clicou "Nova ficha" — limpa qualquer rascunho 'new' antigo (localStorage +
-      // IndexedDB) pra ela começar do zero. Sem isto, draft de outro paciente reaparece.
-      clearDraftFromStorage(id)
-      idbPurgeSurgery(makeSurgeryKey(id)).catch(() => {})
+      // 1. Tira o ?fresh=1 da URL imediatamente. Se ela sair do app e voltar, o useEffect
+      //    remonta com o param ainda presente e re-disparava (foi o bug que apagou ficha real
+      //    da Camila em 22/05). replaceState não dispara navegação nem refaz o mount.
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('fresh')
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash)
+      } catch { /* fallback silencioso */ }
+
+      // 2. Preserva qualquer rascunho 'new' anterior renomeando pra UUID. Snapshots e
+      //    metadata viajam junto via rekeySurgery; localStorage do 'new' some (já vivia
+      //    duplicado com IndexedDB). Resultado: começa em branco AQUI, mas o rascunho velho
+      //    fica no /fichas como linha local-only pra ela recuperar tocando nela.
+      const oldDraft = loadDraftFromStorage(id)
+      const hasContent = oldDraft && (oldDraft.form?.patient_name || oldDraft.form?.procedure_name)
+      if (hasContent) {
+        const archiveKey =
+          (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+          `archive-${Date.now()}`
+        idbRekeySurgery(makeSurgeryKey(id), archiveKey).catch(() => {})
+        clearDraftFromStorage(id)
+      }
       return
     }
     const draft = loadDraftFromStorage(id)
