@@ -57,30 +57,41 @@ export default function Fichas() {
     ]).then(async ([serverFichas, localMetas]) => {
       if (cancelled) return
 
-      // Index local metadata: por surgeryId (servidor) e separado pro 'new'.
+      // Classifica cada local meta: surgeryKey numérico -> ficha já sincronizada com servidor
+      // (decora server fichas com sync status). surgeryKey UUID/string não-numérica -> ficha
+      // local-only que ainda não foi POSTada. surgeryKey 'new' legacy -> trata como UUID
+      // local-only (será migrado no boot).
       const localByServerId = new Map()
-      let localNew = null
+      const localOnly = [] // fichas locais sem id de servidor (UUIDs ou 'new' legacy)
+      const isNumericKey = (k) => /^\d+$/.test(String(k))
       for (const m of localMetas) {
-        if (m.surgeryKey === 'new') {
-          if (m.patientName || m.procedureName) localNew = m
-        } else if (m.surgeryId) {
+        const hasContent = m.patientName || m.procedureName
+        if (isNumericKey(m.surgeryKey)) {
+          // chave numérica = id de servidor (já sincronizada)
+          localByServerId.set(String(m.surgeryKey), m)
+        } else if (m.surgeryId && isNumericKey(m.surgeryId)) {
+          // UUID local mas tem mapping pra server id (POST passou, rekey ainda não fechou)
           localByServerId.set(String(m.surgeryId), m)
+        } else if (hasContent) {
+          // UUID local-only com conteúdo — vai aparecer na lista pra ela continuar
+          localOnly.push(m)
         }
       }
 
       const merged = []
 
-      // Ficha local 'new' (sem id de servidor) primeiro, pra anestesista achar fácil.
-      if (localNew) {
+      // Fichas locais (UUID, sem id de servidor) primeiro, mais recente em cima.
+      localOnly.sort((a, b) => (b.lastEditAt || '').localeCompare(a.lastEditAt || ''))
+      for (const m of localOnly) {
         merged.push({
-          _key: 'new',
-          id: null,
-          patient_name: localNew.patientName || '(rascunho)',
-          procedure_name: localNew.procedureName || '',
+          _key: m.surgeryKey,
+          id: m.surgeryKey, // a URL usa o próprio UUID
+          patient_name: m.patientName || '(rascunho)',
+          procedure_name: m.procedureName || '',
           clinic_name: '',
           patient_species: '',
-          start_time: localNew.lastEditAt || null,
-          created_at: localNew.lastEditAt || null,
+          start_time: m.lastEditAt || null,
+          created_at: m.lastEditAt || null,
           _syncStatus: 'pending',
           _localOnly: true,
         })
@@ -133,7 +144,8 @@ export default function Fichas() {
 
   const openRow = (row) => {
     if (row._localOnly) {
-      navigate('/fichas/new') // FichaForm restaura a 'new' local automaticamente
+      // UUID da ficha local — vai direto pra edição (FichaForm detecta UUID e roda em modo local)
+      navigate(`/fichas/${row.id}/edit`)
     } else {
       navigate(`/fichas/${row.id}`)
     }
@@ -144,7 +156,17 @@ export default function Fichas() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">Fichas Anestésicas</h1>
         <button
-          onClick={() => navigate('/fichas/new?fresh=1')}
+          onClick={() => {
+            // Identidade da ficha nasce AGORA, no clique. UUID v4 vira a chave da URL, da
+            // IDB e do idempotency_key do POST. Sem singleton 'new'. Sem ?fresh=1. Cada
+            // toque "Nova Ficha" = uma ficha distinta, com identidade própria desde o
+            // primeiro caractere. Mint no onClick (evento), nunca em useEffect — StrictMode
+            // não duplica, background-return não refaz.
+            const uuid =
+              (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+              `ficha-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+            navigate(`/fichas/${uuid}/edit`)
+          }}
           className="flex items-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl active:bg-teal-700 transition min-h-[44px]"
         >
           <Plus size={18} />

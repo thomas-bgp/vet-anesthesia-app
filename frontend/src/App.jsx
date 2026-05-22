@@ -37,7 +37,7 @@ const router = createBrowserRouter([
         element: <Layout />,
         children: [
           { path: '/fichas', element: <Fichas /> },
-          { path: '/fichas/new', element: <FichaForm /> },
+          { path: '/fichas/new', element: <Navigate to="/fichas" replace /> },
           { path: '/fichas/:id', element: <FichaDetail /> },
           { path: '/fichas/:id/edit', element: <FichaForm /> },
           { path: '/rascunhos', element: <Navigate to="/fichas" replace /> },

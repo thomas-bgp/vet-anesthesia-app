@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useParams, useBlocker, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useBlocker } from 'react-router-dom'
 import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle, Printer } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -8,8 +8,6 @@ import {
   appendSnapshot as idbAppendSnapshot,
   markLatestAsSynced as idbMarkLatestAsSynced,
   rekeySurgery as idbRekeySurgery,
-  purgeSurgery as idbPurgeSurgery,
-  getStableIdempotencyKey as idbGetStableIdempotencyKey,
   makeSurgeryKey,
 } from '../lib/draftStore'
 
@@ -399,12 +397,12 @@ function DrugRow({ med, allMedicines, onChange, onRemove, phase, patientWeight, 
 export default function FichaForm() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const [searchParams] = useSearchParams()
-  // ?fresh=1 sinaliza que a anestesista clicou "Nova ficha" — ela quer COMEÇAR DO ZERO. Sem
-  // isto o auto-restore puxa o draft local da 'new' (cachorro antigo de ficha que nunca foi
-  // postada) e ela nao consegue criar uma nova mesmo. Aplica-se so quando isEdit=false.
-  const isFresh = searchParams.get('fresh') === '1'
-  const isEdit = Boolean(id)
+  // Identidade da ficha vive na URL. Numérico = ficha já existe no servidor (PUT). UUID/string
+  // = ficha local-only (POST com idempotency_key=id no primeiro save; depois rekey pra id de
+  // servidor). Sem singleton 'new', sem ?fresh=1, sem side effect destrutivo em remount.
+  const isServerId = Boolean(id) && /^\d+$/.test(String(id))
+  const isLocalOnly = Boolean(id) && !isServerId
+  const isEdit = isServerId
   const { user: authUser } = useAuth()
 
   // Field visibility from ficha_layout config
@@ -467,24 +465,10 @@ export default function FichaForm() {
   // POST que cai + usuário reabre o app não pode gerar 2 fichas. O key vive no IndexedDB
   // metadata da ficha (getStableIdempotencyKey). Hidratado abaixo no useEffect inicial e
   // garantido por ensureIdempotencyKey() antes de qualquer POST.
-  const idempotencyKeyRef = useRef(null)
-  const ensureIdempotencyKey = useCallback(async () => {
-    if (idempotencyKeyRef.current) return idempotencyKeyRef.current
-    try {
-      const key = await idbGetStableIdempotencyKey(makeSurgeryKey(id))
-      idempotencyKeyRef.current = key
-      return key
-    } catch (e) {
-      // Fallback de emergência: gera um aqui. Não é tão bom (perde estabilidade entre remounts
-      // se IndexedDB voltar a funcionar), mas é melhor do que enviar null e causar duplicata.
-      console.error('[idempotency] fallback to in-memory key:', e)
-      const fallback = (crypto?.randomUUID && crypto.randomUUID()) || `key-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-      idempotencyKeyRef.current = fallback
-      return fallback
-    }
-  }, [id])
-
-  useEffect(() => { ensureIdempotencyKey().catch(() => {}) }, [ensureIdempotencyKey])
+  // idempotency_key da ficha local = o próprio UUID da URL. É estável por design (a URL não
+  // muda enquanto a ficha não sincroniza com o servidor) e independe de IDB metadata. POST que
+  // cai + usuária reabre o app cai exatamente na mesma URL/UUID, idempotência garantida.
+  const ensureIdempotencyKey = useCallback(async () => isLocalOnly ? String(id) : null, [id, isLocalOnly])
 
   const [showEmergency, setShowEmergency] = useState(false)
   const [conflictModal, setConflictModal] = useState(null)
@@ -555,44 +539,11 @@ export default function FichaForm() {
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [form, drugs, blocks, vitals, complications, disposables, customParams, paramOrder, priorMeds, doAutoSave])
 
-  // Modelo unificado: NÃO existe rascunho separado. Se há dados locais salvos pra esta ficha
-  // (id ou 'new'), restauramos silenciosamente — ela "É" a ficha. Critério de quando aplicar:
-  //   - ?fresh=1 vindo de "Nova ficha": começa em branco. Se há rascunho 'new' com conteúdo,
-  //     REKEY pra UUID (preserva os dados, aparecem como linha local-only no /fichas pra ela
-  //     recuperar) em vez de purgar. Princípio Sprint 0: dado digitado nunca pode sumir sem
-  //     confirmação explícita.
-  //   - Ficha nova ('new') sem id de servidor: restaura se tem conteúdo.
-  //   - Ficha existente (id de servidor): restaura só se o snapshot local é mais novo que o
-  //     servidor; caso contrário o api.get(`/surgeries/${id}`) que roda em outro useEffect já
-  //     hidrata com o estado do servidor (verdade mais recente).
-  // O restore acontece sem perguntar nada à anestesista. Era o comportamento confuso que ela
-  // mais reclamava (banner "Restaurar rascunho?" toda hora).
+  // Identidade da ficha vive na URL (UUID local ou numeric servidor). Nada de purgar nada em
+  // remount. Carrega draft do IDB se existe; se a URL é UUID nova (nunca digitada antes), o
+  // IDB devolve null e o form começa em branco naturalmente. Princípio Sprint 0: dado digitado
+  // nunca pode sumir sem confirmação explícita.
   useEffect(() => {
-    if (isFresh && !isEdit) {
-      // 1. Tira o ?fresh=1 da URL imediatamente. Se ela sair do app e voltar, o useEffect
-      //    remonta com o param ainda presente e re-disparava (foi o bug que apagou ficha real
-      //    da Camila em 22/05). replaceState não dispara navegação nem refaz o mount.
-      try {
-        const url = new URL(window.location.href)
-        url.searchParams.delete('fresh')
-        window.history.replaceState({}, '', url.pathname + url.search + url.hash)
-      } catch { /* fallback silencioso */ }
-
-      // 2. Preserva qualquer rascunho 'new' anterior renomeando pra UUID. Snapshots e
-      //    metadata viajam junto via rekeySurgery; localStorage do 'new' some (já vivia
-      //    duplicado com IndexedDB). Resultado: começa em branco AQUI, mas o rascunho velho
-      //    fica no /fichas como linha local-only pra ela recuperar tocando nela.
-      const oldDraft = loadDraftFromStorage(id)
-      const hasContent = oldDraft && (oldDraft.form?.patient_name || oldDraft.form?.procedure_name)
-      if (hasContent) {
-        const archiveKey =
-          (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
-          `archive-${Date.now()}`
-        idbRekeySurgery(makeSurgeryKey(id), archiveKey).catch(() => {})
-        clearDraftFromStorage(id)
-      }
-      return
-    }
     const draft = loadDraftFromStorage(id)
     if (!draft) return
     const applyDraft = () => {
@@ -703,7 +654,9 @@ export default function FichaForm() {
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
         status: 'scheduled',
       }
-      let surgeryId = id || createdIdRef.current
+      // Igual ao submit(): UUID local não vai pro PUT — vai pra POST com idempotency_key=UUID.
+      // Só id numérico de servidor (isServerId) ou createdIdRef já preenchido fazem PUT.
+      let surgeryId = (isServerId ? id : null) || createdIdRef.current
       if (surgeryId) { await api.put(`/surgeries/${surgeryId}`, payload) }
       else {
         if (form.patient_name && form.procedure_name) {
@@ -900,7 +853,11 @@ export default function FichaForm() {
         prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
       }
 
-      let surgeryId = id || createdIdRef.current
+      // surgeryId só vira numeric quando o servidor responde. Antes disso, a ficha vive sob a
+      // UUID da URL. Se ela vier de uma ficha-existente (isServerId), entra direto no PUT.
+      // Se vier de UUID local com createdIdRef já preenchido (sucesso de POST anterior na
+      // mesma sessão), também PUT. Senão, POST com idempotency_key=UUID — backend dedup.
+      let surgeryId = (isServerId ? id : null) || createdIdRef.current
       if (surgeryId) await api.put(`/surgeries/${surgeryId}`, payload)
       else {
         const r = await ensureNoConflict(form.patient_name, form.procedure_name)
@@ -915,7 +872,8 @@ export default function FichaForm() {
           const res = await api.post('/surgeries', payload)
           surgeryId = res.data.surgery.id
           createdIdRef.current = surgeryId
-          // First POST minted a real id — re-key the journal so future restores find it.
+          // POST gerou id numerico do servidor — rekey o journal IndexedDB pra essa nova
+          // chave (UUID -> numeric) pra restores futuros encontrarem.
           await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
         }
       }

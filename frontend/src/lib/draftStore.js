@@ -491,6 +491,45 @@ export async function purgeSurgery(surgeryKey) {
 }
 
 /**
+ * Migra o singleton legacy `'new'` no IndexedDB pra uma UUID v4 se houver conteúdo. Rodada
+ * uma vez no boot pelo `main.jsx`. Idempotente — depois de migrar, `'new'` não existe mais
+ * em STORE_SURGERIES, então rodadas seguintes são no-op.
+ *
+ * Por que: o `'new'` era singleton que travava várias fichas em rascunho no mesmo slot. Causou
+ * 2 incidentes reais (cachorro antigo aparecendo + perda de ficha em 22/05). Aqui salvamos os
+ * dados que estavam no slot — não destruímos. A ficha vai aparecer na lista `/fichas` como
+ * linha local-only com a UUID nova, pronta pra ela continuar tocando.
+ */
+export async function migrateLegacyNewKey() {
+  try {
+    const meta = await getFichaMeta('new');
+    if (!meta) return null;
+    const hasContent = meta.patientName || meta.procedureName;
+    if (!hasContent) {
+      // 'new' existe mas vazio — limpa pra não confundir a lista
+      await purgeSurgery('new');
+      return null;
+    }
+    const newUuid =
+      (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+      `rescued-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    await rekeySurgery('new', newUuid);
+    // Migra a chave do localStorage também (vetanestesia_draft_new -> vetanestesia_draft_<uuid>)
+    try {
+      const raw = localStorage.getItem('vetanestesia_draft_new');
+      if (raw) {
+        localStorage.setItem(`vetanestesia_draft_${newUuid}`, raw);
+        localStorage.removeItem('vetanestesia_draft_new');
+      }
+    } catch { /* localStorage indisponível */ }
+    return newUuid;
+  } catch (e) {
+    console.error('[draftStore] migrateLegacyNewKey failed', e);
+    return null;
+  }
+}
+
+/**
  * One-time migration from the old localStorage scheme to IndexedDB. Imports each `vetanestesia_draft_*`
  * key as a single snapshot. Idempotent — running twice is safe (we check by hash).
  */

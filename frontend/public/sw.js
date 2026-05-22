@@ -1,4 +1,4 @@
-const CACHE_NAME = 'anestify-v6';
+const CACHE_NAME = 'anestify-v7';
 const API_CACHE = 'anestify-api-v1';
 const OFFLINE_QUEUE_KEY = 'anestify_offline_queue';
 // Max retries before surfacing the request to the user instead of dropping silently.
