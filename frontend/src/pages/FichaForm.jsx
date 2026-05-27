@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useBlocker } from 'react-router-dom'
 import { ArrowLeft, Save, ChevronDown, ChevronUp, Plus, X, Wifi, WifiOff, Check, CloudOff, AlertTriangle, Printer } from 'lucide-react'
 import api from '../api/axios'
@@ -8,6 +8,7 @@ import {
   appendSnapshot as idbAppendSnapshot,
   markLatestAsSynced as idbMarkLatestAsSynced,
   rekeySurgery as idbRekeySurgery,
+  latestSnapshot as idbLatestSnapshot,
   makeSurgeryKey,
 } from '../lib/draftStore'
 
@@ -142,6 +143,40 @@ const EMPTY = {
   extubation_time: '',
   post_operative: '', recovery_quality: '', monitoring_notes: '', status: 'scheduled',
   custom_vitals_params: '',
+}
+
+// Monta o payload de NÍVEL-FICHA (colunas da tabela surgeries) a partir do estado do form.
+// Usado pelo submit(), pelo saveDraftToServer() e pelo auto-sync (Camada C-lite). É deliberadamente
+// só nível-ficha: vitais/fármacos/descartáveis vivem em tabelas próprias com efeito de estoque e
+// NÃO entram aqui — o PUT /surgeries/:id é idempotente e sem efeito colateral, seguro de repetir.
+function buildSurgeryPayload(form, blocks, complications, customParams, paramOrder, priorMeds) {
+  return {
+    ...form,
+    patient_weight: form.patient_weight !== '' ? Number(form.patient_weight) : null,
+    fasting_solid_hours: form.fasting_solid_hours !== '' ? Number(form.fasting_solid_hours) : null,
+    fasting_liquid_hours: form.fasting_liquid_hours !== '' ? Number(form.fasting_liquid_hours) : null,
+    fasting_solid: form.fasting_solid ? 1 : 0, fasting_liquid: form.fasting_liquid ? 1 : 0,
+    peep: form.peep ? 1 : 0, revenue: form.revenue !== '' ? Number(form.revenue) : 0,
+    pre_fc: form.pre_fc !== '' ? Number(form.pre_fc) : null, pre_fr: form.pre_fr !== '' ? Number(form.pre_fr) : null,
+    pre_temperature: form.pre_temperature !== '' ? Number(form.pre_temperature) : null,
+    pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
+    block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
+    complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
+    custom_vitals_params: (customParams.length > 0 || paramOrder.join(',') !== DEFAULT_PARAM_ORDER.join(',')) ? JSON.stringify({ params: customParams, order: paramOrder }) : null,
+    prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
+  }
+}
+
+// Há dado ANINHADO (vitais/fármacos/descartáveis) digitado que só sobe no Salvar manual? Usa os
+// mesmos critérios que o submit() usa pra decidir o que POSTar. Pura — reusada pelo memo do
+// indicador (Camada B) e pelo auto-PUT (Camada C-lite, pra decidir se pode marcar o snapshot synced).
+function hasPendingNestedData(vitals, drugs, disposables) {
+  const vitalPending = vitals.some(v => !(v.fromServer && !v.edited))
+  const drugPending = Object.values(drugs).some(arr => (arr || []).some(d =>
+    !(d.existing && !d.edited) && (d.medicine_id || d.custom_name) && (d.dose || d.dose_ae)
+  ))
+  const dispPending = disposables.some(d => !d.existing && d.medicine_id)
+  return vitalPending || drugPending || dispPending
 }
 
 // --- Components ---
@@ -453,14 +488,24 @@ export default function FichaForm() {
     })
   }
 
-  const [autoSaveStatus, setAutoSaveStatus] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [savingDraft, setSavingDraft] = useState(false)
+  // Camada B — indicador de sync honesto. Duas verdades separadas: o que está salvo no APARELHO
+  // (localStorage+IndexedDB, sempre) vs o que o SERVIDOR confirmou. lastServerSyncAt avança a cada
+  // PUT/POST 2xx; lastLocalSaveAt a cada autosave. Se local > servidor, há dado digitado não-subido.
+  const [lastLocalSaveAt, setLastLocalSaveAt] = useState(0)
+  const [lastServerSyncAt, setLastServerSyncAt] = useState(0)
+  // Camada A — banner quando o load recuperou um snapshot local mais novo que o servidor (dado
+  // que ficou preso no aparelho — offline, app fechado antes de salvar, auto-PUT que não subiu).
+  const [localAhead, setLocalAhead] = useState(null)
   const autoSaveTimer = useRef(null)
   const hasUnsavedChanges = useRef(false)
   const initialLoadDone = useRef(false)
   const savingRef = useRef(false)
   const createdIdRef = useRef(null)
+  // JSON do último payload de nível-ficha já confirmado no servidor — dedup do auto-PUT (Camada
+  // C-lite) pra não repetir PUT idêntico a cada debounce.
+  const lastSyncedPayloadRef = useRef(null)
   // idempotency_key precisa ser ESTÁVEL ao longo da vida da ficha (não muda entre remounts):
   // POST que cai + usuário reabre o app não pode gerar 2 fichas. O key vive no IndexedDB
   // metadata da ficha (getStableIdempotencyKey). Hidratado abaixo no useEffect inicial e
@@ -517,6 +562,55 @@ export default function FichaForm() {
   useEffect(() => { paramOrderRef.current = paramOrder }, [paramOrder])
   useEffect(() => { priorMedsRef.current = priorMeds }, [priorMeds])
 
+  // Aplica um snapshot do journal (mesma shape do autosave) sobre o estado do form. Reusado pelo
+  // restore de localStorage e pela reconciliação no load (Camada A).
+  const applySnapshotData = useCallback((d) => {
+    if (!d) return
+    if (d.form) setForm(d.form)
+    if (d.drugs) setDrugs(d.drugs)
+    if (d.blocks) setBlocks(d.blocks)
+    if (d.vitals) setVitals(d.vitals)
+    if (d.complications) setComplications(d.complications)
+    if (d.sections) setSections(d.sections)
+    if (d.disposables) setDisposables(d.disposables)
+    if (d.customParams) setCustomParams(d.customParams)
+    if (d.paramOrder) setParamOrder(d.paramOrder)
+    if (d.priorMeds) setPriorMeds(d.priorMeds)
+  }, [])
+
+  // Camada C-lite — auto-PUT de nível-ficha no debounce. Só roda em ficha que JÁ existe no servidor
+  // (id numérico, ou createdIdRef preenchido por um POST anterior). NUNCA auto-cria ficha nova: POST
+  // automático geraria fichas "Rascunho" duplicadas (incidentes passados). Vitais/fármacos/
+  // descartáveis (efeito de estoque) NÃO sobem aqui — continuam no botão Salvar; a Camada A garante
+  // que não somem do aparelho e a B avisa que faltam subir. PUT é idempotente; deduplicamos por JSON
+  // pra não bater o servidor à toa. NÃO marca o snapshot como synced (nível-ficha != ficha inteira).
+  const autoSyncToServer = useCallback(async () => {
+    if (!initialLoadDone.current || savingRef.current) return
+    if (!navigator.onLine) return
+    const serverId = (isServerId ? id : null) || createdIdRef.current
+    if (!serverId) return
+    const payload = buildSurgeryPayload(
+      formRef.current, blocksRef.current, complicationsRef.current,
+      customParamsRef.current, paramOrderRef.current, priorMedsRef.current,
+    )
+    const payloadJson = JSON.stringify(payload)
+    if (payloadJson === lastSyncedPayloadRef.current) return
+    try {
+      await api.put(`/surgeries/${serverId}`, payload)
+      lastSyncedPayloadRef.current = payloadJson
+      setLastServerSyncAt(Date.now())
+      // Se o aninhado também já está todo no servidor, este snapshot representa a ficha INTEIRA —
+      // marca synced pra a reconciliação no próximo load não restaurar nem dar banner à toa. Se há
+      // aninhado pendente, deixa 'pending': o reload deve recuperá-lo (a Camada A faz isso).
+      if (!hasPendingNestedData(vitalsRef.current, drugsRef.current, disposablesRef.current)) {
+        await markDraftSynced(serverId, serverId)
+      }
+    } catch {
+      // Não-fatal (offline, 5xx, ficha assinada): o dado segue no aparelho e o indicador mostra
+      // "não sincronizado". Próximo debounce / evento online tenta de novo.
+    }
+  }, [id, isServerId])
+
   const doAutoSave = useCallback(() => {
     if (!initialLoadDone.current) return
     // Não autosave durante POST/PUT em andamento: o rekey IDB UUID->numeric já rodou (ou está
@@ -530,9 +624,20 @@ export default function FichaForm() {
       priorMeds: priorMedsRef.current,
     }
     saveDraftToStorage(id, data)
-    setAutoSaveStatus('saved')
-    setTimeout(() => setAutoSaveStatus(null), 3000)
-  }, [id])
+    setLastLocalSaveAt(Date.now())
+    // Camada C-lite: tenta subir o nível-ficha em background (fire-and-forget).
+    autoSyncToServer()
+  }, [id, autoSyncToServer])
+
+  // Camada B — verdade única do indicador: sincronizado só quando o nível-ficha está no servidor E
+  // não há aninhado pendente. lastLocalSaveAt > lastServerSyncAt = nível-ficha digitado e ainda não
+  // subiu (ou offline / auto-PUT falhando). hasPendingNested = vitais/fármacos/descartáveis que só
+  // sobem no Salvar manual.
+  const hasPendingNested = useMemo(
+    () => hasPendingNestedData(vitals, drugs, disposables),
+    [vitals, drugs, disposables],
+  )
+  const isUnsynced = (lastLocalSaveAt > lastServerSyncAt) || hasPendingNested
 
   useEffect(() => {
     if (!initialLoadDone.current) return
@@ -542,37 +647,18 @@ export default function FichaForm() {
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [form, drugs, blocks, vitals, complications, disposables, customParams, paramOrder, priorMeds, doAutoSave])
 
-  // Identidade da ficha vive na URL (UUID local ou numeric servidor). Nada de purgar nada em
-  // remount. Carrega draft do IDB se existe; se a URL é UUID nova (nunca digitada antes), o
-  // IDB devolve null e o form começa em branco naturalmente. Princípio Sprint 0: dado digitado
-  // nunca pode sumir sem confirmação explícita.
+  // Restore do localStorage SÓ para ficha nova (UUID local, ainda sem id de servidor). Em modo
+  // edição a fonte de verdade é o servidor + reconciliação com o journal IndexedDB no load abaixo
+  // (Camada A): comparamos o snapshot local com o updated_at do servidor. O bug que causou a perda
+  // da Camila era exatamente aqui — antes, a condição "draft < 5min de agora" descartava qualquer
+  // rascunho mais velho mesmo o servidor estando atrasado, e o load async ainda sobrescrevia por
+  // cima. Princípio Sprint 0: dado digitado nunca pode sumir sem confirmação explícita.
   useEffect(() => {
+    if (isEdit) return
     const draft = loadDraftFromStorage(id)
     if (!draft) return
-    const applyDraft = () => {
-      if (draft.form) setForm(draft.form)
-      if (draft.drugs) setDrugs(draft.drugs)
-      if (draft.blocks) setBlocks(draft.blocks)
-      if (draft.vitals) setVitals(draft.vitals)
-      if (draft.complications) setComplications(draft.complications)
-      if (draft.sections) setSections(draft.sections)
-      if (draft.disposables) setDisposables(draft.disposables)
-      if (draft.customParams) setCustomParams(draft.customParams)
-      if (draft.paramOrder) setParamOrder(draft.paramOrder)
-      if (draft.priorMeds) setPriorMeds(draft.priorMeds)
-    }
-    if (!isEdit) {
-      const hasContent = draft.form?.patient_name || draft.form?.procedure_name
-      if (hasContent) applyDraft()
-    } else {
-      // O carregamento do servidor (useEffect mais abaixo) já vai por cima. Por enquanto só
-      // aplicamos o snapshot local se ele for marcadamente mais novo — janela de 5min serve
-      // como folga pra clock-drift entre dispositivos.
-      const serverLoadTime = Date.now()
-      const draftMs = draft._savedAt ? new Date(draft._savedAt).getTime() : 0
-      if (draftMs && draftMs > serverLoadTime - 5 * 60 * 1000) applyDraft()
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (draft.form?.patient_name || draft.form?.procedure_name) applySnapshotData(draft)
+  }, [id, isEdit, applySnapshotData])
 
   useEffect(() => {
     const handler = (e) => { if (hasUnsavedChanges.current) { e.preventDefault(); e.returnValue = '' } }
@@ -595,6 +681,10 @@ export default function FichaForm() {
         priorMeds: priorMedsRef.current,
       }
       saveDraftToStorage(id, data, { source: 'lifecycle' })
+      setLastLocalSaveAt(Date.now())
+      // Camada C-lite: nesses momentos (app indo pro background, voltou online) tentamos subir o
+      // nível-ficha também — é quando mais arrisca o OS matar a página com dado só no aparelho.
+      autoSyncToServer()
     }
     const onVisibility = () => { if (document.visibilityState === 'hidden') flushNow() }
     const onPageHide = () => flushNow()
@@ -607,7 +697,7 @@ export default function FichaForm() {
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('online', onOnline)
     }
-  }, [id])
+  }, [id, autoSyncToServer])
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) => hasUnsavedChanges.current && currentLocation.pathname !== nextLocation.pathname
@@ -642,22 +732,8 @@ export default function FichaForm() {
     if (savingRef.current) return
     setSavingDraft(true); savingRef.current = true; setError('')
     try {
-      const payload = {
-        ...form,
-        patient_weight: form.patient_weight !== '' ? Number(form.patient_weight) : null,
-        fasting_solid_hours: form.fasting_solid_hours !== '' ? Number(form.fasting_solid_hours) : null,
-        fasting_liquid_hours: form.fasting_liquid_hours !== '' ? Number(form.fasting_liquid_hours) : null,
-        fasting_solid: form.fasting_solid ? 1 : 0, fasting_liquid: form.fasting_liquid ? 1 : 0,
-        peep: form.peep ? 1 : 0, revenue: form.revenue !== '' ? Number(form.revenue) : 0,
-        pre_fc: form.pre_fc !== '' ? Number(form.pre_fc) : null, pre_fr: form.pre_fr !== '' ? Number(form.pre_fr) : null,
-        pre_temperature: form.pre_temperature !== '' ? Number(form.pre_temperature) : null,
-        pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
-        block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
-        complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
-        custom_vitals_params: (customParams.length > 0 || paramOrder.join(',') !== DEFAULT_PARAM_ORDER.join(',')) ? JSON.stringify({ params: customParams, order: paramOrder }) : null,
-        prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
-        status: 'scheduled',
-      }
+      const payload = buildSurgeryPayload(form, blocks, complications, customParams, paramOrder, priorMeds)
+      payload.status = 'scheduled'
       // Igual ao submit(): UUID local não vai pro PUT — vai pra POST com idempotency_key=UUID.
       // Só id numérico de servidor (isServerId) ou createdIdRef já preenchido fazem PUT.
       let surgeryId = (isServerId ? id : null) || createdIdRef.current
@@ -674,7 +750,7 @@ export default function FichaForm() {
             // ended up overwriting so future restores find it.
             await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
             await markDraftSynced(surgeryId, surgeryId)
-            hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
+            hasUnsavedChanges.current = false
             if (!isEdit) navigate(`/fichas/${surgeryId}/edit`, { replace: true })
             return
           }
@@ -687,7 +763,8 @@ export default function FichaForm() {
         await idbRekeySurgery(makeSurgeryKey(id), makeSurgeryKey(surgeryId)).catch(() => {})
       }
       await markDraftSynced(surgeryId || id, surgeryId)
-      hasUnsavedChanges.current = false; setAutoSaveStatus('saved')
+      hasUnsavedChanges.current = false
+      lastSyncedPayloadRef.current = null; setLastServerSyncAt(Date.now()); setLocalAhead(null)
       if (!isEdit) navigate(`/fichas/${surgeryId}/edit`, { replace: true })
     } catch (err) {
       if (!navigator.onLine) { setError('Sem conexão. Dados salvos localmente no celular.'); doAutoSave() }
@@ -709,7 +786,7 @@ export default function FichaForm() {
       setForm(f => ({ ...f, start_time: now.toISOString().slice(0, 16) })); initialLoadDone.current = true; return
     }
     api.get(`/surgeries/${id}`)
-      .then(res => {
+      .then(async res => {
         const s = res.data.surgery || res.data
         const f = { ...EMPTY }
         for (const key of Object.keys(f)) {
@@ -800,10 +877,32 @@ export default function FichaForm() {
           })
         })
         setDrugs(grouped)
+
+        // Servidor é a base no momento do load: marca como sincronizado.
+        setLastServerSyncAt(Date.now())
+
+        // Camada A — reconciliação com o journal local. Se existe um snapshot que NUNCA foi
+        // confirmado no servidor (syncStatus != 'synced') e é tão novo quanto / mais novo que o
+        // updated_at do servidor, ele é dado preso no aparelho (offline, app fechado antes do
+        // Salvar, auto-PUT que não subiu). Aplica por cima do que o servidor trouxe e avisa — em
+        // vez de deixar o servidor stale apagar da tela o que ela digitou. Era ESTE o bug que
+        // perdeu a ficha da Camila: o servidor (15:50) sobrescrevia o local (17h) silenciosamente.
+        try {
+          const snap = await idbLatestSnapshot(makeSurgeryKey(id))
+          const serverMs = s.updated_at ? new Date(s.updated_at).getTime() : 0
+          // 10s de folga cobre o caso do auto-PUT de nível-ficha ter empurrado o updated_at logo
+          // após o último autosave (o aninhado pode não ter subido). Snapshot velho de outro
+          // device — minutos/horas atrás do servidor — NÃO entra aqui (servidor mais novo vence).
+          if (snap && snap.syncStatus !== 'synced' && snap.savedAtMs > serverMs - 10000) {
+            applySnapshotData(snap.data)
+            setLocalAhead({ savedAt: snap.savedAt })
+            setLastLocalSaveAt(snap.savedAtMs)
+          }
+        } catch (e) { console.error('[reconcile] falhou', e) }
       })
       .catch(() => setError('Erro ao carregar ficha.'))
       .finally(() => { setLoading(false); initialLoadDone.current = true })
-  }, [id, isEdit])
+  }, [id, isEdit, applySnapshotData])
 
   const currentTimeHHMM = () => new Date().toTimeString().slice(0, 5)
 
@@ -841,21 +940,7 @@ export default function FichaForm() {
     if (!form.patient_name || !form.procedure_name) { setError('Preencha pelo menos o nome do paciente e o procedimento.'); window.scrollTo(0, 0); return }
     setSaving(true); savingRef.current = true
     try {
-      const payload = {
-        ...form,
-        patient_weight: form.patient_weight !== '' ? Number(form.patient_weight) : null,
-        fasting_solid_hours: form.fasting_solid_hours !== '' ? Number(form.fasting_solid_hours) : null,
-        fasting_liquid_hours: form.fasting_liquid_hours !== '' ? Number(form.fasting_liquid_hours) : null,
-        fasting_solid: form.fasting_solid ? 1 : 0, fasting_liquid: form.fasting_liquid ? 1 : 0,
-        peep: form.peep ? 1 : 0, revenue: form.revenue !== '' ? Number(form.revenue) : 0,
-        pre_fc: form.pre_fc !== '' ? Number(form.pre_fc) : null, pre_fr: form.pre_fr !== '' ? Number(form.pre_fr) : null,
-        pre_temperature: form.pre_temperature !== '' ? Number(form.pre_temperature) : null,
-        pre_pas: form.pre_pas !== '' ? Number(form.pre_pas) : null,
-        block_type: blocks.length > 0 ? JSON.stringify(blocks) : '', block_drug: '', block_dose_volume: '',
-        complications: complications.filter(c => c.text.trim()).length > 0 ? JSON.stringify(complications.filter(c => c.text.trim())) : null,
-        custom_vitals_params: (customParams.length > 0 || paramOrder.join(',') !== DEFAULT_PARAM_ORDER.join(',')) ? JSON.stringify({ params: customParams, order: paramOrder }) : null,
-        prior_medications: priorMeds.filter(pm => pm.name.trim()).length > 0 ? JSON.stringify(priorMeds.filter(pm => pm.name.trim())) : null,
-      }
+      const payload = buildSurgeryPayload(form, blocks, complications, customParams, paramOrder, priorMeds)
 
       // surgeryId só vira numeric quando o servidor responde. Antes disso, a ficha vive sob a
       // UUID da URL. Se ela vier de uma ficha-existente (isServerId), entra direto no PUT.
@@ -1088,10 +1173,23 @@ export default function FichaForm() {
             <h1 className="text-base font-bold text-slate-800">{isEdit ? 'Editar Ficha' : 'Nova Ficha'}</h1>
           </div>
           <div className="flex items-center gap-2">
+            {/* Camada B — indicador honesto. A verdade que importa é o SERVIDOR: o aparelho sempre
+                tem o dado (journal durável), mas "salvo no aparelho" dava falsa segurança (F3 do
+                incidente Camila). Mostra explicitamente quando há dado digitado que ainda não subiu. */}
             <div className="flex items-center gap-1 text-[10px] shrink-0">
-              {!isOnline && <span className="flex items-center gap-1 text-amber-600 font-medium"><WifiOff size={12} /> Offline</span>}
-              {autoSaveStatus === 'saved' && isOnline && <span className="flex items-center gap-1 text-green-600"><Check size={12} /> Salvo local</span>}
-              {autoSaveStatus === 'saved' && !isOnline && <span className="flex items-center gap-1 text-amber-600"><CloudOff size={12} /> Salvo local</span>}
+              {!isOnline ? (
+                <span className="flex items-center gap-1 text-amber-600 font-medium" title="Sem conexão. Os dados estão no aparelho e sobem sozinhos quando a internet voltar.">
+                  <WifiOff size={12} /> Offline
+                </span>
+              ) : isUnsynced ? (
+                <span className="flex items-center gap-1 text-amber-600 font-medium" title="Há dados digitados ainda não confirmados no servidor. Toque em Salvar.">
+                  <CloudOff size={12} /> Não salvo no servidor
+                </span>
+              ) : lastServerSyncAt > 0 ? (
+                <span className="flex items-center gap-1 text-green-600" title="Tudo sincronizado com o servidor.">
+                  <Check size={12} /> Salvo no servidor
+                </span>
+              ) : null}
             </div>
             <button type="button" onClick={() => setShowEmergency(true)}
               className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg active:bg-red-700 min-h-[40px] shadow-sm" title="Drogas de emergência">
@@ -1111,6 +1209,21 @@ export default function FichaForm() {
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2">
             <WifiOff size={16} className="text-amber-600 shrink-0" />
             <p className="text-xs text-amber-700">Sem conexão. Seus dados estão sendo salvos localmente no celular.</p>
+          </div>
+        )}
+
+        {/* Camada A — recuperamos do aparelho um estado mais novo que o servidor (dado que ficou
+            preso: offline, app fechado antes do Salvar, ou auto-PUT que não subiu). */}
+        {localAhead && (
+          <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex items-start gap-2">
+            <CloudOff size={16} className="text-teal-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-teal-800">
+              <p className="font-medium">
+                Recuperamos alterações do aparelho{localAhead.savedAt ? ` de ${new Date(localAhead.savedAt).toLocaleString('pt-BR')}` : ''} que ainda não tinham subido pro servidor.
+              </p>
+              <p className="mt-0.5">Confira os dados e toque em <strong>Salvar</strong> pra sincronizar.</p>
+              <button type="button" onClick={() => setLocalAhead(null)} className="mt-1 text-teal-600 underline min-h-[32px]">Entendi</button>
+            </div>
           </div>
         )}
 
