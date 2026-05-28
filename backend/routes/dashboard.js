@@ -113,17 +113,40 @@ router.get('/', authenticateToken, async (req, res) => {
       ORDER BY total_revenue DESC
     `, [userId]);
 
-    // Monthly revenue by clinic (last 6 months, top 5 clinics)
-    const monthlyByClinic = await queryRows(`
+    // Monthly revenue by clinic (last 6 months) — full split for cross-filter on Resumo
+    const monthlyByClinicRaw = await queryRows(`
       SELECT
-        to_char(COALESCE(start_time, created_at), 'YYYY-MM') as month,
-        COALESCE(clinic_name, 'Sem clínica') as clinic,
-        COALESCE(SUM(revenue), 0)::numeric as revenue
-      FROM surgeries
-      WHERE user_id = $1 AND status != 'cancelled' AND created_at >= $2
-      GROUP BY to_char(COALESCE(start_time, created_at), 'YYYY-MM'), COALESCE(clinic_name, 'Sem clínica')
+        to_char(COALESCE(s.start_time, s.created_at), 'YYYY-MM') as month,
+        COALESCE(s.clinic_name, 'Sem clínica') as clinic,
+        COUNT(*)::int as count,
+        COALESCE(SUM(s.revenue), 0)::numeric as revenue,
+        COALESCE(SUM(CASE WHEN s.paid = true THEN s.revenue ELSE 0 END), 0)::numeric as paid_revenue,
+        COALESCE(SUM(CASE WHEN COALESCE(s.paid, false) = false AND s.revenue > 0 THEN s.revenue ELSE 0 END), 0)::numeric as pending_revenue
+      FROM surgeries s
+      WHERE s.user_id = $1 AND s.status != 'cancelled' AND s.created_at >= $2
+      GROUP BY to_char(COALESCE(s.start_time, s.created_at), 'YYYY-MM'), COALESCE(s.clinic_name, 'Sem clínica')
       ORDER BY month ASC
     `, [userId, sixMonthsAgo]);
+
+    // Stock cost per (month, clinic) via bottle_usages → surgeries
+    const costByClinicMonth = await queryRows(`
+      SELECT
+        to_char(bu.used_at, 'YYYY-MM') as month,
+        COALESCE(s.clinic_name, 'Sem clínica') as clinic,
+        COALESCE(SUM(bu.cost), 0)::numeric as stock_cost
+      FROM bottle_usages bu
+      LEFT JOIN surgeries s ON s.id = bu.surgery_id
+      WHERE bu.user_id = $1 AND bu.used_at >= $2
+      GROUP BY to_char(bu.used_at, 'YYYY-MM'), COALESCE(s.clinic_name, 'Sem clínica')
+    `, [userId, sixMonthsAgo]);
+
+    const costClinicMonthMap = {};
+    for (const c of costByClinicMonth) costClinicMonthMap[`${c.month}|${c.clinic}`] = parseFloat(c.stock_cost || 0);
+
+    const monthlyByClinic = monthlyByClinicRaw.map(r => ({
+      ...r,
+      stock_cost: costClinicMonthMap[`${r.month}|${r.clinic}`] || 0,
+    }));
 
     // Low stock detail list — uses actual bottle count, not current_stock
     const lowStockItems = await queryRows(`
