@@ -4,6 +4,7 @@ import {
   ArrowLeft, Edit2, Plus, Trash2, Heart, Clock, Printer, X, AlertTriangle, CheckCircle
 } from 'lucide-react'
 import api from '../api/axios'
+import { useServerPdf, needsServerPdf } from '../hooks/useServerPdf'
 import { QRCodeSVG } from 'qrcode.react'
 
 // ─── Emergency drugs data ────────────────────────────────────────────────────
@@ -298,7 +299,8 @@ export default function FichaDetail() {
     next.delete('print')
     setSearchParams(next, { replace: true })
     // Slight delay so layout settles (vitals tables, QR code) before the print snapshot.
-    setTimeout(() => window.print(), 300)
+    // No app iOS o window.print() não abre nada; o PDF do servidor já é pré-gerado pelo hook.
+    if (!needsServerPdf) setTimeout(() => window.print(), 300)
   }, [loading, surgery, searchParams, setSearchParams])
 
   const addVitals = async () => {
@@ -325,7 +327,8 @@ export default function FichaDetail() {
     } catch { setError('Erro ao remover medicamento.') }
   }
 
-  const handlePrint = () => window.print()
+  const serverPdf = useServerPdf(id, surgery)
+  const handlePrint = () => (needsServerPdf ? serverPdf.sharePdf() : window.print())
 
   const handleDelete = async () => {
     if (!window.confirm('Tem certeza que deseja excluir esta ficha? Esta ação não pode ser desfeita.')) return
@@ -508,7 +511,7 @@ export default function FichaDetail() {
           </button>
           <button onClick={handlePrint}
             className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg active:bg-slate-300 min-h-[38px]">
-            <Printer size={13} /> Imprimir
+            <Printer size={13} /> {needsServerPdf && serverPdf.status === 'loading' ? 'Gerando PDF…' : 'Imprimir'}
             {signature && <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold ml-1">Assinado</span>}
           </button>
           {!signature && (

@@ -106,6 +106,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/medicines', medicinesRoutes);
 app.use('/api/stock', stockRoutes);
+app.use('/api/surgeries', require('./routes/pdf'));
 app.use('/api/surgeries', surgeriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);

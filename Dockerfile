@@ -8,7 +8,7 @@ RUN npm run build
 
 # Stage 2: Build backend + serve everything
 FROM node:20-slim
-RUN apt-get update && apt-get install -y wget nginx --no-install-recommends && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget nginx chromium fonts-liberation fonts-dejavu-core --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Backend
 WORKDIR /app/backend
