@@ -8,7 +8,7 @@ const { validateEmail } = require('../middleware/validate');
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, referral_code, role } = req.body;
+    const { name, email, password, referral_code } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email and password are required' });
@@ -64,7 +64,8 @@ router.post('/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const userRole = userCount === 0 ? 'admin' : (role || 'veterinario');
+    // Papel nunca vem do cliente: convite não pode criar admin
+    const userRole = userCount === 0 ? 'admin' : 'veterinario';
 
     const { data: newUser, error: insertError } = await supabase
       .from('users')

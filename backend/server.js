@@ -117,6 +117,7 @@ app.use('/api/expenses', expensesRoutes);
 app.use('/api/controladoria', controladoriaRoutes);
 app.use('/api/signatures', signatureRoutes);
 app.use('/api/personal-finance', personalFinanceRoutes);
+app.use('/api/client-errors', require('./routes/clientErrors'));
 
 // ─── API Info ─────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {

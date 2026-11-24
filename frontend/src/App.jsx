@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
 import Layout from './components/Layout'
+import RouteErrorScreen from './components/RouteErrorScreen'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Fichas from './pages/Fichas'
@@ -17,7 +18,9 @@ import Controladoria from './pages/Controladoria'
 import Validar from './pages/Validar'
 import FinancasPessoais from './pages/FinancasPessoais'
 
-const router = createBrowserRouter([
+const router = createBrowserRouter([{
+  errorElement: <RouteErrorScreen />,
+  children: [
   {
     path: '/login',
     element: <Login />,
@@ -59,7 +62,8 @@ const router = createBrowserRouter([
   { path: '/surgeries/:id', element: <Navigate to="/fichas" replace /> },
   { path: '/', element: <Navigate to="/fichas" replace /> },
   { path: '*', element: <Navigate to="/fichas" replace /> },
-])
+  ],
+}])
 
 export default function App() {
   return (
